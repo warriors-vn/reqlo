@@ -1,20 +1,30 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/stores/useStore";
 import { Sidebar } from "@/components/Sidebar";
 import { TabBar } from "@/components/TabBar";
 import { RequestBuilder } from "@/components/RequestBuilder";
 import { ResponseViewer, type ExecutionResult } from "@/components/ResponseViewer";
 import { CommandPalette } from "@/components/CommandPalette";
+import { ImportCurlModal } from "@/components/ImportCurlModal";
+import { HistoryDrawer } from "@/components/HistoryDrawer";
+import { SettingsModal } from "@/components/SettingsModal";
+import { AIAssistantPanel } from "@/components/AIAssistantPanel";
+import { EnvironmentSwitcher } from "@/components/EnvironmentSwitcher";
 import { executeRequest } from "@/services/executor";
 import { uid } from "@/services/db";
 import { motion, AnimatePresence } from "framer-motion";
+import { useCommandSystem } from "@/hooks/useCommandSystem";
 
 export function Workspace() {
-  const { ready, init, tabs, activeTabId, requests, workspace, addHistory } = useStore();
+  const { ready, init, tabs, activeTabId, requests, workspace, addHistory, sidebarCollapsed, sendPing } = useStore();
   const [results, setResults] = useState<Record<string, ExecutionResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const lastPing = useRef(0);
 
   useEffect(() => { init(); }, [init]);
+
+  // Install global command + shortcut system.
+  useCommandSystem();
 
   const activeTab = tabs.find(t => t.id === activeTabId);
   const activeRequest = activeTab ? requests.find(r => r.id === activeTab.requestId) : null;
@@ -43,17 +53,14 @@ export function Workspace() {
     });
   };
 
-  // Keyboard: ⌘Enter to send
+  // The "request.send" command bumps sendPing — execute here so we own response state.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        send();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
+    if (sendPing && sendPing !== lastPing.current) {
+      lastPing.current = sendPing;
+      void send();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendPing]);
 
   if (!ready) {
     return (
@@ -68,7 +75,7 @@ export function Workspace() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
-      <Sidebar />
+      {!sidebarCollapsed && <Sidebar />}
       <div className="flex min-w-0 flex-1 flex-col">
         <TabBar />
         <div className="flex min-h-0 flex-1 flex-col">
@@ -93,13 +100,20 @@ export function Workspace() {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Overlays */}
       <CommandPalette />
+      <ImportCurlModal />
+      <HistoryDrawer />
+      <SettingsModal />
+      <AIAssistantPanel />
+      <EnvironmentSwitcher />
     </div>
   );
 }
 
 function EmptyState() {
-  const { createRequest, collections, setPalette } = useStore();
+  const { createRequest, collections, openOverlay } = useStore();
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -119,7 +133,7 @@ function EmptyState() {
           New request
         </button>
         <button
-          onClick={() => setPalette(true)}
+          onClick={() => openOverlay("palette")}
           className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent"
         >
           Search <kbd className="ml-1 font-mono text-[10px] text-muted-foreground">⌘K</kbd>
