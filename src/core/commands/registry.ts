@@ -5,6 +5,7 @@ type Listener = () => void;
 class CommandRegistry {
   private map = new Map<string, CommandDescriptor>();
   private listeners = new Set<Listener>();
+  private snapshot: CommandDescriptor[] = [];
 
   register(cmd: CommandDescriptor): () => void {
     this.map.set(cmd.id, cmd);
@@ -30,7 +31,7 @@ class CommandRegistry {
   }
 
   all(): CommandDescriptor[] {
-    return Array.from(this.map.values());
+    return this.snapshot;
   }
 
   subscribe(fn: Listener): () => void {
@@ -39,6 +40,7 @@ class CommandRegistry {
   }
 
   private emit() {
+    this.snapshot = Array.from(this.map.values());
     this.listeners.forEach((l) => l());
   }
 }
