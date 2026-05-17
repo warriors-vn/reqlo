@@ -30,6 +30,7 @@ export interface ApiRequest {
   queryParams: KV[];
   body: string;
   bodyType: "none" | "json" | "text";
+  favorite?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -49,11 +50,20 @@ export interface HistoryEntry {
   responseExcerpt?: string;
 }
 
+export interface Environment {
+  id: string;
+  workspaceId: string;
+  name: string;
+  variables: KV[];
+  createdAt: number;
+}
+
 class ReqloDB extends Dexie {
   workspaces!: Table<Workspace, string>;
   collections!: Table<Collection, string>;
   requests!: Table<ApiRequest, string>;
   history!: Table<HistoryEntry, string>;
+  environments!: Table<Environment, string>;
 
   constructor() {
     super("reqlo");
@@ -62,6 +72,13 @@ class ReqloDB extends Dexie {
       collections: "id, workspaceId, position",
       requests: "id, workspaceId, collectionId, updatedAt",
       history: "id, workspaceId, requestId, executedAt",
+    });
+    this.version(2).stores({
+      workspaces: "id, updatedAt",
+      collections: "id, workspaceId, position",
+      requests: "id, workspaceId, collectionId, updatedAt",
+      history: "id, workspaceId, requestId, executedAt",
+      environments: "id, workspaceId",
     });
   }
 }
@@ -105,5 +122,12 @@ export async function ensureSeed(): Promise<Workspace> {
     },
   ];
   await db.requests.bulkAdd(sampleRequests);
+
+  const defaultEnv: Environment = {
+    id: uid(), workspaceId: ws.id, name: "Local",
+    variables: [{ id: uid(), key: "BASE_URL", value: "http://localhost:3000", enabled: true }],
+    createdAt: now,
+  };
+  await db.environments.add(defaultEnv);
   return ws;
 }
