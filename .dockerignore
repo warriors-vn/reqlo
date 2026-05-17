@@ -1,0 +1,27 @@
+# Ignore dependencies and build outputs
+node_modules
+dist
+build
+
+# Ignore logs, OS files and VCS
+.git
+.DS_Store
+*.log
+
+# Ignore local env files
+.env
+.env.local
+
+# Ignore editor/IDE files
+.vscode
+.idea
+
+# Docker files
+Dockerfile*
+docker-compose*.yml
+
+# Misc
+coverage
+npm-debug.log*
+yarn-error.log*
+

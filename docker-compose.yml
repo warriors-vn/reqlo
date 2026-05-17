@@ -1,0 +1,54 @@
+version: "3.8"
+
+# docker-compose for local development (and simple production build service)
+# - frontend service runs in `dev` target by default (hot reload)
+# - restart policy `unless-stopped` to keep containers running across reboots
+
+services:
+  frontend:
+    build:
+      context: .
+      # Use the `dev` build target which is optimized for local dev (hot reload)
+      target: dev
+    image: reqlo-frontend:dev
+    container_name: reqlo-frontend
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      # Default to development node env; override as needed
+      - NODE_ENV=development
+      # FRONTEND_TOOL: auto|vite|cra - used by the entrypoint detection script
+      - FRONTEND_TOOL=${FRONTEND_TOOL:-auto}
+      # Frontend host binding for some dev servers; defaults to 0.0.0.0 to ensure accessibility from host
+      - HOST=0.0.0.0
+      # Useful for switching port when needed. Default commonly used by Vite.
+      - FRONTEND_PORT=${FRONTEND_PORT:-5173}
+      # Optional: use polling on macOS/WSL if filesystem events are unreliable
+      - CHOKIDAR_USEPOLLING=${CHOKIDAR_USEPOLLING:-false}
+    # Map both common dev ports to the host so the compose works for both Vite and CRA
+    ports:
+      - "${FRONTEND_PORT:-5173}:${FRONTEND_PORT:-5173}"
+      - "3000:3000"
+    volumes:
+      # Mount source code for live edit; using :cached improves FS performance on macOS
+      - ./:/app:cached
+      # Keep node_modules inside container to avoid host/guest conflicts
+      - /app/node_modules
+    # Ensure the container uses the entrypoint detection script (already set in Dockerfile CMD)
+    command: ["/usr/local/bin/docker-entrypoint.sh", "dev"]
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /app/package.json ] && echo ok || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# Helpful volumes section (anonymous volumes are fine for node_modules)
+volumes:
+  node_modules: {}
+
+# Notes:
+# - For production builds, you can 'docker build --target build -t my-frontend:prod .' and run the
+#   nginx `production` stage image (or `docker build -t my-frontend:prod .` to get the final image).
+# - If your project uses a different dev port, set FRONTEND_PORT before `docker-compose up`.
+# - On macOS, if you experience file watch issues use CHOKIDAR_USEPOLLING=true.
+
