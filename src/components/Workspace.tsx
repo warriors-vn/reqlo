@@ -11,36 +11,52 @@ import { SettingsModal } from "@/components/SettingsModal";
 import { AIAssistantPanel } from "@/components/AIAssistantPanel";
 import { EnvironmentSwitcher } from "@/components/EnvironmentSwitcher";
 import { executeRequest } from "@/services/executor";
-import { uid } from "@/services/db";
+import { createRequestSnapshot, uid } from "@/services/db";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCommandSystem } from "@/hooks/useCommandSystem";
 
 export function Workspace() {
-  const { ready, init, tabs, activeTabId, requests, workspace, addHistory, sidebarCollapsed, sendPing } = useStore();
+  const {
+    ready,
+    init,
+    tabs,
+    activeTabId,
+    requests,
+    workspace,
+    addHistory,
+    sidebarCollapsed,
+    sendPing,
+    environments,
+    activeEnvId,
+  } = useStore();
   const [results, setResults] = useState<Record<string, ExecutionResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const lastPing = useRef(0);
 
-  useEffect(() => { init(); }, [init]);
+  useEffect(() => {
+    init();
+  }, [init]);
 
   // Install global command + shortcut system.
   useCommandSystem();
 
-  const activeTab = tabs.find(t => t.id === activeTabId);
-  const activeRequest = activeTab ? requests.find(r => r.id === activeTab.requestId) : null;
+  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const activeRequest = activeTab ? requests.find((r) => r.id === activeTab.requestId) : null;
+  const activeEnvironment = environments.find((env) => env.id === activeEnvId) ?? null;
   const result = activeRequest ? results[activeRequest.id] : null;
   const isLoading = activeRequest ? !!loading[activeRequest.id] : false;
 
   const send = async () => {
     if (!activeRequest || !workspace) return;
-    setLoading(s => ({ ...s, [activeRequest.id]: true }));
-    const res = await executeRequest(activeRequest);
-    setResults(s => ({ ...s, [activeRequest.id]: res }));
-    setLoading(s => ({ ...s, [activeRequest.id]: false }));
+    setLoading((s) => ({ ...s, [activeRequest.id]: true }));
+    const res = await executeRequest(activeRequest, activeEnvironment);
+    setResults((s) => ({ ...s, [activeRequest.id]: res }));
+    setLoading((s) => ({ ...s, [activeRequest.id]: false }));
     await addHistory({
       id: uid(),
       workspaceId: workspace.id,
       requestId: activeRequest.id,
+      requestName: activeRequest.name,
       method: activeRequest.method,
       url: activeRequest.url,
       status: res.status,
@@ -48,6 +64,23 @@ export function Workspace() {
       durationMs: res.durationMs,
       sizeBytes: res.sizeBytes,
       executedAt: Date.now(),
+      environmentId: activeEnvironment?.id ?? null,
+      environmentName: activeEnvironment?.name ?? null,
+      favorite: false,
+      pinned: false,
+      snapshot: createRequestSnapshot(activeRequest),
+      searchText: [
+        activeRequest.name,
+        activeRequest.method,
+        activeRequest.url,
+        res.status,
+        activeEnvironment?.name,
+        res.body?.slice(0, 200),
+        res.error,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
       errorMessage: res.error,
       responseExcerpt: res.body?.slice(0, 200),
     });
@@ -120,7 +153,9 @@ function EmptyState() {
       animate={{ opacity: 1 }}
       className="flex flex-1 flex-col items-center justify-center gap-6 text-center"
     >
-      <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-2xl font-bold text-primary">R</div>
+      <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-2xl font-bold text-primary">
+        R
+      </div>
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Welcome to Reqlo</h1>
         <p className="mt-1 text-xs text-muted-foreground">The modern local-first API workspace.</p>
