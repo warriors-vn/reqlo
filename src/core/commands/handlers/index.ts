@@ -3,8 +3,8 @@ import {
   Download, Upload, FileJson, Settings, History, Sparkles,
   PanelLeft, Terminal, Globe, FlaskConical,
 } from "lucide-react";
-import { commandRegistry } from "./registry";
-import type { CommandDescriptor } from "./types";
+import { commandRegistry } from "../registry";
+import type { CommandDescriptor, CommandContext } from "../types";
 import { useStore, pickFile } from "@/stores/useStore";
 
 /** Prompt helper. Returns null if user cancels or input is empty. */
