@@ -18,7 +18,7 @@ export function HistoryDrawer() {
         <div className="divide-y divide-border">
           {history.map(h => {
             const req = h.requestId ? requests.find(r => r.id === h.requestId) : null;
-            const status = h.error ?? false ? "ERR" : h.status ?? "—";
+            const status = h.errorMessage ? "ERR" : h.status ?? "—";
             const ok = h.ok;
             return (
               <button
