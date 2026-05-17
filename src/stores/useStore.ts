@@ -1,7 +1,20 @@
 import { create } from "zustand";
-import { db, uid, type ApiRequest, type Collection, type HistoryEntry, type Workspace, type HttpMethod, ensureSeed } from "@/services/db";
+import {
+  db, uid,
+  type ApiRequest, type Collection, type HistoryEntry, type Workspace, type HttpMethod,
+  type Environment,
+  ensureSeed,
+} from "@/services/db";
+import { parseCurl } from "@/services/curl";
+import {
+  exportCollection as buildCollectionExport,
+  exportWorkspace as buildWorkspaceExport,
+  downloadJSON, pickFile, validateCollectionExport,
+} from "@/services/portability";
 
 interface Tab { id: string; requestId: string; dirty: boolean }
+
+export type OverlayKey = "palette" | "import-curl" | "settings" | "history" | "ai" | "env-switcher";
 
 interface State {
   ready: boolean;
@@ -9,29 +22,62 @@ interface State {
   collections: Collection[];
   requests: ApiRequest[];
   history: HistoryEntry[];
+  environments: Environment[];
+  activeEnvId: string | null;
 
   tabs: Tab[];
   activeTabId: string | null;
 
-  paletteOpen: boolean;
+  overlays: Record<OverlayKey, boolean>;
+  sidebarCollapsed: boolean;
+
+  // last fire time, used to ping AnimatePresence-style listeners
+  sendPing: number;
 
   init: () => Promise<void>;
 
+  // overlays
+  openOverlay: (k: OverlayKey) => void;
+  closeOverlay: (k: OverlayKey) => void;
+  toggleOverlay: (k: OverlayKey) => void;
+  setPalette: (open: boolean) => void; // legacy alias
+
+  // tabs / selection
   openRequest: (requestId: string) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   markDirty: (requestId: string, dirty: boolean) => void;
+  getActiveRequest: () => ApiRequest | null;
 
+  // requests
   updateRequest: (id: string, patch: Partial<ApiRequest>) => Promise<void>;
   createRequest: (collectionId: string | null) => Promise<ApiRequest>;
   deleteRequest: (id: string) => Promise<void>;
   renameRequest: (id: string, name: string) => Promise<void>;
+  duplicateRequest: (id: string) => Promise<ApiRequest | null>;
+  toggleFavorite: (id: string) => Promise<void>;
+  requestSend: () => void; // bumps sendPing; Workspace listens
 
+  // collections
   createCollection: (name: string) => Promise<Collection>;
+  duplicateCollection: (id: string) => Promise<Collection | null>;
+  deleteCollection: (id: string) => Promise<void>;
 
-  setPalette: (open: boolean) => void;
+  // environments
+  createEnvironment: (name: string) => Promise<Environment>;
+  setActiveEnv: (id: string | null) => void;
 
+  // history
   addHistory: (entry: HistoryEntry) => Promise<void>;
+
+  // import / export
+  importCurl: (text: string) => Promise<ApiRequest | null>;
+  importCollectionJSON: (text: string) => Promise<Collection | null>;
+  exportCollectionById: (id: string) => Promise<void>;
+  exportActiveWorkspace: () => Promise<void>;
+
+  // view
+  toggleSidebar: () => void;
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -40,30 +86,38 @@ export const useStore = create<State>((set, get) => ({
   collections: [],
   requests: [],
   history: [],
+  environments: [],
+  activeEnvId: null,
   tabs: [],
   activeTabId: null,
-  paletteOpen: false,
+  overlays: { palette: false, "import-curl": false, settings: false, history: false, ai: false, "env-switcher": false },
+  sidebarCollapsed: false,
+  sendPing: 0,
 
   init: async () => {
     const ws = await ensureSeed();
-    const [collections, requests, history] = await Promise.all([
+    const [collections, requests, history, environments] = await Promise.all([
       db.collections.where("workspaceId").equals(ws.id).toArray(),
       db.requests.where("workspaceId").equals(ws.id).toArray(),
       db.history.where("workspaceId").equals(ws.id).reverse().sortBy("executedAt"),
+      db.environments.where("workspaceId").equals(ws.id).toArray(),
     ]);
     collections.sort((a, b) => a.position - b.position);
     requests.sort((a, b) => a.createdAt - b.createdAt);
 
-    // Restore session tabs
     let tabs: Tab[] = [];
     let activeTabId: string | null = null;
+    let activeEnvId: string | null = environments[0]?.id ?? null;
+    let sidebarCollapsed = false;
     try {
       const raw = localStorage.getItem("reqlo:session");
       if (raw) {
-        const parsed = JSON.parse(raw) as { tabs: Tab[]; activeTabId: string | null };
+        const parsed = JSON.parse(raw) as { tabs: Tab[]; activeTabId: string | null; activeEnvId?: string | null; sidebarCollapsed?: boolean };
         const validIds = new Set(requests.map(r => r.id));
         tabs = (parsed.tabs ?? []).filter(t => validIds.has(t.requestId));
         activeTabId = parsed.activeTabId && tabs.find(t => t.id === parsed.activeTabId) ? parsed.activeTabId : tabs[0]?.id ?? null;
+        if (parsed.activeEnvId && environments.find(e => e.id === parsed.activeEnvId)) activeEnvId = parsed.activeEnvId;
+        sidebarCollapsed = !!parsed.sidebarCollapsed;
       }
     } catch {}
 
@@ -73,8 +127,13 @@ export const useStore = create<State>((set, get) => ({
       activeTabId = t.id;
     }
 
-    set({ ready: true, workspace: ws, collections, requests, history, tabs, activeTabId });
+    set({ ready: true, workspace: ws, collections, requests, history, environments, activeEnvId, tabs, activeTabId, sidebarCollapsed });
   },
+
+  openOverlay: (k) => set(s => ({ overlays: { ...s.overlays, [k]: true } })),
+  closeOverlay: (k) => set(s => ({ overlays: { ...s.overlays, [k]: false } })),
+  toggleOverlay: (k) => set(s => ({ overlays: { ...s.overlays, [k]: !s.overlays[k] } })),
+  setPalette: (open) => set(s => ({ overlays: { ...s.overlays, palette: open } })),
 
   openRequest: (requestId) => {
     const existing = get().tabs.find(t => t.requestId === requestId);
@@ -102,6 +161,12 @@ export const useStore = create<State>((set, get) => ({
 
   markDirty: (requestId, dirty) => {
     set(s => ({ tabs: s.tabs.map(t => t.requestId === requestId ? { ...t, dirty } : t) }));
+  },
+
+  getActiveRequest: () => {
+    const { tabs, activeTabId, requests } = get();
+    const t = tabs.find(x => x.id === activeTabId);
+    return t ? requests.find(r => r.id === t.requestId) ?? null : null;
   },
 
   updateRequest: async (id, patch) => {
@@ -138,9 +203,33 @@ export const useStore = create<State>((set, get) => ({
     persistSession(get);
   },
 
-  renameRequest: async (id, name) => {
-    await get().updateRequest(id, { name });
+  renameRequest: async (id, name) => { await get().updateRequest(id, { name }); },
+
+  duplicateRequest: async (id) => {
+    const src = get().requests.find(r => r.id === id);
+    if (!src) return null;
+    const now = Date.now();
+    const copy: ApiRequest = {
+      ...src,
+      id: uid(),
+      name: `${src.name} (copy)`,
+      headers: src.headers.map(h => ({ ...h, id: uid() })),
+      queryParams: src.queryParams.map(p => ({ ...p, id: uid() })),
+      createdAt: now, updatedAt: now,
+    };
+    await db.requests.add(copy);
+    set(s => ({ requests: [...s.requests, copy] }));
+    get().openRequest(copy.id);
+    return copy;
   },
+
+  toggleFavorite: async (id) => {
+    const r = get().requests.find(x => x.id === id);
+    if (!r) return;
+    await get().updateRequest(id, { favorite: !r.favorite });
+  },
+
+  requestSend: () => set({ sendPing: Date.now() }),
 
   createCollection: async (name) => {
     const ws = get().workspace!;
@@ -151,15 +240,122 @@ export const useStore = create<State>((set, get) => ({
     return col;
   },
 
-  setPalette: (open) => set({ paletteOpen: open }),
+  duplicateCollection: async (id) => {
+    const src = get().collections.find(c => c.id === id);
+    if (!src) return null;
+    const ws = get().workspace!;
+    const position = get().collections.length;
+    const copy: Collection = { id: uid(), workspaceId: ws.id, name: `${src.name} (copy)`, position, createdAt: Date.now() };
+    await db.collections.add(copy);
+    const srcReqs = get().requests.filter(r => r.collectionId === id);
+    const now = Date.now();
+    const copies: ApiRequest[] = srcReqs.map(r => ({
+      ...r, id: uid(), collectionId: copy.id,
+      headers: r.headers.map(h => ({ ...h, id: uid() })),
+      queryParams: r.queryParams.map(p => ({ ...p, id: uid() })),
+      createdAt: now, updatedAt: now,
+    }));
+    if (copies.length) await db.requests.bulkAdd(copies);
+    set(s => ({ collections: [...s.collections, copy], requests: [...s.requests, ...copies] }));
+    return copy;
+  },
+
+  deleteCollection: async (id) => {
+    const reqs = get().requests.filter(r => r.collectionId === id);
+    await db.transaction("rw", db.collections, db.requests, async () => {
+      await db.requests.bulkDelete(reqs.map(r => r.id));
+      await db.collections.delete(id);
+    });
+    set(s => ({
+      collections: s.collections.filter(c => c.id !== id),
+      requests: s.requests.filter(r => r.collectionId !== id),
+      tabs: s.tabs.filter(t => !reqs.find(r => r.id === t.requestId)),
+    }));
+    persistSession(get);
+  },
+
+  createEnvironment: async (name) => {
+    const ws = get().workspace!;
+    const env: Environment = { id: uid(), workspaceId: ws.id, name, variables: [], createdAt: Date.now() };
+    await db.environments.add(env);
+    set(s => ({ environments: [...s.environments, env], activeEnvId: s.activeEnvId ?? env.id }));
+    persistSession(get);
+    return env;
+  },
+
+  setActiveEnv: (id) => { set({ activeEnvId: id }); persistSession(get); },
 
   addHistory: async (entry) => {
     await db.history.add(entry);
     set(s => ({ history: [entry, ...s.history].slice(0, 200) }));
   },
+
+  importCurl: async (text) => {
+    const ws = get().workspace;
+    if (!ws) return null;
+    const colId = get().collections[0]?.id ?? null;
+    const req = parseCurl(text, ws.id, colId);
+    if (!req.url) return null;
+    await db.requests.add(req);
+    set(s => ({ requests: [...s.requests, req] }));
+    get().openRequest(req.id);
+    return req;
+  },
+
+  importCollectionJSON: async (text) => {
+    const ws = get().workspace;
+    if (!ws) return null;
+    let parsed: unknown;
+    try { parsed = JSON.parse(text); } catch { return null; }
+    if (!validateCollectionExport(parsed)) return null;
+
+    const position = get().collections.length;
+    const newCol: Collection = {
+      id: uid(), workspaceId: ws.id,
+      name: parsed.collection.name || "Imported",
+      position, createdAt: Date.now(),
+    };
+    const now = Date.now();
+    const newReqs: ApiRequest[] = parsed.requests.map(r => ({
+      ...r,
+      id: uid(), workspaceId: ws.id, collectionId: newCol.id,
+      headers: (r.headers ?? []).map(h => ({ ...h, id: uid() })),
+      queryParams: (r.queryParams ?? []).map(p => ({ ...p, id: uid() })),
+      createdAt: now, updatedAt: now,
+    }));
+    await db.transaction("rw", db.collections, db.requests, async () => {
+      await db.collections.add(newCol);
+      if (newReqs.length) await db.requests.bulkAdd(newReqs);
+    });
+    set(s => ({ collections: [...s.collections, newCol], requests: [...s.requests, ...newReqs] }));
+    return newCol;
+  },
+
+  exportCollectionById: async (id) => {
+    const col = get().collections.find(c => c.id === id);
+    if (!col) return;
+    const data = await buildCollectionExport(col);
+    downloadJSON(data, `${slugify(col.name)}.reqlo.json`);
+  },
+
+  exportActiveWorkspace: async () => {
+    const ws = get().workspace;
+    if (!ws) return;
+    const data = await buildWorkspaceExport(ws);
+    downloadJSON(data, `${slugify(ws.name)}-workspace.reqlo.json`);
+  },
+
+  toggleSidebar: () => { set(s => ({ sidebarCollapsed: !s.sidebarCollapsed })); persistSession(get); },
 }));
 
+// Re-export so consumers can `import { pickFile }` cleanly
+export { pickFile };
+
 function persistSession(get: () => State) {
-  const { tabs, activeTabId } = get();
-  try { localStorage.setItem("reqlo:session", JSON.stringify({ tabs, activeTabId })); } catch {}
+  const { tabs, activeTabId, activeEnvId, sidebarCollapsed } = get();
+  try { localStorage.setItem("reqlo:session", JSON.stringify({ tabs, activeTabId, activeEnvId, sidebarCollapsed })); } catch {}
+}
+
+function slugify(s: string) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "reqlo";
 }
