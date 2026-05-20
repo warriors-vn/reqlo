@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
+import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
@@ -73,10 +74,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Reqlo — The modern local-first API workspace" },
-      { name: "description", content: "A premium, local-first API workspace. Faster than Postman, cleaner than Insomnia, fully offline." },
+      {
+        name: "description",
+        content:
+          "A premium, local-first API workspace. Faster than Postman, cleaner than Insomnia, fully offline.",
+      },
       { name: "author", content: "Reqlo" },
       { property: "og:title", content: "Reqlo — The modern local-first API workspace" },
-      { property: "og:description", content: "A premium, local-first API workspace. Faster than Postman, cleaner than Insomnia, fully offline." },
+      {
+        property: "og:description",
+        content:
+          "A premium, local-first API workspace. Faster than Postman, cleaner than Insomnia, fully offline.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
@@ -85,7 +94,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -114,6 +126,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
+      <Toaster richColors position="bottom-right" />
     </QueryClientProvider>
   );
 }

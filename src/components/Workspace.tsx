@@ -14,6 +14,7 @@ import { executeRequest } from "@/services/executor";
 import { createRequestSnapshot, uid } from "@/services/db";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCommandSystem } from "@/hooks/useCommandSystem";
+import { CodeSnippetPanel } from "@/features/code-snippets/components/CodeSnippetPanel";
 
 export function Workspace() {
   const {
@@ -109,29 +110,32 @@ export function Workspace() {
   return (
     <div className="flex h-screen w-screen overflow-hidden">
       {!sidebarCollapsed && <Sidebar />}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TabBar />
-        <div className="flex min-h-0 flex-1 flex-col">
-          <AnimatePresence mode="wait">
-            {activeRequest ? (
-              <motion.div
-                key={activeRequest.id}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                className="flex min-h-0 flex-1 flex-col"
-              >
-                <RequestBuilder request={activeRequest} onSend={send} sending={isLoading} />
-                <div className="flex min-h-0 flex-1 flex-col">
-                  <ResponseViewer result={result ?? null} loading={isLoading} />
-                </div>
-              </motion.div>
-            ) : (
-              <EmptyState key="empty" />
-            )}
-          </AnimatePresence>
+      <div className="flex min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TabBar />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <AnimatePresence mode="wait">
+              {activeRequest ? (
+                <motion.div
+                  key={activeRequest.id}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="flex min-h-0 flex-1 flex-col"
+                >
+                  <RequestBuilder request={activeRequest} onSend={send} sending={isLoading} />
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    <ResponseViewer result={result ?? null} loading={isLoading} />
+                  </div>
+                </motion.div>
+              ) : (
+                <EmptyState key="empty" />
+              )}
+            </AnimatePresence>
+          </div>
         </div>
+        <CodeSnippetPanel request={activeRequest} environment={activeEnvironment} />
       </div>
 
       {/* Overlays */}
