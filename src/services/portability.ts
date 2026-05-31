@@ -87,7 +87,28 @@ export function pickFile(accept = "application/json"): Promise<string | null> {
 export function validateCollectionExport(obj: unknown): obj is CollectionExport {
   if (!obj || typeof obj !== "object") return false;
   const o = obj as Record<string, unknown>;
-  return o.schema === "reqlo.collection" && Array.isArray(o.requests) && !!o.collection;
+  return (
+    o.schema === "reqlo.collection" &&
+    typeof o.version === "number" &&
+    o.version <= SCHEMA_VERSION &&
+    Array.isArray(o.requests) &&
+    !!o.collection
+  );
+}
+
+export function validateWorkspaceExport(obj: unknown): obj is WorkspaceExport {
+  if (!obj || typeof obj !== "object") return false;
+  const o = obj as Record<string, unknown>;
+  return (
+    o.schema === "reqlo.workspace" &&
+    typeof o.version === "number" &&
+    o.version <= SCHEMA_VERSION &&
+    Array.isArray(o.collections) &&
+    Array.isArray(o.requests) &&
+    Array.isArray(o.environments) &&
+    Array.isArray(o.history) &&
+    !!o.workspace
+  );
 }
 
 function sanitizeRequestForExport(request: ApiRequest): ApiRequest {

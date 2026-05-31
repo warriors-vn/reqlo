@@ -23,6 +23,7 @@ import {
   downloadJSON,
   pickFile,
   validateCollectionExport,
+  validateWorkspaceExport,
 } from "@/services/portability";
 
 interface Tab {
@@ -112,6 +113,7 @@ interface State {
   // import / export
   importCurl: (text: string) => Promise<ApiRequest | null>;
   importCollectionJSON: (text: string) => Promise<Collection | null>;
+  importWorkspaceJSON: (text: string) => Promise<Workspace | null>;
   exportCollectionById: (id: string) => Promise<void>;
   exportActiveWorkspace: () => Promise<void>;
 
@@ -649,6 +651,143 @@ export const useStore = create<State>((set, get) => ({
     return newCol;
   },
 
+  importWorkspaceJSON: async (text) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    if (!validateWorkspaceExport(parsed)) return null;
+
+    const now = Date.now();
+    const workspaceId = uid();
+    const workspace: Workspace = {
+      ...parsed.workspace,
+      id: workspaceId,
+      createdAt: parsed.workspace.createdAt ?? now,
+      updatedAt: now,
+    };
+
+    const collectionIdMap = new Map<string, string>();
+    const collections: Collection[] = parsed.collections.map((collection, index) => {
+      const id = uid();
+      collectionIdMap.set(collection.id, id);
+      return {
+        ...collection,
+        id,
+        workspaceId,
+        position: index,
+        createdAt: collection.createdAt ?? now,
+      };
+    });
+
+    const requestIdMap = new Map<string, string>();
+    const requests: ApiRequest[] = parsed.requests.map((request) => {
+      const id = uid();
+      requestIdMap.set(request.id, id);
+      return normalizeApiRequest({
+        ...request,
+        id,
+        workspaceId,
+        collectionId: request.collectionId
+          ? (collectionIdMap.get(request.collectionId) ?? null)
+          : null,
+        headers: remapKvIds(request.headers ?? []),
+        queryParams: remapKvIds(request.queryParams ?? []),
+        bodyDrafts: remapBodyDraftIds(request.bodyDrafts),
+        createdAt: request.createdAt ?? now,
+        updatedAt: request.updatedAt ?? now,
+      });
+    });
+
+    const environmentIdMap = new Map<string, string>();
+    const environments: Environment[] = parsed.environments.map((environment) => {
+      const id = uid();
+      environmentIdMap.set(environment.id, id);
+      return {
+        ...environment,
+        id,
+        workspaceId,
+        variables: remapKvIds(environment.variables ?? []),
+        createdAt: environment.createdAt ?? now,
+      };
+    });
+
+    const history: HistoryEntry[] = parsed.history
+      .map((entry) =>
+        normalizeHistoryEntry({
+          ...entry,
+          id: uid(),
+          workspaceId,
+          requestId: entry.requestId ? (requestIdMap.get(entry.requestId) ?? null) : null,
+          environmentId: entry.environmentId
+            ? (environmentIdMap.get(entry.environmentId) ?? null)
+            : null,
+          snapshot: {
+            ...entry.snapshot,
+            requestId: entry.snapshot.requestId
+              ? (requestIdMap.get(entry.snapshot.requestId) ?? null)
+              : null,
+            workspaceId,
+            collectionId: entry.snapshot.collectionId
+              ? (collectionIdMap.get(entry.snapshot.collectionId) ?? null)
+              : null,
+            headers: remapKvIds(entry.snapshot.headers ?? []),
+            queryParams: remapKvIds(entry.snapshot.queryParams ?? []),
+            bodyDrafts: remapBodyDraftIds(entry.snapshot.bodyDrafts),
+          },
+        }),
+      )
+      .sort((left, right) => right.executedAt - left.executedAt);
+
+    await db.transaction(
+      "rw",
+      db.workspaces,
+      db.collections,
+      db.requests,
+      db.environments,
+      db.history,
+      async () => {
+        await Promise.all([
+          db.history.clear(),
+          db.requests.clear(),
+          db.collections.clear(),
+          db.environments.clear(),
+          db.workspaces.clear(),
+        ]);
+
+        await db.workspaces.add(workspace);
+        if (collections.length) await db.collections.bulkAdd(collections);
+        if (requests.length) await db.requests.bulkAdd(requests);
+        if (environments.length) await db.environments.bulkAdd(environments);
+        if (history.length) await db.history.bulkAdd(history);
+      },
+    );
+
+    resetPersistedSession();
+
+    const tabs = requests[0] ? [{ id: uid(), requestId: requests[0].id, dirty: false }] : [];
+    set((state) => ({
+      workspace,
+      collections,
+      requests,
+      environments,
+      history,
+      tabs,
+      activeTabId: tabs[0]?.id ?? null,
+      activeEnvId: environments[0]?.id ?? null,
+      sendPing: 0,
+      overlays: {
+        ...state.overlays,
+        palette: false,
+        settings: false,
+      },
+    }));
+    persistSession(get);
+    return workspace;
+  },
+
   exportCollectionById: async (id) => {
     const col = get().collections.find((c) => c.id === id);
     if (!col) return;
@@ -684,6 +823,10 @@ export const useStore = create<State>((set, get) => ({
 
 // Re-export so consumers can `import { pickFile }` cleanly
 export { pickFile };
+
+export function restoreWorkspaceFromJSON(text: string) {
+  return useStore.getState().importWorkspaceJSON(text);
+}
 
 function persistSession(get: () => State) {
   const { tabs, activeTabId, activeEnvId, sidebarCollapsed, sidebarTree } = get();
@@ -739,4 +882,34 @@ function suggestCopyName(name: string, existingNames: string[]) {
   }
 
   return candidate;
+}
+
+function remapKvIds<T extends { id: string }>(list: T[]) {
+  return list.map((item) => ({ ...item, id: uid() }));
+}
+
+function remapBodyDraftIds(
+  drafts?: ApiRequest["bodyDrafts"] | HistoryEntry["snapshot"]["bodyDrafts"],
+) {
+  const next = cloneBodyDrafts(drafts ?? createDefaultBodyDrafts());
+  return {
+    ...next,
+    formData: next.formData.map((row) => ({
+      ...row,
+      id: uid(),
+      files: row.files.map((file) => ({ ...file, id: uid() })),
+    })),
+    urlEncoded: next.urlEncoded.map((row) => ({ ...row, id: uid() })),
+    binary: {
+      file: next.binary.file ? { ...next.binary.file, id: uid() } : null,
+    },
+  };
+}
+
+function resetPersistedSession() {
+  try {
+    localStorage.removeItem("reqlo:session");
+  } catch {
+    // Ignore storage failures during destructive restore.
+  }
 }
