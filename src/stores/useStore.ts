@@ -83,7 +83,7 @@ interface State {
   moveRequestToCollection: (id: string, collectionId: string | null) => Promise<void>;
   reorderRequests: (
     draggedId: string,
-    targetId: string,
+    targetId: string | null,
     collectionId: string | null,
   ) => Promise<void>;
   duplicateRequest: (id: string) => Promise<ApiRequest | null>;
@@ -341,35 +341,51 @@ export const useStore = create<State>((set, get) => ({
   },
 
   moveRequestToCollection: async (id, collectionId) => {
-    const request = get().requests.find((item) => item.id === id);
-    if (!request) return;
-    const nextPosition = getNextRequestPosition(
-      get().requests.filter((item) => item.id !== id),
-      collectionId,
-    );
-    await get().updateRequest(id, { collectionId, position: nextPosition });
+    await get().reorderRequests(id, null, collectionId);
   },
 
   reorderRequests: async (draggedId, targetId, collectionId) => {
     if (draggedId === targetId) return;
-    const siblings = get()
-      .requests.filter((request) => request.collectionId === collectionId)
-      .sort((left, right) => left.position - right.position || left.createdAt - right.createdAt);
-    const draggedIndex = siblings.findIndex((request) => request.id === draggedId);
-    const targetIndex = siblings.findIndex((request) => request.id === targetId);
-    if (draggedIndex === -1 || targetIndex === -1) return;
+    const allRequests = get().requests;
+    const dragged = allRequests.find((request) => request.id === draggedId);
+    if (!dragged) return;
 
-    const reordered = reorderByIndex(siblings, draggedIndex, targetIndex).map((request, index) => ({
-      ...request,
-      position: index,
-    }));
+    const sourceCollectionId = dragged.collectionId ?? null;
+    const sourceSiblings = sortRequestsForCollection(
+      allRequests.filter(
+        (request) => request.collectionId === sourceCollectionId && request.id !== draggedId,
+      ),
+    );
+    const targetSiblingsBase =
+      sourceCollectionId === collectionId
+        ? sourceSiblings
+        : sortRequestsForCollection(
+            allRequests.filter(
+              (request) => request.collectionId === collectionId && request.id !== draggedId,
+            ),
+          );
+
+    const nextDragged: ApiRequest = { ...dragged, collectionId };
+    const targetIndex =
+      targetId === null
+        ? targetSiblingsBase.length
+        : targetSiblingsBase.findIndex((request) => request.id === targetId);
+    if (targetIndex === -1) return;
+
+    const targetSiblings = targetSiblingsBase.slice();
+    targetSiblings.splice(targetIndex, 0, nextDragged);
+
+    const sourceUpdated = resequenceRequests(sourceSiblings);
+    const targetUpdated = resequenceRequests(targetSiblings);
+    const changed = [...sourceUpdated, ...targetUpdated];
+    const changedMap = new Map(changed.map((request) => [request.id, request]));
 
     set((state) => ({
       requests: state.requests
-        .map((request) => reordered.find((item) => item.id === request.id) ?? request)
-        .sort((left, right) => left.position - right.position || left.createdAt - right.createdAt),
+        .map((request) => changedMap.get(request.id) ?? request)
+        .sort(compareRequestsByPosition),
     }));
-    await db.requests.bulkPut(reordered);
+    await db.requests.bulkPut([...changedMap.values()]);
   },
 
   duplicateRequest: async (id) => {
@@ -961,6 +977,21 @@ function getNextRequestPosition(requests: ApiRequest[], collectionId: string | n
   const siblings = requests.filter((request) => request.collectionId === collectionId);
   if (!siblings.length) return 0;
   return Math.max(...siblings.map((request) => request.position ?? 0)) + 1;
+}
+
+function sortRequestsForCollection(requests: ApiRequest[]) {
+  return [...requests].sort(compareRequestsByPosition);
+}
+
+function resequenceRequests(requests: ApiRequest[]) {
+  return sortRequestsForCollection(requests).map((request, index) => ({
+    ...request,
+    position: index,
+  }));
+}
+
+function compareRequestsByPosition(left: ApiRequest, right: ApiRequest) {
+  return left.position - right.position || left.createdAt - right.createdAt;
 }
 
 function reorderByIndex<T>(items: T[], from: number, to: number) {

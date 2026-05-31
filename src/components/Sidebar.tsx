@@ -65,6 +65,11 @@ export function Sidebar() {
   const activeRequestId = tabs.find((t) => t.id === activeTabId)?.requestId;
   const q = query.trim().toLowerCase();
   const dragEnabled = !q;
+  const reorderRequestDrop = reorderRequests as (
+    draggedId: string,
+    targetId: string | null,
+    collectionId: string | null,
+  ) => Promise<void>;
 
   const filteredRequests = useMemo(
     () =>
@@ -189,6 +194,15 @@ export function Sidebar() {
           count={unfiled.length}
           open={sidebarTree.unfiled}
           onToggle={() => setSidebarTreeOpen("unfiled", !sidebarTree.unfiled)}
+          onDragOver={(event) => {
+            if (!dragEnabled || !draggedRequest) return;
+            event.preventDefault();
+          }}
+          onDrop={() => {
+            if (!dragEnabled || !draggedRequest) return;
+            void reorderRequestDrop(draggedRequest.id, null, null);
+            setDraggedRequest(null);
+          }}
         >
           <RequestList
             items={unfiled}
@@ -203,7 +217,7 @@ export function Sidebar() {
             onDragStart={(id, collectionId) => setDraggedRequest({ id, collectionId })}
             onDragEnd={() => setDraggedRequest(null)}
             onReorder={(draggedId, targetId, collectionId) =>
-              void reorderRequests(draggedId, targetId, collectionId)
+              void reorderRequestDrop(draggedId, targetId, collectionId)
             }
             onDuplicate={(id) => void duplicateRequest(id)}
             onDelete={(id) => void deleteRequest(id)}
@@ -249,10 +263,19 @@ export function Sidebar() {
               onDragStart={() => setDraggedCollectionId(col.id)}
               onDragEnd={() => setDraggedCollectionId(null)}
               onDragOver={(event) => {
+                if (dragEnabled && draggedRequest) {
+                  event.preventDefault();
+                  return;
+                }
                 if (!dragEnabled || !draggedCollectionId || draggedCollectionId === col.id) return;
                 event.preventDefault();
               }}
               onDrop={() => {
+                if (dragEnabled && draggedRequest) {
+                  void reorderRequestDrop(draggedRequest.id, null, col.id);
+                  setDraggedRequest(null);
+                  return;
+                }
                 if (!draggedCollectionId || draggedCollectionId === col.id) return;
                 void reorderCollections(draggedCollectionId, col.id);
                 setDraggedCollectionId(null);
@@ -301,7 +324,7 @@ export function Sidebar() {
                 onDragStart={(id, collectionId) => setDraggedRequest({ id, collectionId })}
                 onDragEnd={() => setDraggedRequest(null)}
                 onReorder={(draggedId, targetId, collectionId) =>
-                  void reorderRequests(draggedId, targetId, collectionId)
+                  void reorderRequestDrop(draggedId, targetId, collectionId)
                 }
                 onDuplicate={(id) => void duplicateRequest(id)}
                 onDelete={(id) => void deleteRequest(id)}
@@ -454,12 +477,30 @@ function RequestList({
   onMove: (id: string, collectionId: string | null) => void;
   onDragStart: (id: string, collectionId: string | null) => void;
   onDragEnd: () => void;
-  onReorder: (draggedId: string, targetId: string, collectionId: string | null) => void;
+  onReorder: (draggedId: string, targetId: string | null, collectionId: string | null) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
   if (items.length === 0) {
-    return <div className="px-2 py-1 text-[11px] text-muted-foreground/60">No requests</div>;
+    return (
+      <div
+        onDragOver={(event) => {
+          if (!reorderEnabled || !draggedRequest) return;
+          event.preventDefault();
+        }}
+        onDrop={() => {
+          if (!reorderEnabled || !draggedRequest) return;
+          onReorder(draggedRequest.id, null, listCollectionId);
+          onDragEnd();
+        }}
+        className={cn(
+          "rounded-md px-2 py-2 text-[11px] text-muted-foreground/60",
+          reorderEnabled && draggedRequest && "border border-dashed border-primary/30 bg-primary/5",
+        )}
+      >
+        No requests
+      </div>
+    );
   }
 
   return (
@@ -475,23 +516,13 @@ function RequestList({
           }}
           onDragEnd={onDragEnd}
           onDragOver={(event) => {
-            if (
-              !reorderEnabled ||
-              !draggedRequest ||
-              draggedRequest.collectionId !== listCollectionId ||
-              draggedRequest.id === request.id
-            ) {
+            if (!reorderEnabled || !draggedRequest || draggedRequest.id === request.id) {
               return;
             }
             event.preventDefault();
           }}
           onDrop={() => {
-            if (
-              !reorderEnabled ||
-              !draggedRequest ||
-              draggedRequest.collectionId !== listCollectionId ||
-              draggedRequest.id === request.id
-            ) {
+            if (!reorderEnabled || !draggedRequest || draggedRequest.id === request.id) {
               return;
             }
             onReorder(draggedRequest.id, request.id, listCollectionId);
