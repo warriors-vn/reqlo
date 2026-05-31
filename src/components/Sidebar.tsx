@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Search,
@@ -61,6 +61,12 @@ export function Sidebar() {
     id: string;
     collectionId: string | null;
   } | null>(null);
+  const [collectionAppendTargetId, setCollectionAppendTargetId] = useState<string | null>(null);
+  const [collectionReorderTargetId, setCollectionReorderTargetId] = useState<string | null>(null);
+  const [requestDropTarget, setRequestDropTarget] = useState<{
+    targetId: string | null;
+    collectionId: string | null;
+  } | null>(null);
 
   const activeRequestId = tabs.find((t) => t.id === activeTabId)?.requestId;
   const q = query.trim().toLowerCase();
@@ -95,6 +101,24 @@ export function Sidebar() {
     () => collections.map((collection) => ({ id: collection.id, name: collection.name })),
     [collections],
   );
+
+  const clearRequestDragState = () => {
+    setDraggedRequest(null);
+    setRequestDropTarget(null);
+    setCollectionAppendTargetId(null);
+  };
+
+  const clearCollectionDragState = () => {
+    setDraggedCollectionId(null);
+    setCollectionReorderTargetId(null);
+  };
+
+  useEffect(() => {
+    if (!dragEnabled) {
+      clearRequestDragState();
+      clearCollectionDragState();
+    }
+  }, [dragEnabled]);
 
   const createCollectionInline = async () => {
     const name = newCollectionName.trim();
@@ -176,13 +200,16 @@ export function Sidebar() {
             listCollectionId={null}
             reorderEnabled={false}
             draggedRequest={draggedRequest}
+            requestDropTarget={requestDropTarget}
             activeRequestId={activeRequestId}
             onOpen={openRequest}
             onToggleFavorite={(id) => void toggleFavorite(id)}
             onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
             onDragStart={() => undefined}
-            onDragEnd={() => setDraggedRequest(null)}
+            onDragEnd={clearRequestDragState}
             onReorder={() => undefined}
+            onRequestDropTargetChange={() => undefined}
+            onSectionAppendHover={() => undefined}
             onDuplicate={(id) => void duplicateRequest(id)}
             onDelete={(id) => void deleteRequest(id)}
           />
@@ -197,12 +224,19 @@ export function Sidebar() {
           onDragOver={(event) => {
             if (!dragEnabled || !draggedRequest) return;
             event.preventDefault();
+            setCollectionAppendTargetId("__unfiled__");
+            setRequestDropTarget(null);
           }}
           onDrop={() => {
             if (!dragEnabled || !draggedRequest) return;
             void reorderRequestDrop(draggedRequest.id, null, null);
-            setDraggedRequest(null);
+            clearRequestDragState();
           }}
+          dropIndicator={
+            collectionAppendTargetId === "__unfiled__" ? (
+              <DropIndicator label="Drop to add to Unfiled" />
+            ) : null
+          }
         >
           <RequestList
             items={unfiled}
@@ -210,15 +244,22 @@ export function Sidebar() {
             listCollectionId={null}
             reorderEnabled={dragEnabled}
             draggedRequest={draggedRequest}
+            requestDropTarget={requestDropTarget}
             activeRequestId={activeRequestId}
             onOpen={openRequest}
             onToggleFavorite={(id) => void toggleFavorite(id)}
             onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
-            onDragStart={(id, collectionId) => setDraggedRequest({ id, collectionId })}
-            onDragEnd={() => setDraggedRequest(null)}
+            onDragStart={(id, collectionId) => {
+              setDraggedRequest({ id, collectionId });
+              setCollectionAppendTargetId(null);
+              setRequestDropTarget(null);
+            }}
+            onDragEnd={clearRequestDragState}
             onReorder={(draggedId, targetId, collectionId) =>
               void reorderRequestDrop(draggedId, targetId, collectionId)
             }
+            onRequestDropTargetChange={setRequestDropTarget}
+            onSectionAppendHover={setCollectionAppendTargetId}
             onDuplicate={(id) => void duplicateRequest(id)}
             onDelete={(id) => void deleteRequest(id)}
           />
@@ -260,26 +301,40 @@ export function Sidebar() {
               onToggle={() => setSidebarTreeOpen(col.id, !isOpen)}
               draggable={dragEnabled && renamingCollectionId !== col.id}
               dragging={draggedCollectionId === col.id}
-              onDragStart={() => setDraggedCollectionId(col.id)}
-              onDragEnd={() => setDraggedCollectionId(null)}
+              dragTargeted={collectionReorderTargetId === col.id}
+              onDragStart={() => {
+                setDraggedCollectionId(col.id);
+                setCollectionReorderTargetId(null);
+              }}
+              onDragEnd={clearCollectionDragState}
               onDragOver={(event) => {
                 if (dragEnabled && draggedRequest) {
                   event.preventDefault();
+                  setCollectionAppendTargetId(col.id);
+                  setRequestDropTarget(null);
                   return;
                 }
                 if (!dragEnabled || !draggedCollectionId || draggedCollectionId === col.id) return;
                 event.preventDefault();
+                setCollectionReorderTargetId(col.id);
               }}
               onDrop={() => {
                 if (dragEnabled && draggedRequest) {
                   void reorderRequestDrop(draggedRequest.id, null, col.id);
-                  setDraggedRequest(null);
+                  clearRequestDragState();
                   return;
                 }
                 if (!draggedCollectionId || draggedCollectionId === col.id) return;
                 void reorderCollections(draggedCollectionId, col.id);
-                setDraggedCollectionId(null);
+                clearCollectionDragState();
               }}
+              dropIndicator={
+                collectionAppendTargetId === col.id ? (
+                  <DropIndicator label={`Drop to add to ${col.name}`} />
+                ) : collectionReorderTargetId === col.id ? (
+                  <DropIndicator label={`Drop to reorder ${col.name}`} tone="muted" />
+                ) : null
+              }
               actions={
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -321,11 +376,18 @@ export function Sidebar() {
                 onOpen={openRequest}
                 onToggleFavorite={(id) => void toggleFavorite(id)}
                 onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
-                onDragStart={(id, collectionId) => setDraggedRequest({ id, collectionId })}
-                onDragEnd={() => setDraggedRequest(null)}
+                onDragStart={(id, collectionId) => {
+                  setDraggedRequest({ id, collectionId });
+                  setCollectionAppendTargetId(null);
+                  setRequestDropTarget(null);
+                }}
+                onDragEnd={clearRequestDragState}
                 onReorder={(draggedId, targetId, collectionId) =>
                   void reorderRequestDrop(draggedId, targetId, collectionId)
                 }
+                requestDropTarget={requestDropTarget}
+                onRequestDropTargetChange={setRequestDropTarget}
+                onSectionAppendHover={(collectionId) => setCollectionAppendTargetId(collectionId)}
                 onDuplicate={(id) => void duplicateRequest(id)}
                 onDelete={(id) => void deleteRequest(id)}
               />
@@ -377,11 +439,13 @@ function SidebarSection({
   onToggle,
   draggable,
   dragging,
+  dragTargeted,
   onDragStart,
   onDragEnd,
   onDragOver,
   onDrop,
   actions,
+  dropIndicator,
   children,
 }: {
   icon: React.ReactNode;
@@ -391,11 +455,13 @@ function SidebarSection({
   onToggle: () => void;
   draggable?: boolean;
   dragging?: boolean;
+  dragTargeted?: boolean;
   onDragStart?: () => void;
   onDragEnd?: () => void;
   onDragOver?: (event: React.DragEvent<HTMLButtonElement>) => void;
   onDrop?: () => void;
   actions?: React.ReactNode;
+  dropIndicator?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -408,7 +474,10 @@ function SidebarSection({
           onDragEnd={() => onDragEnd?.()}
           onDragOver={onDragOver}
           onDrop={() => onDrop?.()}
-          className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-foreground/70 transition hover:bg-accent focus-ring"
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-foreground/70 transition hover:bg-accent focus-ring",
+            dragTargeted && "bg-primary/6 text-foreground ring-1 ring-primary/20",
+          )}
         >
           {draggable ? (
             <GripVertical
@@ -426,6 +495,7 @@ function SidebarSection({
         </button>
         {actions}
       </div>
+      {dropIndicator}
 
       <AnimatePresence initial={false}>
         {open && (
@@ -450,6 +520,7 @@ function RequestList({
   listCollectionId,
   reorderEnabled,
   draggedRequest,
+  requestDropTarget,
   activeRequestId,
   onOpen,
   onToggleFavorite,
@@ -457,6 +528,8 @@ function RequestList({
   onDragStart,
   onDragEnd,
   onReorder,
+  onRequestDropTargetChange,
+  onSectionAppendHover,
   onDuplicate,
   onDelete,
 }: {
@@ -471,6 +544,7 @@ function RequestList({
   listCollectionId: string | null;
   reorderEnabled: boolean;
   draggedRequest: { id: string; collectionId: string | null } | null;
+  requestDropTarget: { targetId: string | null; collectionId: string | null } | null;
   activeRequestId?: string;
   onOpen: (id: string) => void;
   onToggleFavorite: (id: string) => void;
@@ -478,6 +552,10 @@ function RequestList({
   onDragStart: (id: string, collectionId: string | null) => void;
   onDragEnd: () => void;
   onReorder: (draggedId: string, targetId: string | null, collectionId: string | null) => void;
+  onRequestDropTargetChange: (
+    value: { targetId: string | null; collectionId: string | null } | null,
+  ) => void;
+  onSectionAppendHover: (collectionId: string | null) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
@@ -487,6 +565,8 @@ function RequestList({
         onDragOver={(event) => {
           if (!reorderEnabled || !draggedRequest) return;
           event.preventDefault();
+          onSectionAppendHover(listCollectionId);
+          onRequestDropTargetChange({ targetId: null, collectionId: listCollectionId });
         }}
         onDrop={() => {
           if (!reorderEnabled || !draggedRequest) return;
@@ -506,115 +586,164 @@ function RequestList({
   return (
     <>
       {items.map((request) => (
-        <div
-          key={request.id}
-          draggable={reorderEnabled}
-          onDragStart={(event) => {
-            if (!reorderEnabled) return;
-            event.dataTransfer.effectAllowed = "move";
-            onDragStart(request.id, listCollectionId);
-          }}
-          onDragEnd={onDragEnd}
-          onDragOver={(event) => {
-            if (!reorderEnabled || !draggedRequest || draggedRequest.id === request.id) {
-              return;
-            }
-            event.preventDefault();
-          }}
-          onDrop={() => {
-            if (!reorderEnabled || !draggedRequest || draggedRequest.id === request.id) {
-              return;
-            }
-            onReorder(draggedRequest.id, request.id, listCollectionId);
-            onDragEnd();
-          }}
-          className={cn(
-            "group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition",
-            activeRequestId === request.id
-              ? "bg-accent text-accent-foreground"
-              : "hover:bg-accent/60",
-            reorderEnabled && "cursor-grab active:cursor-grabbing",
-          )}
-          onClick={() => onOpen(request.id)}
-        >
-          {reorderEnabled ? (
-            <GripVertical className="h-3.5 w-3.5 text-muted-foreground/60" />
+        <div key={request.id}>
+          {requestDropTarget?.targetId === request.id &&
+          requestDropTarget.collectionId === listCollectionId ? (
+            <DropIndicator label={`Drop before ${request.name || "Untitled"}`} compact />
           ) : null}
-          <MethodBadge method={request.method} className="w-10 shrink-0 text-right" />
-          <span className="truncate text-xs">{request.name || "Untitled"}</span>
-          <div className="ml-auto flex items-center gap-0.5 opacity-100 md:opacity-0 md:transition md:group-hover:opacity-100">
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleFavorite(request.id);
-              }}
-              className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-              title="Toggle favorite"
-            >
-              {request.favorite ? (
-                <Heart className="h-3 w-3 fill-current text-primary" />
-              ) : (
-                <Star className="h-3 w-3" />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDuplicate(request.id);
-              }}
-              className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-              title="Duplicate request"
-            >
-              <Plus className="h-3 w-3" />
-            </button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  onClick={(event) => event.stopPropagation()}
-                  className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-                  title="Request actions"
-                >
-                  <MoreHorizontal className="h-3 w-3" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>Move to</DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuRadioGroup
-                      value={request.collectionId ?? "__unfiled__"}
-                      onValueChange={(value) =>
-                        onMove(request.id, value === "__unfiled__" ? null : value)
-                      }
-                    >
-                      <DropdownMenuRadioItem value="__unfiled__">Unfiled</DropdownMenuRadioItem>
-                      {collections.map((collection) => (
-                        <DropdownMenuRadioItem key={collection.id} value={collection.id}>
-                          {collection.name}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-                <DropdownMenuItem onSelect={() => onDuplicate(request.id)}>
-                  <Plus className="h-3.5 w-3.5" /> Duplicate request
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={() => onDelete(request.id)}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Delete request
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          <div
+            draggable={reorderEnabled}
+            onDragStart={(event) => {
+              if (!reorderEnabled) return;
+              event.dataTransfer.effectAllowed = "move";
+              onDragStart(request.id, listCollectionId);
+            }}
+            onDragEnd={onDragEnd}
+            onDragOver={(event) => {
+              if (!reorderEnabled || !draggedRequest || draggedRequest.id === request.id) {
+                return;
+              }
+              event.preventDefault();
+              onSectionAppendHover(null);
+              onRequestDropTargetChange({ targetId: request.id, collectionId: listCollectionId });
+            }}
+            onDrop={() => {
+              if (!reorderEnabled || !draggedRequest || draggedRequest.id === request.id) {
+                return;
+              }
+              onReorder(draggedRequest.id, request.id, listCollectionId);
+              onDragEnd();
+            }}
+            className={cn(
+              "group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition",
+              activeRequestId === request.id
+                ? "bg-accent text-accent-foreground"
+                : "hover:bg-accent/60",
+              reorderEnabled && "cursor-grab active:cursor-grabbing",
+              requestDropTarget?.targetId === request.id &&
+                requestDropTarget.collectionId === listCollectionId &&
+                "bg-primary/5 ring-1 ring-primary/15",
+            )}
+            onClick={() => onOpen(request.id)}
+          >
+            {reorderEnabled ? (
+              <GripVertical className="h-3.5 w-3.5 text-muted-foreground/60" />
+            ) : null}
+            <MethodBadge method={request.method} className="w-10 shrink-0 text-right" />
+            <span className="truncate text-xs">{request.name || "Untitled"}</span>
+            <div className="ml-auto flex items-center gap-0.5 opacity-100 md:opacity-0 md:transition md:group-hover:opacity-100">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleFavorite(request.id);
+                }}
+                className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                title="Toggle favorite"
+              >
+                {request.favorite ? (
+                  <Heart className="h-3 w-3 fill-current text-primary" />
+                ) : (
+                  <Star className="h-3 w-3" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDuplicate(request.id);
+                }}
+                className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                title="Duplicate request"
+              >
+                <Plus className="h-3 w-3" />
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(event) => event.stopPropagation()}
+                    className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                    title="Request actions"
+                  >
+                    <MoreHorizontal className="h-3 w-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Move to</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuRadioGroup
+                        value={request.collectionId ?? "__unfiled__"}
+                        onValueChange={(value) =>
+                          onMove(request.id, value === "__unfiled__" ? null : value)
+                        }
+                      >
+                        <DropdownMenuRadioItem value="__unfiled__">Unfiled</DropdownMenuRadioItem>
+                        {collections.map((collection) => (
+                          <DropdownMenuRadioItem key={collection.id} value={collection.id}>
+                            {collection.name}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuItem onSelect={() => onDuplicate(request.id)}>
+                    <Plus className="h-3.5 w-3.5" /> Duplicate request
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => onDelete(request.id)}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete request
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
       ))}
     </>
+  );
+}
+
+function DropIndicator({
+  label,
+  tone = "primary",
+  compact = false,
+}: {
+  label: string;
+  tone?: "primary" | "muted";
+  compact?: boolean;
+}) {
+  return (
+    <div className={cn("px-2", compact ? "py-1" : "py-1.5")}>
+      <div className="flex items-center gap-2">
+        <div
+          className={cn(
+            "h-px flex-1",
+            tone === "primary" ? "bg-primary/45" : "bg-muted-foreground/35",
+          )}
+        />
+        <span
+          className={cn(
+            "rounded-full border px-2 py-0.5 text-[10px] font-medium",
+            tone === "primary"
+              ? "border-primary/25 bg-primary/8 text-primary"
+              : "border-border bg-background/70 text-muted-foreground",
+          )}
+        >
+          {label}
+        </span>
+        <div
+          className={cn(
+            "h-px flex-1",
+            tone === "primary" ? "bg-primary/45" : "bg-muted-foreground/35",
+          )}
+        />
+      </div>
+    </div>
   );
 }
 

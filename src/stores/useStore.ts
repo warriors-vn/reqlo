@@ -32,6 +32,11 @@ interface Tab {
   dirty: boolean;
 }
 
+export interface SidebarSelection {
+  type: "request" | "collection";
+  id: string;
+}
+
 export interface SidebarTreeState {
   collections: Record<string, boolean>;
   favorites: boolean;
@@ -55,6 +60,7 @@ interface State {
   overlays: Record<OverlayKey, boolean>;
   sidebarCollapsed: boolean;
   sidebarTree: SidebarTreeState;
+  sidebarSelection: SidebarSelection | null;
 
   // last fire time, used to ping AnimatePresence-style listeners
   sendPing: number;
@@ -74,6 +80,7 @@ interface State {
   activateAdjacentTab: (direction: "next" | "prev") => void;
   markDirty: (requestId: string, dirty: boolean) => void;
   getActiveRequest: () => ApiRequest | null;
+  setSidebarSelection: (selection: SidebarSelection | null) => void;
 
   // requests
   updateRequest: (id: string, patch: Partial<ApiRequest>) => Promise<void>;
@@ -156,6 +163,7 @@ export const useStore = create<State>((set, get) => ({
   },
   sidebarCollapsed: false,
   sidebarTree: { ...DEFAULT_SIDEBAR_TREE, collections: {} },
+  sidebarSelection: null,
   sendPing: 0,
 
   init: async () => {
@@ -282,6 +290,10 @@ export const useStore = create<State>((set, get) => ({
     set((s) => ({ tabs: s.tabs.map((t) => (t.requestId === requestId ? { ...t, dirty } : t)) }));
   },
 
+  setSidebarSelection: (selection) => {
+    set({ sidebarSelection: selection });
+  },
+
   getActiveRequest: () => {
     const { tabs, activeTabId, requests } = get();
     const t = tabs.find((x) => x.id === activeTabId);
@@ -331,6 +343,10 @@ export const useStore = create<State>((set, get) => ({
         requests: s.requests.filter((r) => r.id !== id),
         tabs: nextTabs,
         activeTabId: activeTabStillExists ? s.activeTabId : (nextTabs[0]?.id ?? null),
+        sidebarSelection:
+          s.sidebarSelection?.type === "request" && s.sidebarSelection.id === id
+            ? null
+            : s.sidebarSelection,
       };
     });
     persistSession(get);
@@ -507,6 +523,10 @@ export const useStore = create<State>((set, get) => ({
       collections: s.collections.filter((c) => c.id !== id),
       requests: s.requests.filter((r) => r.collectionId !== id),
       tabs: s.tabs.filter((t) => !reqs.find((r) => r.id === t.requestId)),
+      sidebarSelection:
+        s.sidebarSelection?.type === "collection" && s.sidebarSelection.id === id
+          ? null
+          : s.sidebarSelection,
     }));
     persistSession(get);
   },
