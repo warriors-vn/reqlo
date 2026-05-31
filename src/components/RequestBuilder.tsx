@@ -3,6 +3,7 @@ import type { ApiRequest, HttpMethod } from "@/services/db";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { AdvancedBodyEditor } from "@/features/request-body/components/AdvancedBodyEditor";
+import { RequestAuthEditor } from "@/components/RequestAuthEditor";
 import { hasBodyContent } from "@/features/request-body/utils/body";
 import { Send, Loader2, Plus, X } from "lucide-react";
 import { motion } from "framer-motion";
@@ -28,7 +29,7 @@ interface Props {
 export function RequestBuilder({ request, onSend, sending }: Props) {
   const updateRequest = useStore((s) => s.updateRequest);
   const renameRequest = useStore((s) => s.renameRequest);
-  const [tab, setTab] = useState<"params" | "headers" | "body">("params");
+  const [tab, setTab] = useState<"params" | "headers" | "body" | "auth">("params");
   const [nameEdit, setNameEdit] = useState(false);
 
   const tabs = [
@@ -46,6 +47,11 @@ export function RequestBuilder({ request, onSend, sending }: Props) {
       id: "body" as const,
       label: "Body",
       count: hasBodyContent(request) ? ("•" as const) : undefined,
+    },
+    {
+      id: "auth" as const,
+      label: "Auth",
+      count: request.auth.type !== "none" ? request.auth.type.toUpperCase() : undefined,
     },
   ];
 
@@ -170,6 +176,7 @@ export function RequestBuilder({ request, onSend, sending }: Props) {
           />
         )}
         {tab === "body" && <AdvancedBodyEditor request={request} />}
+        {tab === "auth" && <RequestAuthEditor request={request} />}
       </div>
     </div>
   );

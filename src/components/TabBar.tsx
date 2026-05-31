@@ -1,18 +1,60 @@
 import { useStore } from "@/stores/useStore";
 import { MethodBadge } from "./MethodBadge";
-import { X, Plus, Code2 } from "lucide-react";
+import { X, Plus, Code2, PanelLeftOpen, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCodeSnippetPanelStore } from "@/features/code-snippets/stores/useCodeSnippetPanelStore";
 
 export function TabBar() {
-  const { tabs, activeTabId, requests, setActiveTab, closeTab, createRequest, collections } =
-    useStore();
+  const {
+    tabs,
+    activeTabId,
+    requests,
+    setActiveTab,
+    closeTab,
+    createRequest,
+    collections,
+    sidebarCollapsed,
+    toggleSidebar,
+    activateAdjacentTab,
+  } = useStore();
   const collapsed = useCodeSnippetPanelStore((state) => state.collapsed);
   const toggleCollapsed = useCodeSnippetPanelStore((state) => state.toggleCollapsed);
   const selectedLanguage = useCodeSnippetPanelStore((state) => state.selectedLanguage);
 
   return (
     <div className="flex h-10 items-center gap-0.5 border-b border-border bg-[var(--surface)] px-2">
+      <div className="mr-1 flex items-center gap-1">
+        {sidebarCollapsed && (
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            title="Show sidebar (⌘B)"
+          >
+            <PanelLeftOpen className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {tabs.length > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={() => activateAdjacentTab("prev")}
+              className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              title="Previous tab"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => activateAdjacentTab("next")}
+              className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              title="Next tab"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </>
+        )}
+      </div>
       <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
         {tabs.map((tab) => {
           const req = requests.find((r) => r.id === tab.requestId);

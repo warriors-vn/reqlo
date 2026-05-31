@@ -1,12 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Eraser, ExternalLink, Heart, Pin, Play, Search, Star, Trash2 } from "lucide-react";
+import {
+  CheckCircle2,
+  Eraser,
+  ExternalLink,
+  GitCompareArrows,
+  Heart,
+  Pin,
+  Play,
+  Search,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
 import { MethodBadge } from "@/components/MethodBadge";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/stores/useStore";
 import { useDebouncedValue } from "@/features/request-history/hooks/useDebouncedValue";
 import { useVirtualHistoryList } from "@/features/request-history/hooks/useVirtualHistoryList";
 import { useRequestHistoryStore } from "@/features/request-history/stores/useRequestHistoryStore";
+import { HistoryComparePanel } from "@/features/request-history/components/HistoryComparePanel";
 import {
   filterHistoryEntries,
   formatRelativeHistoryTime,
@@ -72,6 +85,16 @@ export function RequestHistoryPanel() {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(520);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+
+  const compareEntries = useMemo(
+    () =>
+      compareIds
+        .map((id) => history.find((entry) => entry.id === id))
+        .filter(Boolean) as HistoryEntry[],
+    [compareIds, history],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -131,6 +154,19 @@ export function RequestHistoryPanel() {
     viewportHeight,
   });
 
+  const toggleCompareSelection = (id: string) => {
+    setCompareIds((current) => {
+      if (current.includes(id)) return current.filter((item) => item !== id);
+      if (current.length === 2) return [current[1], id];
+      return [...current, id];
+    });
+  };
+
+  const exitCompareMode = () => {
+    setCompareMode(false);
+    setCompareIds([]);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 rounded-[24px] border border-border/80 bg-background/70 p-3 shadow-[0_18px_60px_rgba(15,23,42,0.05)] backdrop-blur-xl">
@@ -180,15 +216,53 @@ export function RequestHistoryPanel() {
           <div>
             {filteredHistory.length} matches · ⌘⇧H opens history · ⌘Enter re-runs selected item
           </div>
-          <button
-            onClick={() => void clearHistory()}
-            disabled={history.length === 0}
-            className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-1.5 font-medium transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-          >
-            <Trash2 className="h-3.5 w-3.5" /> Clear history
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => {
+                if (compareMode) {
+                  exitCompareMode();
+                  return;
+                }
+                setCompareMode(true);
+              }}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 font-medium transition",
+                compareMode
+                  ? "border-primary/25 bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              {compareMode ? (
+                <X className="h-3.5 w-3.5" />
+              ) : (
+                <GitCompareArrows className="h-3.5 w-3.5" />
+              )}
+              {compareMode
+                ? `Exit compare${compareIds.length ? ` (${compareIds.length}/2)` : ""}`
+                : "Compare executions"}
+            </button>
+            <button
+              onClick={() => void clearHistory()}
+              disabled={history.length === 0}
+              className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-1.5 font-medium transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Clear history
+            </button>
+          </div>
         </div>
       </div>
+
+      {compareMode && compareEntries.length === 2 && (
+        <HistoryComparePanel left={compareEntries[0]} right={compareEntries[1]} />
+      )}
+
+      {compareMode && compareEntries.length < 2 && (
+        <div className="rounded-[24px] border border-dashed border-border bg-background/60 px-4 py-4 text-sm text-muted-foreground">
+          Select {2 - compareEntries.length} more history{" "}
+          {compareEntries.length === 1 ? "entry" : "entries"} to compare snapshots, auth, and
+          response metadata.
+        </div>
+      )}
 
       {filteredHistory.length === 0 ? (
         <div className="rounded-[24px] border border-dashed border-border bg-muted/20 px-4 py-14 text-center text-sm text-muted-foreground">
@@ -228,6 +302,9 @@ export function RequestHistoryPanel() {
                       onDelete={() => void deleteHistoryEntry(row.item.id)}
                       onToggleFavorite={() => void toggleHistoryFavorite(row.item.id)}
                       onTogglePinned={() => void toggleHistoryPinned(row.item.id)}
+                      compareMode={compareMode}
+                      compareSelected={compareIds.includes(row.item.id)}
+                      onToggleCompare={() => toggleCompareSelection(row.item.id)}
                     />
                   ),
                 )}
@@ -250,6 +327,9 @@ interface HistoryRowProps {
   onDelete: () => void;
   onToggleFavorite: () => void;
   onTogglePinned: () => void;
+  compareMode: boolean;
+  compareSelected: boolean;
+  onToggleCompare: () => void;
 }
 
 function HistoryRow({
@@ -262,6 +342,9 @@ function HistoryRow({
   onDelete,
   onToggleFavorite,
   onTogglePinned,
+  compareMode,
+  compareSelected,
+  onToggleCompare,
 }: HistoryRowProps) {
   const statusTone = entry.ok ? "text-[var(--status-success)]" : "text-destructive";
 
@@ -316,6 +399,15 @@ function HistoryRow({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1 opacity-100 md:opacity-0 md:transition md:group-hover:opacity-100">
+          {compareMode && (
+            <button
+              onClick={onToggleCompare}
+              className={actionButtonClass(compareSelected)}
+              title={compareSelected ? "Selected for compare" : "Select for compare"}
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            </button>
+          )}
           <button
             onClick={onTogglePinned}
             className={actionButtonClass(entry.pinned)}

@@ -11,7 +11,6 @@ import {
   type Environment,
   createDefaultAuth,
   createDefaultBodyDrafts,
-  createRequestSnapshot,
   cloneBodyDrafts,
   ensureSeed,
   normalizeApiRequest,
@@ -32,6 +31,12 @@ interface Tab {
   dirty: boolean;
 }
 
+export interface SidebarTreeState {
+  collections: Record<string, boolean>;
+  favorites: boolean;
+  unfiled: boolean;
+}
+
 export type OverlayKey = "palette" | "import-curl" | "settings" | "history" | "ai" | "env-switcher";
 
 interface State {
@@ -48,6 +53,7 @@ interface State {
 
   overlays: Record<OverlayKey, boolean>;
   sidebarCollapsed: boolean;
+  sidebarTree: SidebarTreeState;
 
   // last fire time, used to ping AnimatePresence-style listeners
   sendPing: number;
@@ -64,6 +70,7 @@ interface State {
   openRequest: (requestId: string) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
+  activateAdjacentTab: (direction: "next" | "prev") => void;
   markDirty: (requestId: string, dirty: boolean) => void;
   getActiveRequest: () => ApiRequest | null;
 
@@ -104,7 +111,14 @@ interface State {
 
   // view
   toggleSidebar: () => void;
+  setSidebarTreeOpen: (section: keyof SidebarTreeState | string, open: boolean) => void;
 }
+
+const DEFAULT_SIDEBAR_TREE: SidebarTreeState = {
+  collections: {},
+  favorites: true,
+  unfiled: true,
+};
 
 export const useStore = create<State>((set, get) => ({
   ready: false,
@@ -125,6 +139,7 @@ export const useStore = create<State>((set, get) => ({
     "env-switcher": false,
   },
   sidebarCollapsed: false,
+  sidebarTree: { ...DEFAULT_SIDEBAR_TREE, collections: {} },
   sendPing: 0,
 
   init: async () => {
@@ -151,6 +166,7 @@ export const useStore = create<State>((set, get) => ({
     let activeTabId: string | null = null;
     let activeEnvId: string | null = environments[0]?.id ?? null;
     let sidebarCollapsed = false;
+    let sidebarTree = { ...DEFAULT_SIDEBAR_TREE, collections: {} };
     try {
       const raw = localStorage.getItem("reqlo:session");
       if (raw) {
@@ -159,6 +175,7 @@ export const useStore = create<State>((set, get) => ({
           activeTabId: string | null;
           activeEnvId?: string | null;
           sidebarCollapsed?: boolean;
+          sidebarTree?: SidebarTreeState;
         };
         const validIds = new Set(requests.map((r) => r.id));
         tabs = (parsed.tabs ?? []).filter((t) => validIds.has(t.requestId));
@@ -169,6 +186,7 @@ export const useStore = create<State>((set, get) => ({
         if (parsed.activeEnvId && environments.find((e) => e.id === parsed.activeEnvId))
           activeEnvId = parsed.activeEnvId;
         sidebarCollapsed = !!parsed.sidebarCollapsed;
+        sidebarTree = setSidebarTreeDefaults(parsed.sidebarTree);
       }
     } catch {
       // Ignore invalid persisted session state and fall back to defaults.
@@ -191,6 +209,7 @@ export const useStore = create<State>((set, get) => ({
       tabs,
       activeTabId,
       sidebarCollapsed,
+      sidebarTree,
     });
   },
 
@@ -223,6 +242,23 @@ export const useStore = create<State>((set, get) => ({
 
   setActiveTab: (tabId) => {
     set({ activeTabId: tabId });
+    persistSession(get);
+  },
+
+  activateAdjacentTab: (direction) => {
+    const { tabs, activeTabId } = get();
+    if (!tabs.length) return;
+    const currentIndex = tabs.findIndex((tab) => tab.id === activeTabId);
+    if (currentIndex === -1) {
+      set({ activeTabId: tabs[0].id });
+      persistSession(get);
+      return;
+    }
+    const nextIndex =
+      direction === "next"
+        ? (currentIndex + 1) % tabs.length
+        : (currentIndex - 1 + tabs.length) % tabs.length;
+    set({ activeTabId: tabs[nextIndex].id });
     persistSession(get);
   },
 
@@ -271,14 +307,15 @@ export const useStore = create<State>((set, get) => ({
 
   deleteRequest: async (id) => {
     await db.requests.delete(id);
-    set((s) => ({
-      requests: s.requests.filter((r) => r.id !== id),
-      tabs: s.tabs.filter((t) => t.requestId !== id),
-    }));
-    const { tabs, activeTabId } = get();
-    if (activeTabId && !tabs.find((t) => t.id === activeTabId)) {
-      set({ activeTabId: tabs[0]?.id ?? null });
-    }
+    set((s) => {
+      const nextTabs = s.tabs.filter((t) => t.requestId !== id);
+      const activeTabStillExists = !!nextTabs.find((tab) => tab.id === s.activeTabId);
+      return {
+        requests: s.requests.filter((r) => r.id !== id),
+        tabs: nextTabs,
+        activeTabId: activeTabStillExists ? s.activeTabId : (nextTabs[0]?.id ?? null),
+      };
+    });
     persistSession(get);
   },
 
@@ -413,7 +450,7 @@ export const useStore = create<State>((set, get) => ({
     const existing = snapshot.requestId
       ? get().requests.find((request) => request.id === snapshot.requestId)
       : null;
-    let targetRequestId = existing?.id ?? null;
+    let targetRequestId: string | null = existing?.id ?? null;
 
     if (options?.openInNewTab || !existing) {
       const restored: ApiRequest = normalizeApiRequest({
@@ -568,21 +605,42 @@ export const useStore = create<State>((set, get) => ({
     set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed }));
     persistSession(get);
   },
+
+  setSidebarTreeOpen: (section, open) => {
+    set((state) => ({
+      sidebarTree:
+        section === "favorites" || section === "unfiled"
+          ? { ...state.sidebarTree, [section]: open }
+          : {
+              ...state.sidebarTree,
+              collections: { ...state.sidebarTree.collections, [section]: open },
+            },
+    }));
+    persistSession(get);
+  },
 }));
 
 // Re-export so consumers can `import { pickFile }` cleanly
 export { pickFile };
 
 function persistSession(get: () => State) {
-  const { tabs, activeTabId, activeEnvId, sidebarCollapsed } = get();
+  const { tabs, activeTabId, activeEnvId, sidebarCollapsed, sidebarTree } = get();
   try {
     localStorage.setItem(
       "reqlo:session",
-      JSON.stringify({ tabs, activeTabId, activeEnvId, sidebarCollapsed }),
+      JSON.stringify({ tabs, activeTabId, activeEnvId, sidebarCollapsed, sidebarTree }),
     );
   } catch {
     // Ignore storage write failures in private mode or quota-constrained environments.
   }
+}
+
+function setSidebarTreeDefaults(value?: SidebarTreeState | null): SidebarTreeState {
+  return {
+    collections: value?.collections ?? {},
+    favorites: value?.favorites ?? true,
+    unfiled: value?.unfiled ?? true,
+  };
 }
 
 function slugify(s: string) {

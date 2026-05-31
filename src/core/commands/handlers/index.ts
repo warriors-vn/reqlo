@@ -18,9 +18,11 @@ import {
   Globe,
   FlaskConical,
   Code2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { commandRegistry } from "../registry";
-import type { CommandDescriptor, CommandContext } from "../types";
+import type { CommandDescriptor } from "../types";
 import { useStore, pickFile } from "@/stores/useStore";
 import { useCodeSnippetPanelStore } from "@/features/code-snippets/stores/useCodeSnippetPanelStore";
 import { generateSnippetFromRequest } from "@/features/code-snippets/utils/generate-snippet";
@@ -195,6 +197,24 @@ export function registerBuiltInCommands(): () => void {
       icon: Settings,
       shortcut: "mod+,",
       run: () => s().openOverlay("settings"),
+    },
+    {
+      id: "nav.tab-next",
+      title: "Next Tab",
+      description: "Move to the next open request tab",
+      category: "navigation",
+      icon: ChevronRight,
+      shortcut: "mod+alt+arrowright",
+      run: () => s().activateAdjacentTab("next"),
+    },
+    {
+      id: "nav.tab-prev",
+      title: "Previous Tab",
+      description: "Move to the previous open request tab",
+      category: "navigation",
+      icon: ChevronLeft,
+      shortcut: "mod+alt+arrowleft",
+      run: () => s().activateAdjacentTab("prev"),
     },
 
     // ─────────── IMPORT / EXPORT ───────────

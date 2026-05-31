@@ -23,8 +23,18 @@ export interface ParsedShortcut {
 }
 
 export function parseShortcut(spec: string): ParsedShortcut {
-  const parts = spec.toLowerCase().split("+").map((p) => p.trim());
-  const out: ParsedShortcut = { mod: false, shift: false, alt: false, ctrl: false, meta: false, key: "" };
+  const parts = spec
+    .toLowerCase()
+    .split("+")
+    .map((p) => p.trim());
+  const out: ParsedShortcut = {
+    mod: false,
+    shift: false,
+    alt: false,
+    ctrl: false,
+    meta: false,
+    key: "",
+  };
   for (const p of parts) {
     if (p === "mod") out.mod = true;
     else if (p === "shift") out.shift = true;
@@ -46,6 +56,8 @@ export function eventMatches(spec: string, e: KeyboardEvent): boolean {
   const key = e.key.toLowerCase();
   if (s.key === "enter") return key === "enter";
   if (s.key === "escape") return key === "escape";
+  if (s.key === "arrowleft") return key === "arrowleft";
+  if (s.key === "arrowright") return key === "arrowright";
   return key === s.key;
 }
 
@@ -57,7 +69,16 @@ export function formatShortcut(spec: string): string {
   if (s.ctrl && !s.mod) out.push("⌃");
   if (s.alt) out.push(IS_MAC ? "⌥" : "Alt");
   if (s.shift) out.push(IS_MAC ? "⇧" : "Shift");
-  const key = s.key === "enter" ? "↵" : s.key.length === 1 ? s.key.toUpperCase() : s.key;
+  const key =
+    s.key === "enter"
+      ? "↵"
+      : s.key === "arrowleft"
+        ? "←"
+        : s.key === "arrowright"
+          ? "→"
+          : s.key.length === 1
+            ? s.key.toUpperCase()
+            : s.key;
   out.push(key);
   return IS_MAC ? out.join("") : out.join("+");
 }
