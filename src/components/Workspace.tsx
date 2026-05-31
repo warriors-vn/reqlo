@@ -3,7 +3,7 @@ import { useStore } from "@/stores/useStore";
 import { Sidebar } from "@/components/Sidebar";
 import { TabBar } from "@/components/TabBar";
 import { RequestBuilder } from "@/components/RequestBuilder";
-import { ResponseViewer, type ExecutionResult } from "@/components/ResponseViewer";
+import { ResponseViewer } from "@/components/ResponseViewer";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ImportCurlModal } from "@/components/ImportCurlModal";
 import { HistoryDrawer } from "@/components/HistoryDrawer";
@@ -15,6 +15,7 @@ import { createRequestSnapshot, uid } from "@/services/db";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCommandSystem } from "@/hooks/useCommandSystem";
 import { CodeSnippetPanel } from "@/features/code-snippets/components/CodeSnippetPanel";
+import { getExecutionResultExcerpt, type ExecutionResult } from "@/services/execution";
 
 export function Workspace() {
   const {
@@ -45,12 +46,13 @@ export function Workspace() {
   const activeRequest = activeTab ? requests.find((r) => r.id === activeTab.requestId) : null;
   const activeEnvironment = environments.find((env) => env.id === activeEnvId) ?? null;
   const result = activeRequest ? results[activeRequest.id] : null;
-  const isLoading = activeRequest ? !!loading[activeRequest.id] : false;
+  const isLoading = activeRequest ? loading[activeRequest.id] : false;
 
   const send = async () => {
     if (!activeRequest || !workspace) return;
     setLoading((s) => ({ ...s, [activeRequest.id]: true }));
     const res = await executeRequest(activeRequest, activeEnvironment);
+    const responseExcerpt = getExecutionResultExcerpt(res);
     setResults((s) => ({ ...s, [activeRequest.id]: res }));
     setLoading((s) => ({ ...s, [activeRequest.id]: false }));
     await addHistory({
@@ -76,14 +78,14 @@ export function Workspace() {
         activeRequest.url,
         res.status,
         activeEnvironment?.name,
-        res.body?.slice(0, 200),
+        responseExcerpt,
         res.error,
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase(),
       errorMessage: res.error,
-      responseExcerpt: res.body?.slice(0, 200),
+      responseExcerpt,
     });
   };
 
