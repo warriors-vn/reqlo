@@ -87,6 +87,7 @@ export interface ApiRequest {
   id: string;
   workspaceId: string;
   collectionId: string | null;
+  position: number;
   name: string;
   method: HttpMethod;
   url: string;
@@ -196,6 +197,37 @@ class ReqloDB extends Dexie {
             Object.assign(entry, normalizeHistoryEntry(entry));
           });
       });
+    this.version(4)
+      .stores({
+        workspaces: "id, updatedAt",
+        collections: "id, workspaceId, position",
+        requests:
+          "id, workspaceId, collectionId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
+        history:
+          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
+        environments: "id, workspaceId",
+      })
+      .upgrade(async (tx) => {
+        const requests = await tx.table<ApiRequest, string>("requests").toArray();
+        const byCollection = new Map<string, ApiRequest[]>();
+
+        requests.forEach((request) => {
+          const key = request.collectionId ?? "__unfiled__";
+          const items = byCollection.get(key) ?? [];
+          items.push(request);
+          byCollection.set(key, items);
+        });
+
+        await Promise.all(
+          [...byCollection.values()].flatMap((items) =>
+            items
+              .sort((left, right) => left.createdAt - right.createdAt)
+              .map((request, index) =>
+                tx.table<ApiRequest, string>("requests").update(request.id, { position: index }),
+              ),
+          ),
+        );
+      });
   }
 }
 
@@ -283,6 +315,7 @@ export function normalizeApiRequest(
   return {
     ...request,
     collectionId: request.collectionId ?? null,
+    position: request.position ?? request.createdAt,
     headers: cloneKV(request.headers ?? []),
     queryParams: cloneKV(request.queryParams ?? []),
     body,
@@ -403,6 +436,7 @@ export async function ensureSeed(): Promise<Workspace> {
       id: uid(),
       workspaceId: ws.id,
       collectionId: col.id,
+      position: 0,
       name: "List users",
       method: "GET",
       url: "https://jsonplaceholder.typicode.com/users",
@@ -419,6 +453,7 @@ export async function ensureSeed(): Promise<Workspace> {
       id: uid(),
       workspaceId: ws.id,
       collectionId: col.id,
+      position: 1,
       name: "Create post",
       method: "POST",
       url: "https://jsonplaceholder.typicode.com/posts",
@@ -442,6 +477,7 @@ export async function ensureSeed(): Promise<Workspace> {
       id: uid(),
       workspaceId: ws.id,
       collectionId: col.id,
+      position: 2,
       name: "Get single todo",
       method: "GET",
       url: "https://jsonplaceholder.typicode.com/todos/1",

@@ -5,6 +5,7 @@ import {
   FolderClosed,
   ChevronRight,
   ChevronDown,
+  GripVertical,
   Trash2,
   Star,
   Heart,
@@ -41,10 +42,12 @@ export function Sidebar() {
     createCollection,
     renameCollection,
     moveRequestToCollection,
+    reorderRequests,
     deleteRequest,
     duplicateRequest,
     toggleFavorite,
     exportCollectionById,
+    reorderCollections,
     setPalette,
     sidebarTree,
     setSidebarTreeOpen,
@@ -53,9 +56,15 @@ export function Sidebar() {
   const [newCollectionName, setNewCollectionName] = useState("");
   const [renamingCollectionId, setRenamingCollectionId] = useState<string | null>(null);
   const [collectionNameDraft, setCollectionNameDraft] = useState("");
+  const [draggedCollectionId, setDraggedCollectionId] = useState<string | null>(null);
+  const [draggedRequest, setDraggedRequest] = useState<{
+    id: string;
+    collectionId: string | null;
+  } | null>(null);
 
   const activeRequestId = tabs.find((t) => t.id === activeTabId)?.requestId;
   const q = query.trim().toLowerCase();
+  const dragEnabled = !q;
 
   const filteredRequests = useMemo(
     () =>
@@ -159,10 +168,16 @@ export function Sidebar() {
           <RequestList
             items={favorites}
             collections={collectionOptions}
+            listCollectionId={null}
+            reorderEnabled={false}
+            draggedRequest={draggedRequest}
             activeRequestId={activeRequestId}
             onOpen={openRequest}
             onToggleFavorite={(id) => void toggleFavorite(id)}
             onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
+            onDragStart={() => undefined}
+            onDragEnd={() => setDraggedRequest(null)}
+            onReorder={() => undefined}
             onDuplicate={(id) => void duplicateRequest(id)}
             onDelete={(id) => void deleteRequest(id)}
           />
@@ -178,10 +193,18 @@ export function Sidebar() {
           <RequestList
             items={unfiled}
             collections={collectionOptions}
+            listCollectionId={null}
+            reorderEnabled={dragEnabled}
+            draggedRequest={draggedRequest}
             activeRequestId={activeRequestId}
             onOpen={openRequest}
             onToggleFavorite={(id) => void toggleFavorite(id)}
             onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
+            onDragStart={(id, collectionId) => setDraggedRequest({ id, collectionId })}
+            onDragEnd={() => setDraggedRequest(null)}
+            onReorder={(draggedId, targetId, collectionId) =>
+              void reorderRequests(draggedId, targetId, collectionId)
+            }
             onDuplicate={(id) => void duplicateRequest(id)}
             onDelete={(id) => void deleteRequest(id)}
           />
@@ -221,6 +244,19 @@ export function Sidebar() {
               count={list.length}
               open={isOpen}
               onToggle={() => setSidebarTreeOpen(col.id, !isOpen)}
+              draggable={dragEnabled && renamingCollectionId !== col.id}
+              dragging={draggedCollectionId === col.id}
+              onDragStart={() => setDraggedCollectionId(col.id)}
+              onDragEnd={() => setDraggedCollectionId(null)}
+              onDragOver={(event) => {
+                if (!dragEnabled || !draggedCollectionId || draggedCollectionId === col.id) return;
+                event.preventDefault();
+              }}
+              onDrop={() => {
+                if (!draggedCollectionId || draggedCollectionId === col.id) return;
+                void reorderCollections(draggedCollectionId, col.id);
+                setDraggedCollectionId(null);
+              }}
               actions={
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -255,10 +291,18 @@ export function Sidebar() {
               <RequestList
                 items={list}
                 collections={collectionOptions}
+                listCollectionId={col.id}
+                reorderEnabled={dragEnabled}
+                draggedRequest={draggedRequest}
                 activeRequestId={activeRequestId}
                 onOpen={openRequest}
                 onToggleFavorite={(id) => void toggleFavorite(id)}
                 onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
+                onDragStart={(id, collectionId) => setDraggedRequest({ id, collectionId })}
+                onDragEnd={() => setDraggedRequest(null)}
+                onReorder={(draggedId, targetId, collectionId) =>
+                  void reorderRequests(draggedId, targetId, collectionId)
+                }
                 onDuplicate={(id) => void duplicateRequest(id)}
                 onDelete={(id) => void deleteRequest(id)}
               />
@@ -308,6 +352,12 @@ function SidebarSection({
   count,
   open,
   onToggle,
+  draggable,
+  dragging,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
   actions,
   children,
 }: {
@@ -316,6 +366,12 @@ function SidebarSection({
   count: number;
   open: boolean;
   onToggle: () => void;
+  draggable?: boolean;
+  dragging?: boolean;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+  onDragOver?: (event: React.DragEvent<HTMLButtonElement>) => void;
+  onDrop?: () => void;
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -324,8 +380,18 @@ function SidebarSection({
       <div className="group flex items-center gap-1">
         <button
           onClick={onToggle}
+          draggable={draggable}
+          onDragStart={() => onDragStart?.()}
+          onDragEnd={() => onDragEnd?.()}
+          onDragOver={onDragOver}
+          onDrop={() => onDrop?.()}
           className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-foreground/70 transition hover:bg-accent focus-ring"
         >
+          {draggable ? (
+            <GripVertical
+              className={cn("h-3.5 w-3.5 text-muted-foreground/70", dragging && "text-primary")}
+            />
+          ) : null}
           {open ? (
             <ChevronDown className="h-3.5 w-3.5" />
           ) : (
@@ -358,10 +424,16 @@ function SidebarSection({
 function RequestList({
   items,
   collections,
+  listCollectionId,
+  reorderEnabled,
+  draggedRequest,
   activeRequestId,
   onOpen,
   onToggleFavorite,
   onMove,
+  onDragStart,
+  onDragEnd,
+  onReorder,
   onDuplicate,
   onDelete,
 }: {
@@ -373,10 +445,16 @@ function RequestList({
     collectionId?: string | null;
   }>;
   collections: Array<{ id: string; name: string }>;
+  listCollectionId: string | null;
+  reorderEnabled: boolean;
+  draggedRequest: { id: string; collectionId: string | null } | null;
   activeRequestId?: string;
   onOpen: (id: string) => void;
   onToggleFavorite: (id: string) => void;
   onMove: (id: string, collectionId: string | null) => void;
+  onDragStart: (id: string, collectionId: string | null) => void;
+  onDragEnd: () => void;
+  onReorder: (draggedId: string, targetId: string, collectionId: string | null) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
@@ -389,14 +467,48 @@ function RequestList({
       {items.map((request) => (
         <div
           key={request.id}
+          draggable={reorderEnabled}
+          onDragStart={(event) => {
+            if (!reorderEnabled) return;
+            event.dataTransfer.effectAllowed = "move";
+            onDragStart(request.id, listCollectionId);
+          }}
+          onDragEnd={onDragEnd}
+          onDragOver={(event) => {
+            if (
+              !reorderEnabled ||
+              !draggedRequest ||
+              draggedRequest.collectionId !== listCollectionId ||
+              draggedRequest.id === request.id
+            ) {
+              return;
+            }
+            event.preventDefault();
+          }}
+          onDrop={() => {
+            if (
+              !reorderEnabled ||
+              !draggedRequest ||
+              draggedRequest.collectionId !== listCollectionId ||
+              draggedRequest.id === request.id
+            ) {
+              return;
+            }
+            onReorder(draggedRequest.id, request.id, listCollectionId);
+            onDragEnd();
+          }}
           className={cn(
             "group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition",
             activeRequestId === request.id
               ? "bg-accent text-accent-foreground"
               : "hover:bg-accent/60",
+            reorderEnabled && "cursor-grab active:cursor-grabbing",
           )}
           onClick={() => onOpen(request.id)}
         >
+          {reorderEnabled ? (
+            <GripVertical className="h-3.5 w-3.5 text-muted-foreground/60" />
+          ) : null}
           <MethodBadge method={request.method} className="w-10 shrink-0 text-right" />
           <span className="truncate text-xs">{request.name || "Untitled"}</span>
           <div className="ml-auto flex items-center gap-0.5 opacity-100 md:opacity-0 md:transition md:group-hover:opacity-100">

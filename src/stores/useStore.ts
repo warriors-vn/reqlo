@@ -81,6 +81,11 @@ interface State {
   deleteRequest: (id: string) => Promise<void>;
   renameRequest: (id: string, name: string) => Promise<void>;
   moveRequestToCollection: (id: string, collectionId: string | null) => Promise<void>;
+  reorderRequests: (
+    draggedId: string,
+    targetId: string,
+    collectionId: string | null,
+  ) => Promise<void>;
   duplicateRequest: (id: string) => Promise<ApiRequest | null>;
   toggleFavorite: (id: string) => Promise<void>;
   requestSend: () => void; // bumps sendPing; Workspace listens
@@ -88,6 +93,7 @@ interface State {
   // collections
   createCollection: (name: string) => Promise<Collection>;
   renameCollection: (id: string, name: string) => Promise<void>;
+  reorderCollections: (draggedId: string, targetId: string) => Promise<void>;
   duplicateCollection: (id: string) => Promise<Collection | null>;
   deleteCollection: (id: string) => Promise<void>;
 
@@ -170,7 +176,7 @@ export const useStore = create<State>((set, get) => ({
       db.environments.where("workspaceId").equals(ws.id).toArray(),
     ]);
     collections.sort((a, b) => a.position - b.position);
-    requests.sort((a, b) => a.createdAt - b.createdAt);
+    requests.sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
 
     let tabs: Tab[] = [];
     let activeTabId: string | null = null;
@@ -297,6 +303,7 @@ export const useStore = create<State>((set, get) => ({
       id: uid(),
       workspaceId: ws.id,
       collectionId,
+      position: getNextRequestPosition(get().requests, collectionId),
       name: "Untitled request",
       method: "GET" as HttpMethod,
       url: "",
@@ -334,7 +341,35 @@ export const useStore = create<State>((set, get) => ({
   },
 
   moveRequestToCollection: async (id, collectionId) => {
-    await get().updateRequest(id, { collectionId });
+    const request = get().requests.find((item) => item.id === id);
+    if (!request) return;
+    const nextPosition = getNextRequestPosition(
+      get().requests.filter((item) => item.id !== id),
+      collectionId,
+    );
+    await get().updateRequest(id, { collectionId, position: nextPosition });
+  },
+
+  reorderRequests: async (draggedId, targetId, collectionId) => {
+    if (draggedId === targetId) return;
+    const siblings = get()
+      .requests.filter((request) => request.collectionId === collectionId)
+      .sort((left, right) => left.position - right.position || left.createdAt - right.createdAt);
+    const draggedIndex = siblings.findIndex((request) => request.id === draggedId);
+    const targetIndex = siblings.findIndex((request) => request.id === targetId);
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    const reordered = reorderByIndex(siblings, draggedIndex, targetIndex).map((request, index) => ({
+      ...request,
+      position: index,
+    }));
+
+    set((state) => ({
+      requests: state.requests
+        .map((request) => reordered.find((item) => item.id === request.id) ?? request)
+        .sort((left, right) => left.position - right.position || left.createdAt - right.createdAt),
+    }));
+    await db.requests.bulkPut(reordered);
   },
 
   duplicateRequest: async (id) => {
@@ -344,6 +379,7 @@ export const useStore = create<State>((set, get) => ({
     const copy: ApiRequest = {
       ...src,
       id: uid(),
+      position: getNextRequestPosition(get().requests, src.collectionId),
       name: `${src.name} (copy)`,
       headers: src.headers.map((h) => ({ ...h, id: uid() })),
       queryParams: src.queryParams.map((p) => ({ ...p, id: uid() })),
@@ -393,6 +429,26 @@ export const useStore = create<State>((set, get) => ({
     }));
   },
 
+  reorderCollections: async (draggedId, targetId) => {
+    if (draggedId === targetId) return;
+    const collections = [...get().collections].sort(
+      (left, right) => left.position - right.position,
+    );
+    const draggedIndex = collections.findIndex((collection) => collection.id === draggedId);
+    const targetIndex = collections.findIndex((collection) => collection.id === targetId);
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    const reordered = reorderByIndex(collections, draggedIndex, targetIndex).map(
+      (collection, index) => ({
+        ...collection,
+        position: index,
+      }),
+    );
+
+    set({ collections: reordered });
+    await db.collections.bulkPut(reordered);
+  },
+
   duplicateCollection: async (id) => {
     const src = get().collections.find((c) => c.id === id);
     if (!src) return null;
@@ -412,6 +468,7 @@ export const useStore = create<State>((set, get) => ({
       ...r,
       id: uid(),
       collectionId: copy.id,
+      position: r.position,
       headers: r.headers.map((h) => ({ ...h, id: uid() })),
       queryParams: r.queryParams.map((p) => ({ ...p, id: uid() })),
       bodyDrafts: cloneBodyDrafts(r.bodyDrafts),
@@ -532,14 +589,14 @@ export const useStore = create<State>((set, get) => ({
     const existing = snapshot.requestId
       ? get().requests.find((request) => request.id === snapshot.requestId)
       : null;
-    let targetRequestId: string | null = null;
-    if (existing) targetRequestId = existing.id;
+    let targetRequestId: string | null;
 
     if (options?.openInNewTab || !existing) {
       const restored: ApiRequest = normalizeApiRequest({
         id: uid(),
         workspaceId: workspace.id,
         collectionId: snapshot.collectionId,
+        position: getNextRequestPosition(get().requests, snapshot.collectionId),
         name: options?.openInNewTab ? `${snapshot.requestName} · restored` : snapshot.requestName,
         method: snapshot.method,
         url: snapshot.url,
@@ -559,8 +616,18 @@ export const useStore = create<State>((set, get) => ({
       const tab = { id: uid(), requestId: restored.id, dirty: false };
       set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }));
     } else {
+      const nextCollectionId = snapshot.collectionId;
+      const collectionChanged = existing.collectionId !== nextCollectionId;
       const patch = {
-        collectionId: snapshot.collectionId,
+        collectionId: nextCollectionId,
+        ...(collectionChanged
+          ? {
+              position: getNextRequestPosition(
+                get().requests.filter((request) => request.id !== existing.id),
+                nextCollectionId,
+              ),
+            }
+          : {}),
         name: snapshot.requestName,
         method: snapshot.method,
         url: snapshot.url,
@@ -621,6 +688,7 @@ export const useStore = create<State>((set, get) => ({
     const colId = get().collections[0]?.id ?? null;
     const req = parseCurl(text, ws.id, colId);
     if (!req.url) return null;
+    req.position = getNextRequestPosition(get().requests, colId);
     await db.requests.add(req);
     set((s) => ({ requests: [...s.requests, normalizeApiRequest(req)] }));
     get().openRequest(req.id);
@@ -647,12 +715,13 @@ export const useStore = create<State>((set, get) => ({
       createdAt: Date.now(),
     };
     const now = Date.now();
-    const newReqs: ApiRequest[] = parsed.requests.map((r) =>
+    const newReqs: ApiRequest[] = parsed.requests.map((r, index) =>
       normalizeApiRequest({
         ...r,
         id: uid(),
         workspaceId: ws.id,
         collectionId: newCol.id,
+        position: r.position ?? index,
         headers: (r.headers ?? []).map((h) => ({ ...h, id: uid() })),
         queryParams: (r.queryParams ?? []).map((p) => ({ ...p, id: uid() })),
         createdAt: now,
@@ -712,6 +781,7 @@ export const useStore = create<State>((set, get) => ({
         collectionId: request.collectionId
           ? (collectionIdMap.get(request.collectionId) ?? null)
           : null,
+        position: request.position,
         headers: remapKvIds(request.headers ?? []),
         queryParams: remapKvIds(request.queryParams ?? []),
         bodyDrafts: remapBodyDraftIds(request.bodyDrafts),
@@ -885,6 +955,20 @@ function suggestCopyName(name: string, existingNames: string[]) {
   }
 
   return candidate;
+}
+
+function getNextRequestPosition(requests: ApiRequest[], collectionId: string | null) {
+  const siblings = requests.filter((request) => request.collectionId === collectionId);
+  if (!siblings.length) return 0;
+  return Math.max(...siblings.map((request) => request.position ?? 0)) + 1;
+}
+
+function reorderByIndex<T>(items: T[], from: number, to: number) {
+  const next = items.slice();
+  const [dragged] = next.splice(from, 1);
+  if (!dragged) return items;
+  next.splice(to, 0, dragged);
+  return next;
 }
 
 function remapKvIds<T extends { id: string }>(list: T[]) {

@@ -7,7 +7,7 @@ import {
   type Workspace,
 } from "@/services/db";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export interface CollectionExport {
   schema: "reqlo.collection";
@@ -29,7 +29,11 @@ export interface WorkspaceExport {
 }
 
 export async function exportCollection(collection: Collection): Promise<CollectionExport> {
-  const requests = await db.requests.where("collectionId").equals(collection.id).toArray();
+  const requests = await db.requests
+    .where("collectionId")
+    .equals(collection.id)
+    .toArray()
+    .then((items) => items.sort((left, right) => left.position - right.position));
   return {
     schema: "reqlo.collection",
     version: SCHEMA_VERSION,
@@ -41,8 +45,16 @@ export async function exportCollection(collection: Collection): Promise<Collecti
 
 export async function exportWorkspace(workspace: Workspace): Promise<WorkspaceExport> {
   const [collections, requests, environments, history] = await Promise.all([
-    db.collections.where("workspaceId").equals(workspace.id).toArray(),
-    db.requests.where("workspaceId").equals(workspace.id).toArray(),
+    db.collections
+      .where("workspaceId")
+      .equals(workspace.id)
+      .toArray()
+      .then((items) => items.sort((left, right) => left.position - right.position)),
+    db.requests
+      .where("workspaceId")
+      .equals(workspace.id)
+      .toArray()
+      .then((items) => items.sort((left, right) => left.position - right.position)),
     db.environments.where("workspaceId").equals(workspace.id).toArray(),
     db.history.where("workspaceId").equals(workspace.id).toArray(),
   ]);
@@ -134,6 +146,7 @@ function sanitizeHistoryForExport(history: HistoryEntry): HistoryEntry {
     id: history.snapshot.requestId ?? history.requestId ?? history.id,
     workspaceId: history.snapshot.workspaceId,
     collectionId: history.snapshot.collectionId,
+    position: 0,
     name: history.snapshot.requestName,
     method: history.snapshot.method,
     url: history.snapshot.url,
