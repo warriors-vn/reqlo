@@ -1,4 +1,5 @@
 import Dexie, { type Table } from "dexie";
+import type { ResponseKind } from "@/services/execution";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 export type RequestBodyType =
@@ -133,6 +134,11 @@ export interface HistoryEntry {
   pinned: boolean;
   searchText: string;
   snapshot: RequestSnapshot;
+  responseKind: ResponseKind;
+  responseContentType: string;
+  responseHeaders: Record<string, string>;
+  responseBody: string;
+  responseBodyTruncated: boolean;
   errorMessage?: string;
   responseExcerpt?: string;
 }
@@ -271,7 +277,8 @@ export function normalizeApiRequest(
   request: Partial<ApiRequest> &
     Pick<ApiRequest, "id" | "workspaceId" | "name" | "method" | "url" | "createdAt" | "updatedAt">,
 ): ApiRequest {
-  const legacyBodyType = request.bodyType === "text" ? "raw" : (request.bodyType ?? "none");
+  const rawBodyType = request.bodyType as RequestBodyType | "text" | undefined;
+  const legacyBodyType = rawBodyType === "text" ? "raw" : (rawBodyType ?? "none");
   const body = request.body ?? "";
   return {
     ...request,
@@ -324,6 +331,9 @@ export function normalizeHistoryEntry(
     bodyDrafts: createDefaultBodyDrafts(),
     auth: createDefaultAuth(),
   };
+  const rawSnapshotBodyType = snapshot.bodyType as RequestBodyType | "text" | undefined;
+  const normalizedSnapshotBodyType =
+    rawSnapshotBodyType === "text" ? "raw" : (rawSnapshotBodyType ?? "none");
 
   return {
     ...entry,
@@ -334,6 +344,11 @@ export function normalizeHistoryEntry(
     environmentName: entry.environmentName ?? null,
     favorite: entry.favorite ?? false,
     pinned: entry.pinned ?? false,
+    responseKind: entry.responseKind ?? "empty",
+    responseContentType: entry.responseContentType ?? "",
+    responseHeaders: { ...(entry.responseHeaders ?? {}) },
+    responseBody: entry.responseBody ?? "",
+    responseBodyTruncated: entry.responseBodyTruncated ?? false,
     searchText:
       entry.searchText ??
       [
@@ -342,6 +357,7 @@ export function normalizeHistoryEntry(
         entry.url,
         entry.status,
         entry.responseExcerpt,
+        entry.responseBody,
         entry.errorMessage,
       ]
         .filter(Boolean)
@@ -354,11 +370,11 @@ export function normalizeHistoryEntry(
       headers: cloneKV(snapshot.headers ?? []),
       queryParams: cloneKV(snapshot.queryParams ?? []),
       body: snapshot.body ?? "",
-      bodyType: snapshot.bodyType === "text" ? "raw" : (snapshot.bodyType ?? "none"),
+      bodyType: normalizedSnapshotBodyType,
       bodyDrafts: normalizeBodyDrafts(
         snapshot.bodyDrafts,
         snapshot.body,
-        snapshot.bodyType === "text" ? "raw" : (snapshot.bodyType ?? "none"),
+        normalizedSnapshotBodyType,
       ),
       auth: snapshot.auth ?? createDefaultAuth(),
     },

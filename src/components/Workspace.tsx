@@ -15,7 +15,13 @@ import { createRequestSnapshot, uid } from "@/services/db";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCommandSystem } from "@/hooks/useCommandSystem";
 import { CodeSnippetPanel } from "@/features/code-snippets/components/CodeSnippetPanel";
-import { getExecutionResultExcerpt, type ExecutionResult } from "@/services/execution";
+import {
+  getExecutionResultExcerpt,
+  isTextualResponse,
+  type ExecutionResult,
+} from "@/services/execution";
+
+const MAX_HISTORY_RESPONSE_BODY = 40_000;
 
 export function Workspace() {
   const {
@@ -53,6 +59,12 @@ export function Workspace() {
     setLoading((s) => ({ ...s, [activeRequest.id]: true }));
     const res = await executeRequest(activeRequest, activeEnvironment);
     const responseExcerpt = getExecutionResultExcerpt(res);
+    const responseBody =
+      isTextualResponse(res.responseKind) && res.body.length > MAX_HISTORY_RESPONSE_BODY
+        ? res.body.slice(0, MAX_HISTORY_RESPONSE_BODY)
+        : isTextualResponse(res.responseKind)
+          ? res.body
+          : "";
     setResults((s) => ({ ...s, [activeRequest.id]: res }));
     setLoading((s) => ({ ...s, [activeRequest.id]: false }));
     await addHistory({
@@ -72,6 +84,12 @@ export function Workspace() {
       favorite: false,
       pinned: false,
       snapshot: createRequestSnapshot(activeRequest),
+      responseKind: res.responseKind,
+      responseContentType: res.contentType,
+      responseHeaders: { ...res.headers },
+      responseBody,
+      responseBodyTruncated:
+        isTextualResponse(res.responseKind) && res.body.length > MAX_HISTORY_RESPONSE_BODY,
       searchText: [
         activeRequest.name,
         activeRequest.method,

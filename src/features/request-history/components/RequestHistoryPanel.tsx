@@ -282,8 +282,8 @@ export function RequestHistoryPanel() {
       {compareMode && compareEntries.length < 2 && (
         <div className="rounded-[24px] border border-dashed border-border bg-background/60 px-4 py-4 text-sm text-muted-foreground">
           Select {2 - compareEntries.length} more history{" "}
-          {compareEntries.length === 1 ? "entry" : "entries"} to compare snapshots, auth, and
-          response metadata.
+          {compareEntries.length === 1 ? "entry" : "entries"} to compare snapshots, headers, JSON
+          fields, and textual response bodies.
         </div>
       )}
 
