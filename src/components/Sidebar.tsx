@@ -9,11 +9,26 @@ import {
   Star,
   Heart,
   Inbox,
+  MoreHorizontal,
+  Download,
+  Pencil,
 } from "lucide-react";
 import { useStore } from "@/stores/useStore";
 import { MethodBadge } from "./MethodBadge";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export function Sidebar() {
   const {
@@ -24,15 +39,20 @@ export function Sidebar() {
     tabs,
     createRequest,
     createCollection,
+    renameCollection,
+    moveRequestToCollection,
     deleteRequest,
     duplicateRequest,
     toggleFavorite,
+    exportCollectionById,
     setPalette,
     sidebarTree,
     setSidebarTreeOpen,
   } = useStore();
   const [query, setQuery] = useState("");
   const [newCollectionName, setNewCollectionName] = useState("");
+  const [renamingCollectionId, setRenamingCollectionId] = useState<string | null>(null);
+  const [collectionNameDraft, setCollectionNameDraft] = useState("");
 
   const activeRequestId = tabs.find((t) => t.id === activeTabId)?.requestId;
   const q = query.trim().toLowerCase();
@@ -57,12 +77,30 @@ export function Sidebar() {
     () => filteredRequests.filter((request) => request.collectionId === null),
     [filteredRequests],
   );
+  const collectionOptions = useMemo(
+    () => collections.map((collection) => ({ id: collection.id, name: collection.name })),
+    [collections],
+  );
 
   const createCollectionInline = async () => {
     const name = newCollectionName.trim();
     if (!name) return;
     await createCollection(name);
     setNewCollectionName("");
+  };
+
+  const startCollectionRename = (id: string, name: string) => {
+    setRenamingCollectionId(id);
+    setCollectionNameDraft(name);
+  };
+
+  const submitCollectionRename = async (id: string) => {
+    const nextName = collectionNameDraft.trim();
+    if (nextName) {
+      await renameCollection(id, nextName);
+    }
+    setRenamingCollectionId(null);
+    setCollectionNameDraft("");
   };
 
   return (
@@ -120,9 +158,11 @@ export function Sidebar() {
         >
           <RequestList
             items={favorites}
+            collections={collectionOptions}
             activeRequestId={activeRequestId}
             onOpen={openRequest}
             onToggleFavorite={(id) => void toggleFavorite(id)}
+            onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
             onDuplicate={(id) => void duplicateRequest(id)}
             onDelete={(id) => void deleteRequest(id)}
           />
@@ -137,9 +177,11 @@ export function Sidebar() {
         >
           <RequestList
             items={unfiled}
+            collections={collectionOptions}
             activeRequestId={activeRequestId}
             onOpen={openRequest}
             onToggleFavorite={(id) => void toggleFavorite(id)}
+            onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
             onDuplicate={(id) => void duplicateRequest(id)}
             onDelete={(id) => void deleteRequest(id)}
           />
@@ -152,16 +194,71 @@ export function Sidebar() {
             <SidebarSection
               key={col.id}
               icon={<FolderClosed className="h-3.5 w-3.5 text-muted-foreground" />}
-              title={col.name}
+              title={
+                renamingCollectionId === col.id ? (
+                  <input
+                    autoFocus
+                    value={collectionNameDraft}
+                    onChange={(event) => setCollectionNameDraft(event.target.value)}
+                    onClick={(event) => event.stopPropagation()}
+                    onBlur={() => void submitCollectionRename(col.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void submitCollectionRename(col.id);
+                      }
+                      if (event.key === "Escape") {
+                        setRenamingCollectionId(null);
+                        setCollectionNameDraft("");
+                      }
+                    }}
+                    className="h-7 min-w-0 rounded-lg border border-border/80 bg-background/80 px-2 text-xs font-medium outline-none transition focus:border-foreground/15"
+                  />
+                ) : (
+                  col.name
+                )
+              }
               count={list.length}
               open={isOpen}
               onToggle={() => setSidebarTreeOpen(col.id, !isOpen)}
+              actions={
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={(event) => event.stopPropagation()}
+                      className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                      title={`${col.name} actions`}
+                    >
+                      <MoreHorizontal className="h-3.5 w-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        startCollectionRename(col.id, col.name);
+                      }}
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Rename collection
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void createRequest(col.id)}>
+                      <Plus className="h-3.5 w-3.5" /> New request in collection
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => void exportCollectionById(col.id)}>
+                      <Download className="h-3.5 w-3.5" /> Export collection
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              }
             >
               <RequestList
                 items={list}
+                collections={collectionOptions}
                 activeRequestId={activeRequestId}
                 onOpen={openRequest}
                 onToggleFavorite={(id) => void toggleFavorite(id)}
+                onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
                 onDuplicate={(id) => void duplicateRequest(id)}
                 onDelete={(id) => void deleteRequest(id)}
               />
@@ -211,26 +308,35 @@ function SidebarSection({
   count,
   open,
   onToggle,
+  actions,
   children,
 }: {
   icon: React.ReactNode;
-  title: string;
+  title: React.ReactNode;
   count: number;
   open: boolean;
   onToggle: () => void;
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="mb-1.5">
-      <button
-        onClick={onToggle}
-        className="group flex w-full items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-foreground/70 transition hover:bg-accent focus-ring"
-      >
-        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        {icon}
-        <span className="truncate">{title}</span>
-        <span className="ml-auto text-[10px] text-muted-foreground/70">{count}</span>
-      </button>
+      <div className="group flex items-center gap-1">
+        <button
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-foreground/70 transition hover:bg-accent focus-ring"
+        >
+          {open ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
+          {icon}
+          <span className="min-w-0 flex-1 truncate text-left">{title}</span>
+          <span className="text-[10px] text-muted-foreground/70">{count}</span>
+        </button>
+        {actions}
+      </div>
 
       <AnimatePresence initial={false}>
         {open && (
@@ -251,9 +357,11 @@ function SidebarSection({
 
 function RequestList({
   items,
+  collections,
   activeRequestId,
   onOpen,
   onToggleFavorite,
+  onMove,
   onDuplicate,
   onDelete,
 }: {
@@ -262,10 +370,13 @@ function RequestList({
     method: Parameters<typeof MethodBadge>[0]["method"];
     name: string;
     favorite?: boolean;
+    collectionId?: string | null;
   }>;
+  collections: Array<{ id: string; name: string }>;
   activeRequestId?: string;
   onOpen: (id: string) => void;
   onToggleFavorite: (id: string) => void;
+  onMove: (id: string, collectionId: string | null) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
@@ -315,17 +426,48 @@ function RequestList({
             >
               <Plus className="h-3 w-3" />
             </button>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete(request.id);
-              }}
-              className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              title="Delete request"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  onClick={(event) => event.stopPropagation()}
+                  className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title="Request actions"
+                >
+                  <MoreHorizontal className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>Move to</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuRadioGroup
+                      value={request.collectionId ?? "__unfiled__"}
+                      onValueChange={(value) =>
+                        onMove(request.id, value === "__unfiled__" ? null : value)
+                      }
+                    >
+                      <DropdownMenuRadioItem value="__unfiled__">Unfiled</DropdownMenuRadioItem>
+                      {collections.map((collection) => (
+                        <DropdownMenuRadioItem key={collection.id} value={collection.id}>
+                          {collection.name}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuItem onSelect={() => onDuplicate(request.id)}>
+                  <Plus className="h-3.5 w-3.5" /> Duplicate request
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => onDelete(request.id)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Delete request
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       ))}

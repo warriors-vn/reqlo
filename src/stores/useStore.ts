@@ -80,12 +80,14 @@ interface State {
   createRequest: (collectionId: string | null) => Promise<ApiRequest>;
   deleteRequest: (id: string) => Promise<void>;
   renameRequest: (id: string, name: string) => Promise<void>;
+  moveRequestToCollection: (id: string, collectionId: string | null) => Promise<void>;
   duplicateRequest: (id: string) => Promise<ApiRequest | null>;
   toggleFavorite: (id: string) => Promise<void>;
   requestSend: () => void; // bumps sendPing; Workspace listens
 
   // collections
   createCollection: (name: string) => Promise<Collection>;
+  renameCollection: (id: string, name: string) => Promise<void>;
   duplicateCollection: (id: string) => Promise<Collection | null>;
   deleteCollection: (id: string) => Promise<void>;
 
@@ -331,6 +333,10 @@ export const useStore = create<State>((set, get) => ({
     await get().updateRequest(id, { name });
   },
 
+  moveRequestToCollection: async (id, collectionId) => {
+    await get().updateRequest(id, { collectionId });
+  },
+
   duplicateRequest: async (id) => {
     const src = get().requests.find((r) => r.id === id);
     if (!src) return null;
@@ -363,16 +369,28 @@ export const useStore = create<State>((set, get) => ({
   createCollection: async (name) => {
     const ws = get().workspace!;
     const position = get().collections.length;
+    const finalName = name.trim() || `Collection ${position + 1}`;
     const col: Collection = {
       id: uid(),
       workspaceId: ws.id,
-      name,
+      name: finalName,
       position,
       createdAt: Date.now(),
     };
     await db.collections.add(col);
     set((s) => ({ collections: [...s.collections, col] }));
     return col;
+  },
+
+  renameCollection: async (id, name) => {
+    const nextName = name.trim();
+    if (!nextName) return;
+    await db.collections.update(id, { name: nextName });
+    set((state) => ({
+      collections: state.collections.map((collection) =>
+        collection.id === id ? { ...collection, name: nextName } : collection,
+      ),
+    }));
   },
 
   duplicateCollection: async (id) => {
@@ -514,7 +532,8 @@ export const useStore = create<State>((set, get) => ({
     const existing = snapshot.requestId
       ? get().requests.find((request) => request.id === snapshot.requestId)
       : null;
-    let targetRequestId: string | null = existing?.id;
+    let targetRequestId: string | null = null;
+    if (existing) targetRequestId = existing.id;
 
     if (options?.openInNewTab || !existing) {
       const restored: ApiRequest = normalizeApiRequest({
@@ -741,29 +760,17 @@ export const useStore = create<State>((set, get) => ({
       )
       .sort((left, right) => right.executedAt - left.executedAt);
 
-    await db.transaction(
-      "rw",
-      db.workspaces,
-      db.collections,
-      db.requests,
-      db.environments,
-      db.history,
-      async () => {
-        await Promise.all([
-          db.history.clear(),
-          db.requests.clear(),
-          db.collections.clear(),
-          db.environments.clear(),
-          db.workspaces.clear(),
-        ]);
+    await db.history.clear();
+    await db.requests.clear();
+    await db.collections.clear();
+    await db.environments.clear();
+    await db.workspaces.clear();
 
-        await db.workspaces.add(workspace);
-        if (collections.length) await db.collections.bulkAdd(collections);
-        if (requests.length) await db.requests.bulkAdd(requests);
-        if (environments.length) await db.environments.bulkAdd(environments);
-        if (history.length) await db.history.bulkAdd(history);
-      },
-    );
+    await db.workspaces.add(workspace);
+    if (collections.length) await db.collections.bulkAdd(collections);
+    if (requests.length) await db.requests.bulkAdd(requests);
+    if (environments.length) await db.environments.bulkAdd(environments);
+    if (history.length) await db.history.bulkAdd(history);
 
     resetPersistedSession();
 
@@ -823,10 +830,6 @@ export const useStore = create<State>((set, get) => ({
 
 // Re-export so consumers can `import { pickFile }` cleanly
 export { pickFile };
-
-export function restoreWorkspaceFromJSON(text: string) {
-  return useStore.getState().importWorkspaceJSON(text);
-}
 
 function persistSession(get: () => State) {
   const { tabs, activeTabId, activeEnvId, sidebarCollapsed, sidebarTree } = get();
