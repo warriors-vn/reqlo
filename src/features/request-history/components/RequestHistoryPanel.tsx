@@ -81,6 +81,10 @@ export function RequestHistoryPanel() {
     [grouped],
   );
   const itemIds = filteredHistory.map((entry) => entry.id);
+  const selectedRowIndex = useMemo(
+    () => flatRows.findIndex((row) => row.type === "item" && row.item.id === selectedId),
+    [flatRows, selectedId],
+  );
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -113,6 +117,25 @@ export function RequestHistoryPanel() {
   }, [open]);
 
   useEffect(() => {
+    const node = scrollerRef.current;
+    if (!open || !node || selectedRowIndex < 0) return;
+
+    const rowTop = selectedRowIndex * ROW_HEIGHT;
+    const rowBottom = rowTop + ROW_HEIGHT;
+    const viewportTop = node.scrollTop;
+    const viewportBottom = viewportTop + node.clientHeight;
+
+    if (rowTop < viewportTop) {
+      node.scrollTo({ top: rowTop });
+      return;
+    }
+
+    if (rowBottom > viewportBottom) {
+      node.scrollTo({ top: Math.max(0, rowBottom - node.clientHeight) });
+    }
+  }, [open, selectedRowIndex]);
+
+  useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -126,7 +149,7 @@ export function RequestHistoryPanel() {
         event.preventDefault();
         selectPrevious(itemIds);
       }
-      if (event.key === "Enter" && selectedId) {
+      if (event.key === "Enter" && selectedId && !inEditable) {
         event.preventDefault();
         void restoreHistoryEntry(selectedId, { rerun: event.metaKey || event.ctrlKey });
       }
@@ -368,6 +391,7 @@ function HistoryRow({
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <button
+              type="button"
               onClick={onOpen}
               className="truncate text-left text-sm font-medium tracking-tight hover:underline"
             >
@@ -401,7 +425,11 @@ function HistoryRow({
         <div className="flex shrink-0 items-center gap-1 opacity-100 md:opacity-0 md:transition md:group-hover:opacity-100">
           {compareMode && (
             <button
-              onClick={onToggleCompare}
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleCompare();
+              }}
               className={actionButtonClass(compareSelected)}
               title={compareSelected ? "Selected for compare" : "Select for compare"}
             >
@@ -409,14 +437,22 @@ function HistoryRow({
             </button>
           )}
           <button
-            onClick={onTogglePinned}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onTogglePinned();
+            }}
             className={actionButtonClass(entry.pinned)}
             title="Pin history item"
           >
             <Pin className="h-3.5 w-3.5" />
           </button>
           <button
-            onClick={onToggleFavorite}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleFavorite();
+            }}
             className={actionButtonClass(entry.favorite)}
             title="Favorite history item"
           >
@@ -426,18 +462,34 @@ function HistoryRow({
               <Star className="h-3.5 w-3.5" />
             )}
           </button>
-          <button onClick={onRun} className={actionButtonClass()} title="Re-run request">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRun();
+            }}
+            className={actionButtonClass()}
+            title="Re-run request"
+          >
             <Play className="h-3.5 w-3.5" />
           </button>
           <button
-            onClick={onOpenInNewTab}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenInNewTab();
+            }}
             className={actionButtonClass()}
             title="Restore in new tab"
           >
             <ExternalLink className="h-3.5 w-3.5" />
           </button>
           <button
-            onClick={onDelete}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete();
+            }}
             className={cn(actionButtonClass(), "hover:bg-destructive/10 hover:text-destructive")}
             title="Delete history item"
           >
