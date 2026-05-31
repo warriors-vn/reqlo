@@ -38,6 +38,19 @@ const confirmDanger = (msg: string) => window.confirm(msg);
 
 const s = () => useStore.getState();
 
+function suggestEnvironmentName(existingNames: string[]) {
+  const taken = new Set(existingNames.map((name) => name.toLowerCase()));
+  let index = 1;
+  let candidate = "Environment";
+
+  while (taken.has(candidate.toLowerCase())) {
+    index += 1;
+    candidate = `Environment ${index}`;
+  }
+
+  return candidate;
+}
+
 export function registerBuiltInCommands(): () => void {
   const cmds: CommandDescriptor[] = [
     // ─────────── REQUESTS ───────────
@@ -159,14 +172,19 @@ export function registerBuiltInCommands(): () => void {
       category: "workspace",
       icon: Globe,
       shortcut: "mod+shift+n",
-      run: () => {
-        const n = ask("Environment name");
-        if (n) s().createEnvironment(n);
+      run: async () => {
+        const state = s();
+        const environment = await state.createEnvironment(
+          suggestEnvironmentName(state.environments.map((item) => item.name)),
+        );
+        state.setActiveEnv(environment.id);
+        state.openOverlay("env-switcher");
       },
     },
     {
       id: "env.switch",
-      title: "Switch Environment",
+      title: "Manage Environments",
+      description: "Switch, edit, and preview environments",
       category: "workspace",
       icon: Globe,
       shortcut: "mod+shift+e",
@@ -248,7 +266,7 @@ export function registerBuiltInCommands(): () => void {
       description: "Download the first collection as JSON",
       category: "import-export",
       icon: FileJson,
-      shortcut: "mod+shift+e",
+      shortcut: "mod+alt+shift+e",
       run: () => {
         const cols = s().collections;
         if (!cols.length) return;

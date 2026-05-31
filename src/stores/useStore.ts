@@ -90,6 +90,12 @@ interface State {
 
   // environments
   createEnvironment: (name: string) => Promise<Environment>;
+  updateEnvironment: (
+    id: string,
+    patch: Partial<Pick<Environment, "name" | "variables">>,
+  ) => Promise<void>;
+  duplicateEnvironment: (id: string) => Promise<Environment | null>;
+  deleteEnvironment: (id: string) => Promise<void>;
   setActiveEnv: (id: string | null) => void;
 
   // history
@@ -414,10 +420,12 @@ export const useStore = create<State>((set, get) => ({
 
   createEnvironment: async (name) => {
     const ws = get().workspace!;
+    const finalName =
+      name.trim() || suggestEnvironmentName(get().environments.map((env) => env.name));
     const env: Environment = {
       id: uid(),
       workspaceId: ws.id,
-      name,
+      name: finalName,
       variables: [],
       createdAt: Date.now(),
     };
@@ -427,7 +435,61 @@ export const useStore = create<State>((set, get) => ({
     return env;
   },
 
+  updateEnvironment: async (id, patch) => {
+    const current = get().environments.find((environment) => environment.id === id);
+    if (!current) return;
+
+    const payload: Partial<Pick<Environment, "name" | "variables">> = {
+      ...patch,
+      ...(patch.name !== undefined ? { name: patch.name.trim() || current.name } : {}),
+      ...(patch.variables ? { variables: patch.variables.map((item) => ({ ...item })) } : {}),
+    };
+
+    set((state) => ({
+      environments: state.environments.map((environment) =>
+        environment.id === id ? { ...environment, ...payload } : environment,
+      ),
+    }));
+    await db.environments.update(id, payload);
+  },
+
+  duplicateEnvironment: async (id) => {
+    const source = get().environments.find((environment) => environment.id === id);
+    const workspace = get().workspace;
+    if (!source || !workspace) return null;
+
+    const copy: Environment = {
+      ...source,
+      id: uid(),
+      workspaceId: workspace.id,
+      name: suggestCopyName(
+        source.name,
+        get().environments.map((environment) => environment.name),
+      ),
+      variables: source.variables.map((item) => ({ ...item })),
+      createdAt: Date.now(),
+    };
+
+    await db.environments.add(copy);
+    set((state) => ({ environments: [...state.environments, copy] }));
+    persistSession(get);
+    return copy;
+  },
+
+  deleteEnvironment: async (id) => {
+    await db.environments.delete(id);
+    set((state) => {
+      const environments = state.environments.filter((environment) => environment.id !== id);
+      return {
+        environments,
+        activeEnvId: state.activeEnvId === id ? (environments[0]?.id ?? null) : state.activeEnvId,
+      };
+    });
+    persistSession(get);
+  },
+
   setActiveEnv: (id) => {
+    if (id && !get().environments.some((environment) => environment.id === id)) return;
     set({ activeEnvId: id });
     persistSession(get);
   },
@@ -450,7 +512,7 @@ export const useStore = create<State>((set, get) => ({
     const existing = snapshot.requestId
       ? get().requests.find((request) => request.id === snapshot.requestId)
       : null;
-    let targetRequestId: string | null = existing?.id ?? null;
+    let targetRequestId: string | null = existing?.id;
 
     if (options?.openInNewTab || !existing) {
       const restored: ApiRequest = normalizeApiRequest({
@@ -650,4 +712,31 @@ function slugify(s: string) {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "") || "reqlo"
   );
+}
+
+function suggestEnvironmentName(existingNames: string[]) {
+  const taken = new Set(existingNames.map((name) => name.toLowerCase()));
+  let index = 1;
+  let candidate = "Environment";
+
+  while (taken.has(candidate.toLowerCase())) {
+    index += 1;
+    candidate = `Environment ${index}`;
+  }
+
+  return candidate;
+}
+
+function suggestCopyName(name: string, existingNames: string[]) {
+  const base = name.trim() || "Environment";
+  const taken = new Set(existingNames.map((item) => item.toLowerCase()));
+  let candidate = `${base} (copy)`;
+  let index = 2;
+
+  while (taken.has(candidate.toLowerCase())) {
+    candidate = `${base} (copy ${index})`;
+    index += 1;
+  }
+
+  return candidate;
 }
