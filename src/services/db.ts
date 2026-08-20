@@ -26,6 +26,8 @@ export interface StoredFileBlob {
   type: string;
   lastModified: number;
   blob?: Blob;
+  /** Base64-encoded blob content, present only in exported workspace/collection JSON. Hydrated back into `blob` on import. */
+  blobData?: string;
 }
 
 export interface FormDataRow {
@@ -233,7 +235,7 @@ class ReqloDB extends Dexie {
 
 export const db = new ReqloDB();
 
-export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+export const uid = () => crypto.randomUUID();
 
 export function createDefaultAuth(): RequestAuth {
   return { type: "none" };
@@ -263,8 +265,26 @@ export function cloneKV(list: KV[]): KV[] {
   return list.map((item) => ({ ...item }));
 }
 
+export async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+export function base64ToBlob(base64: string, type: string): Blob {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type });
+}
+
 export function cloneStoredFile(file: StoredFileBlob): StoredFileBlob {
-  return { ...file };
+  const { blobData, ...meta } = file;
+  if (blobData && !meta.blob) {
+    return { ...meta, blob: base64ToBlob(blobData, meta.type) };
+  }
+  return { ...meta };
 }
 
 export function cloneBodyDrafts(drafts: RequestBodyDrafts): RequestBodyDrafts {

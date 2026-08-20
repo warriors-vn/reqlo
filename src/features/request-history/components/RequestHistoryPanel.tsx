@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { MethodBadge } from "@/components/MethodBadge";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/stores/useStore";
 import { useDebouncedValue } from "@/features/request-history/hooks/useDebouncedValue";
@@ -91,6 +92,7 @@ export function RequestHistoryPanel() {
   const [viewportHeight, setViewportHeight] = useState(520);
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const compareEntries = useMemo(
     () =>
@@ -155,20 +157,12 @@ export function RequestHistoryPanel() {
       }
       if ((event.key === "Backspace" || event.key === "Delete") && selectedId && !inEditable) {
         event.preventDefault();
-        void deleteHistoryEntry(selectedId);
+        setPendingDeleteId(selectedId);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    deleteHistoryEntry,
-    itemIds,
-    open,
-    restoreHistoryEntry,
-    selectNext,
-    selectPrevious,
-    selectedId,
-  ]);
+  }, [itemIds, open, restoreHistoryEntry, selectNext, selectPrevious, selectedId]);
 
   const virtualRows = useVirtualHistoryList({
     items: flatRows,
@@ -322,7 +316,7 @@ export function RequestHistoryPanel() {
                         void restoreHistoryEntry(row.item.id, { openInNewTab: true })
                       }
                       onRun={() => void restoreHistoryEntry(row.item.id, { rerun: true })}
-                      onDelete={() => void deleteHistoryEntry(row.item.id)}
+                      onDelete={() => setPendingDeleteId(row.item.id)}
                       onToggleFavorite={() => void toggleHistoryFavorite(row.item.id)}
                       onTogglePinned={() => void toggleHistoryPinned(row.item.id)}
                       compareMode={compareMode}
@@ -336,6 +330,23 @@ export function RequestHistoryPanel() {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setPendingDeleteId(null);
+        }}
+        title="Delete history entry"
+        description={
+          pendingDeleteId
+            ? `"${history.find((entry) => entry.id === pendingDeleteId)?.requestName ?? "This entry"}" will be permanently removed from history. This can't be undone.`
+            : ""
+        }
+        onConfirm={() => {
+          if (pendingDeleteId) void deleteHistoryEntry(pendingDeleteId);
+          setPendingDeleteId(null);
+        }}
+      />
     </div>
   );
 }

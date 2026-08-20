@@ -1,9 +1,11 @@
 import {
+  blobToBase64,
   db,
   type ApiRequest,
   type Collection,
   type Environment,
   type HistoryEntry,
+  type StoredFileBlob,
   type Workspace,
 } from "@/services/db";
 
@@ -39,7 +41,7 @@ export async function exportCollection(collection: Collection): Promise<Collecti
     version: SCHEMA_VERSION,
     exportedAt: Date.now(),
     collection,
-    requests: requests.map(sanitizeRequestForExport),
+    requests: await Promise.all(requests.map(sanitizeRequestForExport)),
   };
 }
 
@@ -64,9 +66,9 @@ export async function exportWorkspace(workspace: Workspace): Promise<WorkspaceEx
     exportedAt: Date.now(),
     workspace,
     collections,
-    requests: requests.map(sanitizeRequestForExport),
+    requests: await Promise.all(requests.map(sanitizeRequestForExport)),
     environments,
-    history: history.map(sanitizeHistoryForExport),
+    history: await Promise.all(history.map(sanitizeHistoryForExport)),
   };
 }
 
@@ -123,26 +125,34 @@ export function validateWorkspaceExport(obj: unknown): obj is WorkspaceExport {
   );
 }
 
-function sanitizeRequestForExport(request: ApiRequest): ApiRequest {
+async function exportStoredFile(file: StoredFileBlob): Promise<StoredFileBlob> {
+  const { blob, ...meta } = file;
+  if (!blob) return meta;
+  return { ...meta, blobData: await blobToBase64(blob) };
+}
+
+async function sanitizeRequestForExport(request: ApiRequest): Promise<ApiRequest> {
   return {
     ...request,
     bodyDrafts: {
       ...request.bodyDrafts,
-      formData: request.bodyDrafts.formData.map((row) => ({
-        ...row,
-        files: row.files.map(({ blob: _blob, ...file }) => file),
-      })),
+      formData: await Promise.all(
+        request.bodyDrafts.formData.map(async (row) => ({
+          ...row,
+          files: await Promise.all(row.files.map(exportStoredFile)),
+        })),
+      ),
       binary: {
         file: request.bodyDrafts.binary.file
-          ? (({ blob: _blob, ...file }) => file)(request.bodyDrafts.binary.file)
+          ? await exportStoredFile(request.bodyDrafts.binary.file)
           : null,
       },
     },
   };
 }
 
-function sanitizeHistoryForExport(history: HistoryEntry): HistoryEntry {
-  const sanitizedRequest = sanitizeRequestForExport({
+async function sanitizeHistoryForExport(history: HistoryEntry): Promise<HistoryEntry> {
+  const sanitizedRequest = await sanitizeRequestForExport({
     id: history.snapshot.requestId ?? history.requestId ?? history.id,
     workspaceId: history.snapshot.workspaceId,
     collectionId: history.snapshot.collectionId,

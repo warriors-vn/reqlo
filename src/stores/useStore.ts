@@ -1,5 +1,6 @@
 import Dexie from "dexie";
 import { create } from "zustand";
+import { toast } from "sonner";
 import {
   db,
   uid,
@@ -29,7 +30,6 @@ import {
 interface Tab {
   id: string;
   requestId: string;
-  dirty: boolean;
 }
 
 export interface SidebarSelection {
@@ -78,7 +78,6 @@ interface State {
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   activateAdjacentTab: (direction: "next" | "prev") => void;
-  markDirty: (requestId: string, dirty: boolean) => void;
   getActiveRequest: () => ApiRequest | null;
   setSidebarSelection: (selection: SidebarSelection | null) => void;
 
@@ -183,7 +182,7 @@ export const useStore = create<State>((set, get) => ({
         .then((items) => items.map(normalizeHistoryEntry)),
       db.environments.where("workspaceId").equals(ws.id).toArray(),
     ]);
-    collections.sort((a, b) => a.position - b.position);
+    collections.sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
     requests.sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
 
     let tabs: Tab[] = [];
@@ -217,7 +216,7 @@ export const useStore = create<State>((set, get) => ({
     }
 
     if (tabs.length === 0 && requests[0]) {
-      const t: Tab = { id: uid(), requestId: requests[0].id, dirty: false };
+      const t: Tab = { id: uid(), requestId: requests[0].id };
       tabs = [t];
       activeTabId = t.id;
     }
@@ -247,7 +246,7 @@ export const useStore = create<State>((set, get) => ({
     if (existing) {
       set({ activeTabId: existing.id });
     } else {
-      const t: Tab = { id: uid(), requestId, dirty: false };
+      const t: Tab = { id: uid(), requestId };
       set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id }));
     }
     persistSession(get);
@@ -286,10 +285,6 @@ export const useStore = create<State>((set, get) => ({
     persistSession(get);
   },
 
-  markDirty: (requestId, dirty) => {
-    set((s) => ({ tabs: s.tabs.map((t) => (t.requestId === requestId ? { ...t, dirty } : t)) }));
-  },
-
   setSidebarSelection: (selection) => {
     set({ sidebarSelection: selection });
   },
@@ -305,7 +300,7 @@ export const useStore = create<State>((set, get) => ({
     set((s) => ({
       requests: s.requests.map((r) => (r.id === id ? { ...r, ...patch, updatedAt } : r)),
     }));
-    await db.requests.update(id, { ...patch, updatedAt });
+    await reportDbWriteFailure(db.requests.update(id, { ...patch, updatedAt }));
   },
 
   createRequest: async (collectionId) => {
@@ -328,14 +323,14 @@ export const useStore = create<State>((set, get) => ({
       createdAt: now,
       updatedAt: now,
     };
-    await db.requests.add(req);
+    await reportDbWriteFailure(db.requests.add(req));
     set((s) => ({ requests: [...s.requests, req] }));
     get().openRequest(req.id);
     return req;
   },
 
   deleteRequest: async (id) => {
-    await db.requests.delete(id);
+    await reportDbWriteFailure(db.requests.delete(id));
     set((s) => {
       const nextTabs = s.tabs.filter((t) => t.requestId !== id);
       const activeTabStillExists = !!nextTabs.find((tab) => tab.id === s.activeTabId);
@@ -401,7 +396,7 @@ export const useStore = create<State>((set, get) => ({
         .map((request) => changedMap.get(request.id) ?? request)
         .sort(compareRequestsByPosition),
     }));
-    await db.requests.bulkPut([...changedMap.values()]);
+    await reportDbWriteFailure(db.requests.bulkPut([...changedMap.values()]));
   },
 
   duplicateRequest: async (id) => {
@@ -420,7 +415,7 @@ export const useStore = create<State>((set, get) => ({
       createdAt: now,
       updatedAt: now,
     };
-    await db.requests.add(copy);
+    await reportDbWriteFailure(db.requests.add(copy));
     set((s) => ({ requests: [...s.requests, copy] }));
     get().openRequest(copy.id);
     return copy;
@@ -436,8 +431,8 @@ export const useStore = create<State>((set, get) => ({
 
   createCollection: async (name) => {
     const ws = get().workspace!;
-    const position = get().collections.length;
-    const finalName = name.trim() || `Collection ${position + 1}`;
+    const position = getNextCollectionPosition(get().collections);
+    const finalName = name.trim() || `Collection ${get().collections.length + 1}`;
     const col: Collection = {
       id: uid(),
       workspaceId: ws.id,
@@ -445,7 +440,7 @@ export const useStore = create<State>((set, get) => ({
       position,
       createdAt: Date.now(),
     };
-    await db.collections.add(col);
+    await reportDbWriteFailure(db.collections.add(col));
     set((s) => ({ collections: [...s.collections, col] }));
     return col;
   },
@@ -453,7 +448,7 @@ export const useStore = create<State>((set, get) => ({
   renameCollection: async (id, name) => {
     const nextName = name.trim();
     if (!nextName) return;
-    await db.collections.update(id, { name: nextName });
+    await reportDbWriteFailure(db.collections.update(id, { name: nextName }));
     set((state) => ({
       collections: state.collections.map((collection) =>
         collection.id === id ? { ...collection, name: nextName } : collection,
@@ -478,14 +473,14 @@ export const useStore = create<State>((set, get) => ({
     );
 
     set({ collections: reordered });
-    await db.collections.bulkPut(reordered);
+    await reportDbWriteFailure(db.collections.bulkPut(reordered));
   },
 
   duplicateCollection: async (id) => {
     const src = get().collections.find((c) => c.id === id);
     if (!src) return null;
     const ws = get().workspace!;
-    const position = get().collections.length;
+    const position = getNextCollectionPosition(get().collections);
     const copy: Collection = {
       id: uid(),
       workspaceId: ws.id,
@@ -493,7 +488,7 @@ export const useStore = create<State>((set, get) => ({
       position,
       createdAt: Date.now(),
     };
-    await db.collections.add(copy);
+    await reportDbWriteFailure(db.collections.add(copy));
     const srcReqs = get().requests.filter((r) => r.collectionId === id);
     const now = Date.now();
     const copies: ApiRequest[] = srcReqs.map((r) => ({
@@ -508,17 +503,19 @@ export const useStore = create<State>((set, get) => ({
       createdAt: now,
       updatedAt: now,
     }));
-    if (copies.length) await db.requests.bulkAdd(copies);
+    if (copies.length) await reportDbWriteFailure(db.requests.bulkAdd(copies));
     set((s) => ({ collections: [...s.collections, copy], requests: [...s.requests, ...copies] }));
     return copy;
   },
 
   deleteCollection: async (id) => {
     const reqs = get().requests.filter((r) => r.collectionId === id);
-    await db.transaction("rw", db.collections, db.requests, async () => {
-      await db.requests.bulkDelete(reqs.map((r) => r.id));
-      await db.collections.delete(id);
-    });
+    await reportDbWriteFailure(
+      db.transaction("rw", db.collections, db.requests, async () => {
+        await db.requests.bulkDelete(reqs.map((r) => r.id));
+        await db.collections.delete(id);
+      }),
+    );
     set((s) => ({
       collections: s.collections.filter((c) => c.id !== id),
       requests: s.requests.filter((r) => r.collectionId !== id),
@@ -649,9 +646,14 @@ export const useStore = create<State>((set, get) => ({
       await db.requests.add(restored);
       set((s) => ({ requests: [...s.requests, restored] }));
       targetRequestId = restored.id;
-      const tab = { id: uid(), requestId: restored.id, dirty: false };
+      const tab = { id: uid(), requestId: restored.id };
       set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }));
     } else {
+      const confirmed = window.confirm(
+        `Restore this snapshot into "${existing.name}"? Its current contents will be overwritten.`,
+      );
+      if (!confirmed) return;
+
       const nextCollectionId = snapshot.collectionId;
       const collectionChanged = existing.collectionId !== nextCollectionId;
       const patch = {
@@ -721,7 +723,9 @@ export const useStore = create<State>((set, get) => ({
   importCurl: async (text) => {
     const ws = get().workspace;
     if (!ws) return null;
-    const colId = get().collections[0]?.id ?? null;
+    const activeRequestId = get().tabs.find((tab) => tab.id === get().activeTabId)?.requestId;
+    const colId =
+      get().requests.find((request) => request.id === activeRequestId)?.collectionId ?? null;
     const req = parseCurl(text, ws.id, colId);
     if (!req.url) return null;
     req.position = getNextRequestPosition(get().requests, colId);
@@ -742,7 +746,7 @@ export const useStore = create<State>((set, get) => ({
     }
     if (!validateCollectionExport(parsed)) return null;
 
-    const position = get().collections.length;
+    const position = getNextCollectionPosition(get().collections);
     const newCol: Collection = {
       id: uid(),
       workspaceId: ws.id,
@@ -866,21 +870,27 @@ export const useStore = create<State>((set, get) => ({
       )
       .sort((left, right) => right.executedAt - left.executedAt);
 
-    await db.history.clear();
-    await db.requests.clear();
-    await db.collections.clear();
-    await db.environments.clear();
-    await db.workspaces.clear();
+    await db.transaction(
+      "rw",
+      [db.history, db.requests, db.collections, db.environments, db.workspaces],
+      async () => {
+        await db.history.clear();
+        await db.requests.clear();
+        await db.collections.clear();
+        await db.environments.clear();
+        await db.workspaces.clear();
 
-    await db.workspaces.add(workspace);
-    if (collections.length) await db.collections.bulkAdd(collections);
-    if (requests.length) await db.requests.bulkAdd(requests);
-    if (environments.length) await db.environments.bulkAdd(environments);
-    if (history.length) await db.history.bulkAdd(history);
+        await db.workspaces.add(workspace);
+        if (collections.length) await db.collections.bulkAdd(collections);
+        if (requests.length) await db.requests.bulkAdd(requests);
+        if (environments.length) await db.environments.bulkAdd(environments);
+        if (history.length) await db.history.bulkAdd(history);
+      },
+    );
 
     resetPersistedSession();
 
-    const tabs = requests[0] ? [{ id: uid(), requestId: requests[0].id, dirty: false }] : [];
+    const tabs = requests[0] ? [{ id: uid(), requestId: requests[0].id }] : [];
     set((state) => ({
       workspace,
       collections,
@@ -993,10 +1003,28 @@ function suggestCopyName(name: string, existingNames: string[]) {
   return candidate;
 }
 
+async function reportDbWriteFailure<T>(write: Promise<T>): Promise<T> {
+  try {
+    return await write;
+  } catch (error) {
+    console.error(error);
+    toast.error("Change not saved", {
+      description:
+        "The last change couldn't be written to local storage. It may be lost on reload.",
+    });
+    throw error;
+  }
+}
+
 function getNextRequestPosition(requests: ApiRequest[], collectionId: string | null) {
   const siblings = requests.filter((request) => request.collectionId === collectionId);
   if (!siblings.length) return 0;
   return Math.max(...siblings.map((request) => request.position ?? 0)) + 1;
+}
+
+function getNextCollectionPosition(collections: Collection[]) {
+  if (!collections.length) return 0;
+  return Math.max(...collections.map((collection) => collection.position ?? 0)) + 1;
 }
 
 function sortRequestsForCollection(requests: ApiRequest[]) {
