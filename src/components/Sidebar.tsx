@@ -13,9 +13,11 @@ import {
   MoreHorizontal,
   Download,
   Pencil,
+  CopyPlus,
 } from "lucide-react";
 import { useStore } from "@/stores/useStore";
 import { MethodBadge } from "./MethodBadge";
+import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -45,6 +47,8 @@ export function Sidebar() {
     reorderRequests,
     deleteRequest,
     duplicateRequest,
+    duplicateCollection,
+    deleteCollection,
     toggleFavorite,
     exportCollectionById,
     reorderCollections,
@@ -67,8 +71,12 @@ export function Sidebar() {
     targetId: string | null;
     collectionId: string | null;
   } | null>(null);
+  const [pendingDeleteRequestId, setPendingDeleteRequestId] = useState<string | null>(null);
+  const [pendingDeleteCollectionId, setPendingDeleteCollectionId] = useState<string | null>(null);
 
   const activeRequestId = tabs.find((t) => t.id === activeTabId)?.requestId;
+  const activeCollectionId =
+    requests.find((request) => request.id === activeRequestId)?.collectionId ?? null;
   const q = query.trim().toLowerCase();
   const dragEnabled = !q;
   const reorderRequestDrop = reorderRequests as (
@@ -152,7 +160,7 @@ export function Sidebar() {
           <span className="text-sm font-semibold tracking-tight">Reqlo</span>
         </div>
         <button
-          onClick={() => createRequest(collections[0]?.id ?? null)}
+          onClick={() => createRequest(activeCollectionId)}
           className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
           title="New request"
         >
@@ -211,7 +219,7 @@ export function Sidebar() {
             onRequestDropTargetChange={() => undefined}
             onSectionAppendHover={() => undefined}
             onDuplicate={(id) => void duplicateRequest(id)}
-            onDelete={(id) => void deleteRequest(id)}
+            onDelete={(id) => setPendingDeleteRequestId(id)}
           />
         </SidebarSection>
 
@@ -261,7 +269,7 @@ export function Sidebar() {
             onRequestDropTargetChange={setRequestDropTarget}
             onSectionAppendHover={setCollectionAppendTargetId}
             onDuplicate={(id) => void duplicateRequest(id)}
-            onDelete={(id) => void deleteRequest(id)}
+            onDelete={(id) => setPendingDeleteRequestId(id)}
           />
         </SidebarSection>
 
@@ -283,7 +291,7 @@ export function Sidebar() {
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();
-                        void submitCollectionRename(col.id);
+                        event.currentTarget.blur();
                       }
                       if (event.key === "Escape") {
                         setRenamingCollectionId(null);
@@ -358,9 +366,19 @@ export function Sidebar() {
                     <DropdownMenuItem onSelect={() => void createRequest(col.id)}>
                       <Plus className="h-3.5 w-3.5" /> New request in collection
                     </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void duplicateCollection(col.id)}>
+                      <CopyPlus className="h-3.5 w-3.5" /> Duplicate collection
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onSelect={() => void exportCollectionById(col.id)}>
                       <Download className="h-3.5 w-3.5" /> Export collection
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => setPendingDeleteCollectionId(col.id)}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Delete collection
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -389,7 +407,7 @@ export function Sidebar() {
                 onRequestDropTargetChange={setRequestDropTarget}
                 onSectionAppendHover={(collectionId) => setCollectionAppendTargetId(collectionId)}
                 onDuplicate={(id) => void duplicateRequest(id)}
-                onDelete={(id) => void deleteRequest(id)}
+                onDelete={(id) => setPendingDeleteRequestId(id)}
               />
             </SidebarSection>
           );
@@ -427,6 +445,41 @@ export function Sidebar() {
       <div className="border-t border-border px-4 py-2 text-[10px] text-muted-foreground/70">
         Local-first · {requests.length} requests
       </div>
+
+      <ConfirmDeleteDialog
+        open={pendingDeleteRequestId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteRequestId(null);
+        }}
+        title="Delete request"
+        description={
+          pendingDeleteRequestId
+            ? `"${requests.find((request) => request.id === pendingDeleteRequestId)?.name ?? "This request"}" will be permanently deleted. This can't be undone.`
+            : ""
+        }
+        onConfirm={() => {
+          if (pendingDeleteRequestId) void deleteRequest(pendingDeleteRequestId);
+          setPendingDeleteRequestId(null);
+        }}
+      />
+
+      <ConfirmDeleteDialog
+        open={pendingDeleteCollectionId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteCollectionId(null);
+        }}
+        title="Delete collection"
+        description={(() => {
+          const collection = collections.find((c) => c.id === pendingDeleteCollectionId);
+          if (!collection) return "";
+          const count = requests.filter((r) => r.collectionId === collection.id).length;
+          return `"${collection.name}" and its ${count} request${count === 1 ? "" : "s"} will be permanently deleted. This can't be undone.`;
+        })()}
+        onConfirm={() => {
+          if (pendingDeleteCollectionId) void deleteCollection(pendingDeleteCollectionId);
+          setPendingDeleteCollectionId(null);
+        }}
+      />
     </aside>
   );
 }

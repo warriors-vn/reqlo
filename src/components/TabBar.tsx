@@ -12,11 +12,13 @@ export function TabBar() {
     setActiveTab,
     closeTab,
     createRequest,
-    collections,
     sidebarCollapsed,
     toggleSidebar,
     activateAdjacentTab,
   } = useStore();
+  const activeRequestId = tabs.find((tab) => tab.id === activeTabId)?.requestId;
+  const activeCollectionId =
+    requests.find((request) => request.id === activeRequestId)?.collectionId ?? null;
   const collapsed = useCodeSnippetPanelStore((state) => state.collapsed);
   const toggleCollapsed = useCodeSnippetPanelStore((state) => state.toggleCollapsed);
   const selectedLanguage = useCodeSnippetPanelStore((state) => state.selectedLanguage);
@@ -73,7 +75,6 @@ export function TabBar() {
             >
               <MethodBadge method={req.method} className="w-9 text-right" />
               <span className="max-w-[140px] truncate">{req.name || "Untitled"}</span>
-              {tab.dirty && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -87,7 +88,7 @@ export function TabBar() {
           );
         })}
         <button
-          onClick={() => createRequest(collections[0]?.id ?? null)}
+          onClick={() => createRequest(activeCollectionId)}
           className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
           title="New tab (⌘T)"
         >

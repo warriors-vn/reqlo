@@ -21,14 +21,13 @@ services:
       - FRONTEND_TOOL=${FRONTEND_TOOL:-auto}
       # Frontend host binding for some dev servers; defaults to 0.0.0.0 to ensure accessibility from host
       - HOST=0.0.0.0
-      # Useful for switching port when needed. Default commonly used by Vite.
-      - FRONTEND_PORT=${FRONTEND_PORT:-5173}
+      # This project's Vite config (@lovable.dev/vite-tanstack-config) hardcodes the dev server
+      # to port 8080 (strictPort) regardless of the Vite CLI/--port flag, so this must match.
+      - FRONTEND_PORT=${FRONTEND_PORT:-8080}
       # Optional: use polling on macOS/WSL if filesystem events are unreliable
       - CHOKIDAR_USEPOLLING=${CHOKIDAR_USEPOLLING:-false}
-    # Map both common dev ports to the host so the compose works for both Vite and CRA
     ports:
-      - "${FRONTEND_PORT:-5173}:${FRONTEND_PORT:-5173}"
-      - "3000:3000"
+      - "${FRONTEND_PORT:-8080}:${FRONTEND_PORT:-8080}"
     volumes:
       # Mount source code for live edit; using :cached improves FS performance on macOS
       - ./:/app:cached

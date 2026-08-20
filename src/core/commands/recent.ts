@@ -14,5 +14,9 @@ export function getRecent(): string[] {
 
 export function pushRecent(id: string) {
   const next = [id, ...getRecent().filter((x) => x !== id)].slice(0, MAX);
-  try { localStorage.setItem(KEY, JSON.stringify(next)); } catch {}
+  try {
+    localStorage.setItem(KEY, JSON.stringify(next));
+  } catch {
+    // Ignore storage failures (e.g. private browsing, quota exceeded).
+  }
 }

@@ -49,7 +49,8 @@ export function parseCurl(
       continue;
     }
     if (t === "-d" || t === "--data" || t === "--data-raw" || t === "--data-binary") {
-      body = tokens[++i] || "";
+      const value = tokens[++i] || "";
+      body = body ? `${body}&${value}` : value;
       bodyType = looksLikeJson(body) ? "json" : "raw";
       if (method === "GET") method = "POST";
       continue;
@@ -93,7 +94,7 @@ export function parseCurl(
     id: uid(),
     workspaceId,
     collectionId,
-    name: url ? new URL(url).pathname || url : "Imported cURL",
+    name: url ? safePathname(url) : "Imported cURL",
     method,
     url,
     headers,
@@ -105,6 +106,14 @@ export function parseCurl(
     createdAt: now,
     updatedAt: now,
   });
+}
+
+function safePathname(url: string): string {
+  try {
+    return new URL(url).pathname || url;
+  } catch {
+    return url;
+  }
 }
 
 function looksLikeJson(s: string) {

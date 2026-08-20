@@ -16,7 +16,9 @@ export function Overlay({ open, onClose, title, subtitle, children, maxW = "max-
     <AnimatePresence>
       {open && (
         <motion.div
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
           className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/10 backdrop-blur-sm pt-[12vh]"
           onClick={onClose}
@@ -32,7 +34,9 @@ export function Overlay({ open, onClose, title, subtitle, children, maxW = "max-
             <div className="flex items-center gap-3 border-b border-border px-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold tracking-tight">{title}</div>
-                {subtitle && <div className="truncate text-[11px] text-muted-foreground">{subtitle}</div>}
+                {subtitle && (
+                  <div className="truncate text-[11px] text-muted-foreground">{subtitle}</div>
+                )}
               </div>
               <button
                 onClick={onClose}

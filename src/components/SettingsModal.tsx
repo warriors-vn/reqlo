@@ -48,9 +48,18 @@ export function SettingsModal() {
 
                 const text = await pickFile("application/json,.json");
                 if (!text) return;
-                const workspace = await (
-                  useStore.getState() as RestoreCapableStore
-                ).importWorkspaceJSON(text);
+
+                let workspace: { name: string } | null;
+                try {
+                  workspace = await (
+                    useStore.getState() as RestoreCapableStore
+                  ).importWorkspaceJSON(text);
+                } catch {
+                  toast.error("Restore failed", {
+                    description: "Nothing was changed — your current workspace is still intact.",
+                  });
+                  return;
+                }
                 if (!workspace) {
                   toast.error("Restore failed", {
                     description: "The selected file is not a valid Reqlo workspace export.",

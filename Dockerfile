@@ -30,8 +30,9 @@ RUN set -ex \
 #############################################
 FROM base AS dev
 
-# Expose both common dev ports (Vite=5173, CRA=3000). Compose will map the host ports.
-EXPOSE 5173 3000
+# This project's Vite config (@lovable.dev/vite-tanstack-config) hardcodes the dev
+# server to port 8080 (strictPort), overriding the Vite default of 5173.
+EXPOSE 8080
 
 # Copy entrypoint (detection script) and give it executable bit at build time
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
