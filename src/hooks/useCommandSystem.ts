@@ -17,12 +17,12 @@ export function useCommands(): CommandDescriptor[] {
 
 /** Compute the live execution context from the store. */
 export function useCommandContext(): CommandContext {
-  const activeTabId = useStore(s => s.activeTabId);
-  const tabs = useStore(s => s.tabs);
-  const requests = useStore(s => s.requests);
-  const paletteOpen = useStore(s => s.overlays.palette);
-  const t = tabs.find(x => x.id === activeTabId);
-  const hasActiveRequest = !!(t && requests.find(r => r.id === t.requestId));
+  const activeTabId = useStore((s) => s.activeTabId);
+  const tabs = useStore((s) => s.tabs);
+  const requests = useStore((s) => s.requests);
+  const paletteOpen = useStore((s) => s.overlays.palette);
+  const t = tabs.find((x) => x.id === activeTabId);
+  const hasActiveRequest = !!(t && requests.find((r) => r.id === t.requestId));
   return { hasActiveRequest, hasSelection: hasActiveRequest, paletteOpen };
 }
 
@@ -41,14 +41,15 @@ export function useCommandSystem() {
       }
       // Ignore key events from inputs unless they include a modifier — keep typing fast.
       const target = e.target as HTMLElement | null;
-      const inField = !!target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target?.isContentEditable;
+      const inField =
+        (!!target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) || target?.isContentEditable;
       const hasMod = e.metaKey || e.ctrlKey || e.altKey;
       if (inField && !hasMod) return;
 
       const ctx: CommandContext = (() => {
         const st = useStore.getState();
-        const t = st.tabs.find(x => x.id === st.activeTabId);
-        const has = !!(t && st.requests.find(r => r.id === t.requestId));
+        const t = st.tabs.find((x) => x.id === st.activeTabId);
+        const has = !!(t && st.requests.find((r) => r.id === t.requestId));
         return { hasActiveRequest: has, hasSelection: has, paletteOpen: st.overlays.palette };
       })();
 
