@@ -70,6 +70,13 @@ export interface RequestAuth {
   addTo?: "header" | "query";
 }
 
+export interface ExtractRule {
+  id: string;
+  path: string;
+  variableName: string;
+  enabled: boolean;
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -110,6 +117,7 @@ export interface ApiRequest {
   bodyType: RequestBodyType;
   bodyDrafts: RequestBodyDrafts;
   auth: RequestAuth;
+  extracts: ExtractRule[];
   favorite?: boolean;
   createdAt: number;
   updatedAt: number;
@@ -262,6 +270,26 @@ class ReqloDB extends Dexie {
             if (request.folderId === undefined) request.folderId = null;
           });
       });
+    this.version(6)
+      .stores({
+        workspaces: "id, updatedAt",
+        collections: "id, workspaceId, position",
+        folders:
+          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
+        requests:
+          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
+        history:
+          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
+        environments: "id, workspaceId",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table<ApiRequest, string>("requests")
+          .toCollection()
+          .modify((request) => {
+            if (request.extracts === undefined) request.extracts = [];
+          });
+      });
   }
 }
 
@@ -289,6 +317,10 @@ export function createDefaultAuth(): RequestAuth {
 
 export function createEmptyKV(key = "", value = ""): KV {
   return { id: uid(), key, value, enabled: true };
+}
+
+export function createEmptyExtractRule(): ExtractRule {
+  return { id: uid(), path: "", variableName: "", enabled: true };
 }
 
 export function createEmptyFormDataRow(kind: FormDataRow["kind"] = "text"): FormDataRow {
@@ -389,6 +421,7 @@ export function normalizeApiRequest(
     bodyType: legacyBodyType,
     bodyDrafts: normalizeBodyDrafts(request.bodyDrafts, body, legacyBodyType),
     auth: request.auth ?? createDefaultAuth(),
+    extracts: request.extracts ?? [],
     favorite: request.favorite ?? false,
   } as ApiRequest;
 }
@@ -514,6 +547,7 @@ export async function ensureSeed(): Promise<Workspace> {
       bodyType: "none",
       bodyDrafts: createDefaultBodyDrafts(),
       auth: createDefaultAuth(),
+      extracts: [],
       createdAt: now,
       updatedAt: now,
     },
@@ -539,6 +573,7 @@ export async function ensureSeed(): Promise<Workspace> {
         ),
       },
       auth: createDefaultAuth(),
+      extracts: [],
       createdAt: now,
       updatedAt: now,
     },
@@ -557,6 +592,7 @@ export async function ensureSeed(): Promise<Workspace> {
       bodyType: "none",
       bodyDrafts: createDefaultBodyDrafts(),
       auth: createDefaultAuth(),
+      extracts: [],
       createdAt: now,
       updatedAt: now,
     },

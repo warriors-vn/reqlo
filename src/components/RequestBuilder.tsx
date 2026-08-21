@@ -1,9 +1,11 @@
 import { useStore } from "@/stores/useStore";
 import type { ApiRequest, HttpMethod } from "@/services/db";
+import type { ExecutionResult } from "@/services/execution";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { AdvancedBodyEditor } from "@/features/request-body/components/AdvancedBodyEditor";
 import { RequestAuthEditor } from "@/components/RequestAuthEditor";
+import { RequestExtractEditor } from "@/components/RequestExtractEditor";
 import { hasBodyContent } from "@/features/request-body/utils/body";
 import { Send, Loader2, Plus, X } from "lucide-react";
 import { motion } from "framer-motion";
@@ -24,12 +26,13 @@ interface Props {
   request: ApiRequest;
   onSend: () => void;
   sending: boolean;
+  result?: ExecutionResult | null;
 }
 
-export function RequestBuilder({ request, onSend, sending }: Props) {
+export function RequestBuilder({ request, onSend, sending, result = null }: Props) {
   const updateRequest = useStore((s) => s.updateRequest);
   const renameRequest = useStore((s) => s.renameRequest);
-  const [tab, setTab] = useState<"params" | "headers" | "body" | "auth">("params");
+  const [tab, setTab] = useState<"params" | "headers" | "body" | "auth" | "extract">("params");
   const [nameEdit, setNameEdit] = useState(false);
 
   const tabs = [
@@ -52,6 +55,11 @@ export function RequestBuilder({ request, onSend, sending }: Props) {
       id: "auth" as const,
       label: "Auth",
       count: request.auth.type !== "none" ? request.auth.type.toUpperCase() : undefined,
+    },
+    {
+      id: "extract" as const,
+      label: "Extract",
+      count: request.extracts.filter((rule) => rule.enabled).length || undefined,
     },
   ];
 
@@ -177,6 +185,7 @@ export function RequestBuilder({ request, onSend, sending }: Props) {
         )}
         {tab === "body" && <AdvancedBodyEditor request={request} />}
         {tab === "auth" && <RequestAuthEditor request={request} />}
+        {tab === "extract" && <RequestExtractEditor request={request} result={result} />}
       </div>
     </div>
   );
