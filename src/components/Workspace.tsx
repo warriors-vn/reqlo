@@ -19,6 +19,9 @@ import {
   isTextualResponse,
   type ExecutionResult,
 } from "@/services/execution";
+import { resolveExtractPath, stringifyExtractedValue } from "@/services/extract";
+import type { ApiRequest, Environment } from "@/services/db";
+import { toast } from "sonner";
 
 const MAX_HISTORY_RESPONSE_BODY = 40_000;
 
@@ -35,6 +38,7 @@ export function Workspace() {
     sendPing,
     environments,
     activeEnvId,
+    updateEnvironment,
   } = useStore();
   const [results, setResults] = useState<Record<string, ExecutionResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
@@ -66,6 +70,10 @@ export function Workspace() {
           : "";
     setResults((s) => ({ ...s, [activeRequest.id]: res }));
     setLoading((s) => ({ ...s, [activeRequest.id]: false }));
+
+    if (res.responseKind === "json" && res.body) {
+      await applyExtractRules(activeRequest, res.body, activeEnvironment, updateEnvironment);
+    }
     await addHistory({
       id: uid(),
       workspaceId: workspace.id,
@@ -143,7 +151,12 @@ export function Workspace() {
                   transition={{ duration: 0.15 }}
                   className="flex min-h-0 flex-1 flex-col"
                 >
-                  <RequestBuilder request={activeRequest} onSend={send} sending={isLoading} />
+                  <RequestBuilder
+                    request={activeRequest}
+                    onSend={send}
+                    sending={isLoading}
+                    result={result}
+                  />
                   <div className="flex min-h-0 flex-1 flex-col">
                     <ResponseViewer result={result ?? null} loading={isLoading} />
                   </div>
@@ -198,4 +211,55 @@ function EmptyState() {
       </div>
     </motion.div>
   );
+}
+
+async function applyExtractRules(
+  request: ApiRequest,
+  responseBody: string,
+  environment: Environment | null,
+  updateEnvironment: (id: string, patch: { variables: Environment["variables"] }) => Promise<void>,
+) {
+  const rules = request.extracts.filter(
+    (rule) => rule.enabled && rule.path.trim() && rule.variableName.trim(),
+  );
+  if (!rules.length) return;
+
+  if (!environment) {
+    toast.warning("Couldn't save extracted variables", {
+      description: "No active environment is selected.",
+    });
+    return;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(responseBody);
+  } catch {
+    return;
+  }
+
+  const updates: { key: string; value: string }[] = [];
+  const failed: string[] = [];
+  for (const rule of rules) {
+    const result = resolveExtractPath(parsed, rule.path);
+    if (result.ok)
+      updates.push({ key: rule.variableName.trim(), value: stringifyExtractedValue(result.value) });
+    else failed.push(rule.variableName.trim() || rule.path);
+  }
+
+  if (updates.length) {
+    const nextVariables = [...environment.variables];
+    for (const { key, value } of updates) {
+      const index = nextVariables.findIndex((item) => item.key === key);
+      if (index >= 0) nextVariables[index] = { ...nextVariables[index], value, enabled: true };
+      else nextVariables.push({ id: uid(), key, value, enabled: true });
+    }
+    await updateEnvironment(environment.id, { variables: nextVariables });
+  }
+
+  if (failed.length) {
+    toast.warning(`Couldn't extract ${failed.length} variable${failed.length > 1 ? "s" : ""}`, {
+      description: failed.join(", "),
+    });
+  }
 }

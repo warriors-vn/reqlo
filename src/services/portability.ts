@@ -184,6 +184,7 @@ async function sanitizeHistoryForExport(history: HistoryEntry): Promise<HistoryE
     bodyType: history.snapshot.bodyType,
     bodyDrafts: history.snapshot.bodyDrafts,
     auth: history.snapshot.auth,
+    extracts: [],
     favorite: false,
     createdAt: history.executedAt,
     updatedAt: history.executedAt,

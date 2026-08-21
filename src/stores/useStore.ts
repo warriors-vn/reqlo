@@ -348,6 +348,7 @@ export const useStore = create<State>((set, get) => ({
       bodyType: "none",
       bodyDrafts: createDefaultBodyDrafts(),
       auth: createDefaultAuth(),
+      extracts: [],
       createdAt: now,
       updatedAt: now,
     };
