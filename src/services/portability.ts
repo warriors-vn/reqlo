@@ -148,7 +148,7 @@ async function exportStoredFile(file: StoredFileBlob): Promise<StoredFileBlob> {
   return { ...meta, blobData: await blobToBase64(blob) };
 }
 
-async function sanitizeRequestForExport(request: ApiRequest): Promise<ApiRequest> {
+export async function sanitizeRequestForExport(request: ApiRequest): Promise<ApiRequest> {
   return {
     ...request,
     bodyDrafts: {
