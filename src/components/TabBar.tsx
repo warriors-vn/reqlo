@@ -17,8 +17,9 @@ export function TabBar() {
     activateAdjacentTab,
   } = useStore();
   const activeRequestId = tabs.find((tab) => tab.id === activeTabId)?.requestId;
-  const activeCollectionId =
-    requests.find((request) => request.id === activeRequestId)?.collectionId ?? null;
+  const activeRequestObj = requests.find((request) => request.id === activeRequestId);
+  const activeCollectionId = activeRequestObj?.collectionId ?? null;
+  const activeFolderId = activeRequestObj?.folderId ?? null;
   const collapsed = useCodeSnippetPanelStore((state) => state.collapsed);
   const toggleCollapsed = useCodeSnippetPanelStore((state) => state.toggleCollapsed);
   const selectedLanguage = useCodeSnippetPanelStore((state) => state.selectedLanguage);
@@ -88,7 +89,7 @@ export function TabBar() {
           );
         })}
         <button
-          onClick={() => createRequest(activeCollectionId)}
+          onClick={() => createRequest(activeCollectionId, activeFolderId)}
           className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
           title="New tab (⌘T)"
         >

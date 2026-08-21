@@ -4,18 +4,20 @@ import {
   type ApiRequest,
   type Collection,
   type Environment,
+  type Folder,
   type HistoryEntry,
   type StoredFileBlob,
   type Workspace,
 } from "@/services/db";
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 export interface CollectionExport {
   schema: "reqlo.collection";
   version: number;
   exportedAt: number;
   collection: Collection;
+  folders?: Folder[];
   requests: ApiRequest[];
 }
 
@@ -25,29 +27,43 @@ export interface WorkspaceExport {
   exportedAt: number;
   workspace: Workspace;
   collections: Collection[];
+  folders?: Folder[];
   requests: ApiRequest[];
   environments: Environment[];
   history: HistoryEntry[];
 }
 
 export async function exportCollection(collection: Collection): Promise<CollectionExport> {
-  const requests = await db.requests
-    .where("collectionId")
-    .equals(collection.id)
-    .toArray()
-    .then((items) => items.sort((left, right) => left.position - right.position));
+  const [requests, folders] = await Promise.all([
+    db.requests
+      .where("collectionId")
+      .equals(collection.id)
+      .toArray()
+      .then((items) => items.sort((left, right) => left.position - right.position)),
+    db.folders
+      .where("collectionId")
+      .equals(collection.id)
+      .toArray()
+      .then((items) => items.sort((left, right) => left.position - right.position)),
+  ]);
   return {
     schema: "reqlo.collection",
     version: SCHEMA_VERSION,
     exportedAt: Date.now(),
     collection,
+    folders,
     requests: await Promise.all(requests.map(sanitizeRequestForExport)),
   };
 }
 
 export async function exportWorkspace(workspace: Workspace): Promise<WorkspaceExport> {
-  const [collections, requests, environments, history] = await Promise.all([
+  const [collections, folders, requests, environments, history] = await Promise.all([
     db.collections
+      .where("workspaceId")
+      .equals(workspace.id)
+      .toArray()
+      .then((items) => items.sort((left, right) => left.position - right.position)),
+    db.folders
       .where("workspaceId")
       .equals(workspace.id)
       .toArray()
@@ -66,6 +82,7 @@ export async function exportWorkspace(workspace: Workspace): Promise<WorkspaceEx
     exportedAt: Date.now(),
     workspace,
     collections,
+    folders,
     requests: await Promise.all(requests.map(sanitizeRequestForExport)),
     environments,
     history: await Promise.all(history.map(sanitizeHistoryForExport)),
@@ -156,6 +173,7 @@ async function sanitizeHistoryForExport(history: HistoryEntry): Promise<HistoryE
     id: history.snapshot.requestId ?? history.requestId ?? history.id,
     workspaceId: history.snapshot.workspaceId,
     collectionId: history.snapshot.collectionId,
+    folderId: null,
     position: 0,
     name: history.snapshot.requestName,
     method: history.snapshot.method,

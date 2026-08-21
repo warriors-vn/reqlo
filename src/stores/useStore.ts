@@ -6,6 +6,7 @@ import {
   uid,
   type ApiRequest,
   type Collection,
+  type Folder,
   type HistoryEntry,
   type Workspace,
   type HttpMethod,
@@ -49,6 +50,7 @@ interface State {
   ready: boolean;
   workspace: Workspace | null;
   collections: Collection[];
+  folders: Folder[];
   requests: ApiRequest[];
   history: HistoryEntry[];
   environments: Environment[];
@@ -83,14 +85,16 @@ interface State {
 
   // requests
   updateRequest: (id: string, patch: Partial<ApiRequest>) => Promise<void>;
-  createRequest: (collectionId: string | null) => Promise<ApiRequest>;
+  createRequest: (collectionId: string | null, folderId?: string | null) => Promise<ApiRequest>;
   deleteRequest: (id: string) => Promise<void>;
   renameRequest: (id: string, name: string) => Promise<void>;
   moveRequestToCollection: (id: string, collectionId: string | null) => Promise<void>;
+  moveRequestToFolder: (id: string, collectionId: string, folderId: string | null) => Promise<void>;
   reorderRequests: (
     draggedId: string,
     targetId: string | null,
     collectionId: string | null,
+    folderId: string | null,
   ) => Promise<void>;
   duplicateRequest: (id: string) => Promise<ApiRequest | null>;
   toggleFavorite: (id: string) => Promise<void>;
@@ -102,6 +106,17 @@ interface State {
   reorderCollections: (draggedId: string, targetId: string) => Promise<void>;
   duplicateCollection: (id: string) => Promise<Collection | null>;
   deleteCollection: (id: string) => Promise<void>;
+
+  // folders
+  createFolder: (
+    collectionId: string,
+    parentFolderId: string | null,
+    name: string,
+  ) => Promise<Folder>;
+  renameFolder: (id: string, name: string) => Promise<void>;
+  deleteFolder: (id: string) => Promise<void>;
+  reorderFolders: (draggedId: string, targetId: string) => Promise<void>;
+  moveFolderToParent: (folderId: string, parentFolderId: string | null) => Promise<void>;
 
   // environments
   createEnvironment: (name: string) => Promise<Environment>;
@@ -146,6 +161,7 @@ export const useStore = create<State>((set, get) => ({
   ready: false,
   workspace: null,
   collections: [],
+  folders: [],
   requests: [],
   history: [],
   environments: [],
@@ -166,8 +182,9 @@ export const useStore = create<State>((set, get) => ({
 
   init: async () => {
     const ws = await ensureSeed();
-    const [collections, requests, history, environments] = await Promise.all([
+    const [collections, folders, requests, history, environments] = await Promise.all([
       db.collections.where("workspaceId").equals(ws.id).toArray(),
+      db.folders.where("workspaceId").equals(ws.id).toArray(),
       db.requests
         .where("workspaceId")
         .equals(ws.id)
@@ -182,6 +199,7 @@ export const useStore = create<State>((set, get) => ({
       db.environments.where("workspaceId").equals(ws.id).toArray(),
     ]);
     collections.sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
+    folders.sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
     requests.sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
 
     let tabs: Tab[] = [];
@@ -224,6 +242,7 @@ export const useStore = create<State>((set, get) => ({
       ready: true,
       workspace: ws,
       collections,
+      folders,
       requests,
       history,
       environments,
@@ -302,14 +321,15 @@ export const useStore = create<State>((set, get) => ({
     await reportDbWriteFailure(db.requests.update(id, { ...patch, updatedAt }));
   },
 
-  createRequest: async (collectionId) => {
+  createRequest: async (collectionId, folderId = null) => {
     const ws = get().workspace!;
     const now = Date.now();
     const req: ApiRequest = {
       id: uid(),
       workspaceId: ws.id,
       collectionId,
-      position: getNextRequestPosition(get().requests, collectionId),
+      folderId,
+      position: getNextRequestPosition(get().requests, collectionId, folderId),
       name: "Untitled request",
       method: "GET" as HttpMethod,
       url: "",
@@ -351,31 +371,45 @@ export const useStore = create<State>((set, get) => ({
   },
 
   moveRequestToCollection: async (id, collectionId) => {
-    await get().reorderRequests(id, null, collectionId);
+    // Explicitly zero folderId: a request dropped onto a bare collection row must leave
+    // whatever folder it was in, or it keeps a stale folderId pointing at a folder that may
+    // not even belong to the destination collection.
+    await get().reorderRequests(id, null, collectionId, null);
   },
 
-  reorderRequests: async (draggedId, targetId, collectionId) => {
+  moveRequestToFolder: async (id, collectionId, folderId) => {
+    await get().reorderRequests(id, null, collectionId, folderId);
+  },
+
+  reorderRequests: async (draggedId, targetId, collectionId, folderId) => {
     if (draggedId === targetId) return;
     const allRequests = get().requests;
     const dragged = allRequests.find((request) => request.id === draggedId);
     if (!dragged) return;
 
     const sourceCollectionId = dragged.collectionId ?? null;
+    const sourceFolderId = dragged.folderId ?? null;
     const sourceSiblings = sortRequestsForCollection(
       allRequests.filter(
-        (request) => request.collectionId === sourceCollectionId && request.id !== draggedId,
+        (request) =>
+          request.collectionId === sourceCollectionId &&
+          request.folderId === sourceFolderId &&
+          request.id !== draggedId,
       ),
     );
-    const targetSiblingsBase =
-      sourceCollectionId === collectionId
-        ? sourceSiblings
-        : sortRequestsForCollection(
-            allRequests.filter(
-              (request) => request.collectionId === collectionId && request.id !== draggedId,
-            ),
-          );
+    const sameContainer = sourceCollectionId === collectionId && sourceFolderId === folderId;
+    const targetSiblingsBase = sameContainer
+      ? sourceSiblings
+      : sortRequestsForCollection(
+          allRequests.filter(
+            (request) =>
+              request.collectionId === collectionId &&
+              request.folderId === folderId &&
+              request.id !== draggedId,
+          ),
+        );
 
-    const nextDragged: ApiRequest = { ...dragged, collectionId };
+    const nextDragged: ApiRequest = { ...dragged, collectionId, folderId };
     const targetIndex =
       targetId === null
         ? targetSiblingsBase.length
@@ -405,7 +439,7 @@ export const useStore = create<State>((set, get) => ({
     const copy: ApiRequest = {
       ...src,
       id: uid(),
-      position: getNextRequestPosition(get().requests, src.collectionId),
+      position: getNextRequestPosition(get().requests, src.collectionId, src.folderId),
       name: `${src.name} (copy)`,
       headers: src.headers.map((h) => ({ ...h, id: uid() })),
       queryParams: src.queryParams.map((p) => ({ ...p, id: uid() })),
@@ -479,21 +513,37 @@ export const useStore = create<State>((set, get) => ({
     const src = get().collections.find((c) => c.id === id);
     if (!src) return null;
     const ws = get().workspace!;
+    const now = Date.now();
     const position = getNextCollectionPosition(get().collections);
     const copy: Collection = {
       id: uid(),
       workspaceId: ws.id,
       name: `${src.name} (copy)`,
       position,
-      createdAt: Date.now(),
+      createdAt: now,
     };
-    await reportDbWriteFailure(db.collections.add(copy));
+
+    const srcFolders = get().folders.filter((f) => f.collectionId === id);
+    const folderIdMap = new Map<string, string>();
+    srcFolders.forEach((folder) => folderIdMap.set(folder.id, uid()));
+    const newFolders: Folder[] = srcFolders.map((folder) => ({
+      id: folderIdMap.get(folder.id)!,
+      workspaceId: ws.id,
+      collectionId: copy.id,
+      parentFolderId: folder.parentFolderId
+        ? (folderIdMap.get(folder.parentFolderId) ?? null)
+        : null,
+      name: folder.name,
+      position: folder.position,
+      createdAt: now,
+    }));
+
     const srcReqs = get().requests.filter((r) => r.collectionId === id);
-    const now = Date.now();
     const copies: ApiRequest[] = srcReqs.map((r) => ({
       ...r,
       id: uid(),
       collectionId: copy.id,
+      folderId: r.folderId ? (folderIdMap.get(r.folderId) ?? null) : null,
       position: r.position,
       headers: r.headers.map((h) => ({ ...h, id: uid() })),
       queryParams: r.queryParams.map((p) => ({ ...p, id: uid() })),
@@ -502,21 +552,35 @@ export const useStore = create<State>((set, get) => ({
       createdAt: now,
       updatedAt: now,
     }));
-    if (copies.length) await reportDbWriteFailure(db.requests.bulkAdd(copies));
-    set((s) => ({ collections: [...s.collections, copy], requests: [...s.requests, ...copies] }));
+
+    await reportDbWriteFailure(
+      db.transaction("rw", db.collections, db.folders, db.requests, async () => {
+        await db.collections.add(copy);
+        if (newFolders.length) await db.folders.bulkAdd(newFolders);
+        if (copies.length) await db.requests.bulkAdd(copies);
+      }),
+    );
+    set((s) => ({
+      collections: [...s.collections, copy],
+      folders: [...s.folders, ...newFolders],
+      requests: [...s.requests, ...copies],
+    }));
     return copy;
   },
 
   deleteCollection: async (id) => {
     const reqs = get().requests.filter((r) => r.collectionId === id);
+    const folders = get().folders.filter((f) => f.collectionId === id);
     await reportDbWriteFailure(
-      db.transaction("rw", db.collections, db.requests, async () => {
+      db.transaction("rw", db.collections, db.folders, db.requests, async () => {
         await db.requests.bulkDelete(reqs.map((r) => r.id));
+        await db.folders.bulkDelete(folders.map((f) => f.id));
         await db.collections.delete(id);
       }),
     );
     set((s) => ({
       collections: s.collections.filter((c) => c.id !== id),
+      folders: s.folders.filter((f) => f.collectionId !== id),
       requests: s.requests.filter((r) => r.collectionId !== id),
       tabs: s.tabs.filter((t) => !reqs.find((r) => r.id === t.requestId)),
       sidebarSelection:
@@ -525,6 +589,102 @@ export const useStore = create<State>((set, get) => ({
           : s.sidebarSelection,
     }));
     persistSession(get);
+  },
+
+  createFolder: async (collectionId, parentFolderId, name) => {
+    const ws = get().workspace!;
+    const position = getNextFolderPosition(get().folders, collectionId, parentFolderId);
+    const folder: Folder = {
+      id: uid(),
+      workspaceId: ws.id,
+      collectionId,
+      parentFolderId,
+      name: name.trim() || "New folder",
+      position,
+      createdAt: Date.now(),
+    };
+    await reportDbWriteFailure(db.folders.add(folder));
+    set((s) => ({ folders: [...s.folders, folder] }));
+    return folder;
+  },
+
+  renameFolder: async (id, name) => {
+    const nextName = name.trim();
+    if (!nextName) return;
+    await reportDbWriteFailure(db.folders.update(id, { name: nextName }));
+    set((state) => ({
+      folders: state.folders.map((folder) =>
+        folder.id === id ? { ...folder, name: nextName } : folder,
+      ),
+    }));
+  },
+
+  deleteFolder: async (id) => {
+    const allFolders = get().folders;
+    const descendantFolderIds = collectDescendantFolderIds(allFolders, id);
+    const doomedFolderIds = new Set([id, ...descendantFolderIds]);
+    const doomedRequestIds = get()
+      .requests.filter((request) => !!request.folderId && doomedFolderIds.has(request.folderId))
+      .map((request) => request.id);
+
+    await reportDbWriteFailure(
+      db.transaction("rw", db.folders, db.requests, async () => {
+        await db.requests.bulkDelete(doomedRequestIds);
+        await db.folders.bulkDelete([...doomedFolderIds]);
+      }),
+    );
+    set((s) => ({
+      folders: s.folders.filter((folder) => !doomedFolderIds.has(folder.id)),
+      requests: s.requests.filter((request) => !doomedRequestIds.includes(request.id)),
+      tabs: s.tabs.filter((tab) => !doomedRequestIds.includes(tab.requestId)),
+      sidebarSelection:
+        s.sidebarSelection?.type === "collection" && doomedFolderIds.has(s.sidebarSelection.id)
+          ? null
+          : s.sidebarSelection,
+    }));
+    persistSession(get);
+  },
+
+  reorderFolders: async (draggedId, targetId) => {
+    if (draggedId === targetId) return;
+    const dragged = get().folders.find((folder) => folder.id === draggedId);
+    if (!dragged) return;
+
+    const siblings = get()
+      .folders.filter(
+        (folder) =>
+          folder.collectionId === dragged.collectionId &&
+          folder.parentFolderId === dragged.parentFolderId,
+      )
+      .sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
+    const draggedIndex = siblings.findIndex((folder) => folder.id === draggedId);
+    const targetIndex = siblings.findIndex((folder) => folder.id === targetId);
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    const reordered = reorderByIndex(siblings, draggedIndex, targetIndex).map((folder, index) => ({
+      ...folder,
+      position: index,
+    }));
+    const reorderedMap = new Map(reordered.map((folder) => [folder.id, folder]));
+    set((state) => ({
+      folders: state.folders.map((folder) => reorderedMap.get(folder.id) ?? folder),
+    }));
+    await reportDbWriteFailure(db.folders.bulkPut(reordered));
+  },
+
+  moveFolderToParent: async (folderId, parentFolderId) => {
+    const folder = get().folders.find((item) => item.id === folderId);
+    if (!folder) return;
+    if (folder.parentFolderId === parentFolderId) return;
+    if (wouldCreateCycle(get().folders, folderId, parentFolderId)) return;
+
+    const position = getNextFolderPosition(get().folders, folder.collectionId, parentFolderId);
+    set((state) => ({
+      folders: state.folders.map((item) =>
+        item.id === folderId ? { ...item, parentFolderId, position } : item,
+      ),
+    }));
+    await reportDbWriteFailure(db.folders.update(folderId, { parentFolderId, position }));
   },
 
   createEnvironment: async (name) => {
@@ -628,7 +788,8 @@ export const useStore = create<State>((set, get) => ({
         id: uid(),
         workspaceId: workspace.id,
         collectionId: snapshot.collectionId,
-        position: getNextRequestPosition(get().requests, snapshot.collectionId),
+        folderId: null,
+        position: getNextRequestPosition(get().requests, snapshot.collectionId, null),
         name: options?.openInNewTab ? `${snapshot.requestName} · restored` : snapshot.requestName,
         method: snapshot.method,
         url: snapshot.url,
@@ -657,11 +818,16 @@ export const useStore = create<State>((set, get) => ({
       const collectionChanged = existing.collectionId !== nextCollectionId;
       const patch = {
         collectionId: nextCollectionId,
+        // Only reset folderId when the collection actually changes — the snapshot carries no
+        // folder info, and a same-collection restore shouldn't silently relocate the request
+        // out of whatever folder it's currently filed in.
         ...(collectionChanged
           ? {
+              folderId: null,
               position: getNextRequestPosition(
                 get().requests.filter((request) => request.id !== existing.id),
                 nextCollectionId,
+                null,
               ),
             }
           : {}),
@@ -723,11 +889,13 @@ export const useStore = create<State>((set, get) => ({
     const ws = get().workspace;
     if (!ws) return null;
     const activeRequestId = get().tabs.find((tab) => tab.id === get().activeTabId)?.requestId;
-    const colId =
-      get().requests.find((request) => request.id === activeRequestId)?.collectionId ?? null;
+    const activeRequest = get().requests.find((request) => request.id === activeRequestId);
+    const colId = activeRequest?.collectionId ?? null;
+    const folderId = activeRequest?.folderId ?? null;
     const req = parseCurl(text, ws.id, colId);
     if (!req.url) return null;
-    req.position = getNextRequestPosition(get().requests, colId);
+    req.folderId = folderId;
+    req.position = getNextRequestPosition(get().requests, colId, folderId);
     await db.requests.add(req);
     set((s) => ({ requests: [...s.requests, normalizeApiRequest(req)] }));
     get().openRequest(req.id);
@@ -754,12 +922,29 @@ export const useStore = create<State>((set, get) => ({
       createdAt: Date.now(),
     };
     const now = Date.now();
+
+    const srcFolders = parsed.folders ?? [];
+    const folderIdMap = new Map<string, string>();
+    srcFolders.forEach((folder) => folderIdMap.set(folder.id, uid()));
+    const newFolders: Folder[] = srcFolders.map((folder) => ({
+      id: folderIdMap.get(folder.id)!,
+      workspaceId: ws.id,
+      collectionId: newCol.id,
+      parentFolderId: folder.parentFolderId
+        ? (folderIdMap.get(folder.parentFolderId) ?? null)
+        : null,
+      name: folder.name,
+      position: folder.position ?? 0,
+      createdAt: folder.createdAt ?? now,
+    }));
+
     const newReqs: ApiRequest[] = parsed.requests.map((r, index) =>
       normalizeApiRequest({
         ...r,
         id: uid(),
         workspaceId: ws.id,
         collectionId: newCol.id,
+        folderId: r.folderId ? (folderIdMap.get(r.folderId) ?? null) : null,
         position: r.position ?? index,
         headers: (r.headers ?? []).map((h) => ({ ...h, id: uid() })),
         queryParams: (r.queryParams ?? []).map((p) => ({ ...p, id: uid() })),
@@ -767,12 +952,14 @@ export const useStore = create<State>((set, get) => ({
         updatedAt: now,
       }),
     );
-    await db.transaction("rw", db.collections, db.requests, async () => {
+    await db.transaction("rw", db.collections, db.folders, db.requests, async () => {
       await db.collections.add(newCol);
+      if (newFolders.length) await db.folders.bulkAdd(newFolders);
       if (newReqs.length) await db.requests.bulkAdd(newReqs);
     });
     set((s) => ({
       collections: [...s.collections, newCol],
+      folders: [...s.folders, ...newFolders],
       requests: [...s.requests, ...newReqs],
     }));
     return newCol;
@@ -809,6 +996,20 @@ export const useStore = create<State>((set, get) => ({
       };
     });
 
+    const srcFolders = parsed.folders ?? [];
+    const folderIdMap = new Map<string, string>();
+    srcFolders.forEach((folder) => folderIdMap.set(folder.id, uid()));
+    const folders: Folder[] = srcFolders.map((folder) => ({
+      ...folder,
+      id: folderIdMap.get(folder.id)!,
+      workspaceId,
+      collectionId: collectionIdMap.get(folder.collectionId) ?? folder.collectionId,
+      parentFolderId: folder.parentFolderId
+        ? (folderIdMap.get(folder.parentFolderId) ?? null)
+        : null,
+      createdAt: folder.createdAt ?? now,
+    }));
+
     const requestIdMap = new Map<string, string>();
     const requests: ApiRequest[] = parsed.requests.map((request) => {
       const id = uid();
@@ -820,6 +1021,7 @@ export const useStore = create<State>((set, get) => ({
         collectionId: request.collectionId
           ? (collectionIdMap.get(request.collectionId) ?? null)
           : null,
+        folderId: request.folderId ? (folderIdMap.get(request.folderId) ?? null) : null,
         position: request.position,
         headers: remapKvIds(request.headers ?? []),
         queryParams: remapKvIds(request.queryParams ?? []),
@@ -871,16 +1073,18 @@ export const useStore = create<State>((set, get) => ({
 
     await db.transaction(
       "rw",
-      [db.history, db.requests, db.collections, db.environments, db.workspaces],
+      [db.history, db.requests, db.folders, db.collections, db.environments, db.workspaces],
       async () => {
         await db.history.clear();
         await db.requests.clear();
+        await db.folders.clear();
         await db.collections.clear();
         await db.environments.clear();
         await db.workspaces.clear();
 
         await db.workspaces.add(workspace);
         if (collections.length) await db.collections.bulkAdd(collections);
+        if (folders.length) await db.folders.bulkAdd(folders);
         if (requests.length) await db.requests.bulkAdd(requests);
         if (environments.length) await db.environments.bulkAdd(environments);
         if (history.length) await db.history.bulkAdd(history);
@@ -893,6 +1097,7 @@ export const useStore = create<State>((set, get) => ({
     set((state) => ({
       workspace,
       collections,
+      folders,
       requests,
       environments,
       history,
@@ -1015,8 +1220,14 @@ async function reportDbWriteFailure<T>(write: Promise<T>): Promise<T> {
   }
 }
 
-function getNextRequestPosition(requests: ApiRequest[], collectionId: string | null) {
-  const siblings = requests.filter((request) => request.collectionId === collectionId);
+function getNextRequestPosition(
+  requests: ApiRequest[],
+  collectionId: string | null,
+  folderId: string | null,
+) {
+  const siblings = requests.filter(
+    (request) => request.collectionId === collectionId && request.folderId === folderId,
+  );
   if (!siblings.length) return 0;
   return Math.max(...siblings.map((request) => request.position ?? 0)) + 1;
 }
@@ -1024,6 +1235,44 @@ function getNextRequestPosition(requests: ApiRequest[], collectionId: string | n
 function getNextCollectionPosition(collections: Collection[]) {
   if (!collections.length) return 0;
   return Math.max(...collections.map((collection) => collection.position ?? 0)) + 1;
+}
+
+function getNextFolderPosition(
+  folders: Folder[],
+  collectionId: string,
+  parentFolderId: string | null,
+) {
+  const siblings = folders.filter(
+    (folder) => folder.collectionId === collectionId && folder.parentFolderId === parentFolderId,
+  );
+  if (!siblings.length) return 0;
+  return Math.max(...siblings.map((folder) => folder.position ?? 0)) + 1;
+}
+
+function collectDescendantFolderIds(folders: Folder[], rootId: string): string[] {
+  const children = folders.filter((folder) => folder.parentFolderId === rootId);
+  return children.flatMap((child) => [child.id, ...collectDescendantFolderIds(folders, child.id)]);
+}
+
+/** Would moving `folderId` under `newParentFolderId` create a cycle (moving a folder into
+ * itself or one of its own descendants)? The sole safety enforcement for folder moves — UI
+ * drag state can be bypassed, so this must be checked in the store action itself. */
+function wouldCreateCycle(
+  folders: Folder[],
+  folderId: string,
+  newParentFolderId: string | null,
+): boolean {
+  if (newParentFolderId === null) return false;
+  if (newParentFolderId === folderId) return true;
+  const seen = new Set<string>();
+  let cur = folders.find((folder) => folder.id === newParentFolderId);
+  while (cur) {
+    if (cur.id === folderId || seen.has(cur.id)) return true;
+    seen.add(cur.id);
+    const parentId: string | null = cur.parentFolderId;
+    cur = parentId ? folders.find((folder) => folder.id === parentId) : undefined;
+  }
+  return false;
 }
 
 function sortRequestsForCollection(requests: ApiRequest[]) {

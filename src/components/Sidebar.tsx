@@ -36,6 +36,7 @@ import {
 export function Sidebar() {
   const {
     collections,
+    folders,
     requests,
     openRequest,
     activeTabId,
@@ -49,6 +50,12 @@ export function Sidebar() {
     duplicateRequest,
     duplicateCollection,
     deleteCollection,
+    createFolder,
+    renameFolder,
+    deleteFolder,
+    reorderFolders,
+    moveFolderToParent,
+    moveRequestToFolder,
     toggleFavorite,
     exportCollectionById,
     reorderCollections,
@@ -60,29 +67,39 @@ export function Sidebar() {
   const [newCollectionName, setNewCollectionName] = useState("");
   const [renamingCollectionId, setRenamingCollectionId] = useState<string | null>(null);
   const [collectionNameDraft, setCollectionNameDraft] = useState("");
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [folderNameDraft, setFolderNameDraft] = useState("");
   const [draggedCollectionId, setDraggedCollectionId] = useState<string | null>(null);
+  const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null);
   const [draggedRequest, setDraggedRequest] = useState<{
     id: string;
     collectionId: string | null;
+    folderId: string | null;
   } | null>(null);
   const [collectionAppendTargetId, setCollectionAppendTargetId] = useState<string | null>(null);
   const [collectionReorderTargetId, setCollectionReorderTargetId] = useState<string | null>(null);
+  const [folderAppendTargetId, setFolderAppendTargetId] = useState<string | null>(null);
+  const [folderReorderTargetId, setFolderReorderTargetId] = useState<string | null>(null);
   const [requestDropTarget, setRequestDropTarget] = useState<{
     targetId: string | null;
     collectionId: string | null;
+    folderId: string | null;
   } | null>(null);
   const [pendingDeleteRequestId, setPendingDeleteRequestId] = useState<string | null>(null);
   const [pendingDeleteCollectionId, setPendingDeleteCollectionId] = useState<string | null>(null);
+  const [pendingDeleteFolderId, setPendingDeleteFolderId] = useState<string | null>(null);
 
   const activeRequestId = tabs.find((t) => t.id === activeTabId)?.requestId;
-  const activeCollectionId =
-    requests.find((request) => request.id === activeRequestId)?.collectionId ?? null;
+  const activeRequestObj = requests.find((request) => request.id === activeRequestId);
+  const activeCollectionId = activeRequestObj?.collectionId ?? null;
+  const activeFolderId = activeRequestObj?.folderId ?? null;
   const q = query.trim().toLowerCase();
   const dragEnabled = !q;
   const reorderRequestDrop = reorderRequests as (
     draggedId: string,
     targetId: string | null,
     collectionId: string | null,
+    folderId: string | null,
   ) => Promise<void>;
 
   const filteredRequests = useMemo(
@@ -96,6 +113,11 @@ export function Sidebar() {
 
   const filterReq = (cid: string | null) =>
     filteredRequests.filter((request) => request.collectionId === cid);
+
+  const directRequests = (collectionId: string, folderId: string | null) =>
+    filteredRequests.filter(
+      (request) => request.collectionId === collectionId && request.folderId === folderId,
+    );
 
   const favorites = useMemo(
     () => filteredRequests.filter((request) => request.favorite),
@@ -114,6 +136,7 @@ export function Sidebar() {
     setDraggedRequest(null);
     setRequestDropTarget(null);
     setCollectionAppendTargetId(null);
+    setFolderAppendTargetId(null);
   };
 
   const clearCollectionDragState = () => {
@@ -121,10 +144,18 @@ export function Sidebar() {
     setCollectionReorderTargetId(null);
   };
 
+  const clearFolderDragState = () => {
+    setDraggedFolderId(null);
+    setFolderReorderTargetId(null);
+    setCollectionAppendTargetId(null);
+    setFolderAppendTargetId(null);
+  };
+
   useEffect(() => {
     if (!dragEnabled) {
       clearRequestDragState();
       clearCollectionDragState();
+      clearFolderDragState();
     }
   }, [dragEnabled]);
 
@@ -149,6 +180,25 @@ export function Sidebar() {
     setCollectionNameDraft("");
   };
 
+  const startFolderRename = (id: string, name: string) => {
+    setRenamingFolderId(id);
+    setFolderNameDraft(name);
+  };
+
+  const submitFolderRename = async (id: string) => {
+    const nextName = folderNameDraft.trim();
+    if (nextName) {
+      await renameFolder(id, nextName);
+    }
+    setRenamingFolderId(null);
+    setFolderNameDraft("");
+  };
+
+  const createFolderInline = async (collectionId: string, parentFolderId: string | null) => {
+    const folder = await createFolder(collectionId, parentFolderId, "New folder");
+    startFolderRename(folder.id, folder.name);
+  };
+
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-[var(--surface)]">
       {/* Brand */}
@@ -160,7 +210,7 @@ export function Sidebar() {
           <span className="text-sm font-semibold tracking-tight">Reqlo</span>
         </div>
         <button
-          onClick={() => createRequest(activeCollectionId)}
+          onClick={() => createRequest(activeCollectionId, activeFolderId)}
           className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
           title="New request"
         >
@@ -206,6 +256,7 @@ export function Sidebar() {
             items={favorites}
             collections={collectionOptions}
             listCollectionId={null}
+            listFolderId={null}
             reorderEnabled={false}
             draggedRequest={draggedRequest}
             requestDropTarget={requestDropTarget}
@@ -237,7 +288,7 @@ export function Sidebar() {
           }}
           onDrop={() => {
             if (!dragEnabled || !draggedRequest) return;
-            void reorderRequestDrop(draggedRequest.id, null, null);
+            void reorderRequestDrop(draggedRequest.id, null, null, null);
             clearRequestDragState();
           }}
           dropIndicator={
@@ -250,6 +301,7 @@ export function Sidebar() {
             items={unfiled}
             collections={collectionOptions}
             listCollectionId={null}
+            listFolderId={null}
             reorderEnabled={dragEnabled}
             draggedRequest={draggedRequest}
             requestDropTarget={requestDropTarget}
@@ -257,14 +309,14 @@ export function Sidebar() {
             onOpen={openRequest}
             onToggleFavorite={(id) => void toggleFavorite(id)}
             onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
-            onDragStart={(id, collectionId) => {
-              setDraggedRequest({ id, collectionId });
+            onDragStart={(id, collectionId, folderId) => {
+              setDraggedRequest({ id, collectionId, folderId });
               setCollectionAppendTargetId(null);
               setRequestDropTarget(null);
             }}
             onDragEnd={clearRequestDragState}
-            onReorder={(draggedId, targetId, collectionId) =>
-              void reorderRequestDrop(draggedId, targetId, collectionId)
+            onReorder={(draggedId, targetId, collectionId, folderId) =>
+              void reorderRequestDrop(draggedId, targetId, collectionId, folderId)
             }
             onRequestDropTargetChange={setRequestDropTarget}
             onSectionAppendHover={setCollectionAppendTargetId}
@@ -316,7 +368,7 @@ export function Sidebar() {
               }}
               onDragEnd={clearCollectionDragState}
               onDragOver={(event) => {
-                if (dragEnabled && draggedRequest) {
+                if (dragEnabled && (draggedRequest || draggedFolderId)) {
                   event.preventDefault();
                   setCollectionAppendTargetId(col.id);
                   setRequestDropTarget(null);
@@ -328,8 +380,16 @@ export function Sidebar() {
               }}
               onDrop={() => {
                 if (dragEnabled && draggedRequest) {
-                  void reorderRequestDrop(draggedRequest.id, null, col.id);
+                  void reorderRequestDrop(draggedRequest.id, null, col.id, null);
                   clearRequestDragState();
+                  return;
+                }
+                if (dragEnabled && draggedFolderId) {
+                  const dragged = folders.find((f) => f.id === draggedFolderId);
+                  if (dragged && dragged.collectionId === col.id) {
+                    void moveFolderToParent(draggedFolderId, null);
+                  }
+                  clearFolderDragState();
                   return;
                 }
                 if (!draggedCollectionId || draggedCollectionId === col.id) return;
@@ -366,6 +426,9 @@ export function Sidebar() {
                     <DropdownMenuItem onSelect={() => void createRequest(col.id)}>
                       <Plus className="h-3.5 w-3.5" /> New request in collection
                     </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void createFolderInline(col.id, null)}>
+                      <FolderClosed className="h-3.5 w-3.5" /> New folder
+                    </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => void duplicateCollection(col.id)}>
                       <CopyPlus className="h-3.5 w-3.5" /> Duplicate collection
                     </DropdownMenuItem>
@@ -384,30 +447,73 @@ export function Sidebar() {
                 </DropdownMenu>
               }
             >
-              <RequestList
-                items={list}
+              <FolderTree
+                collectionId={col.id}
+                parentFolderId={null}
+                folders={folders}
+                requests={filteredRequests}
                 collections={collectionOptions}
-                listCollectionId={col.id}
-                reorderEnabled={dragEnabled}
+                dragEnabled={dragEnabled}
                 draggedRequest={draggedRequest}
+                requestDropTarget={requestDropTarget}
+                draggedFolderId={draggedFolderId}
+                folderReorderTargetId={folderReorderTargetId}
+                folderAppendTargetId={folderAppendTargetId}
                 activeRequestId={activeRequestId}
+                openMap={sidebarTree.collections}
+                renamingFolderId={renamingFolderId}
+                folderNameDraft={folderNameDraft}
+                onFolderNameDraftChange={setFolderNameDraft}
+                onToggleFolderOpen={(id, open) => setSidebarTreeOpen(id, open)}
+                onStartFolderRename={startFolderRename}
+                onSubmitFolderRename={submitFolderRename}
+                onCancelFolderRename={() => {
+                  setRenamingFolderId(null);
+                  setFolderNameDraft("");
+                }}
                 onOpen={openRequest}
                 onToggleFavorite={(id) => void toggleFavorite(id)}
                 onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
-                onDragStart={(id, collectionId) => {
-                  setDraggedRequest({ id, collectionId });
+                onDragStartRequest={(id, collectionId, folderId) => {
+                  setDraggedRequest({ id, collectionId, folderId });
                   setCollectionAppendTargetId(null);
+                  setFolderAppendTargetId(null);
                   setRequestDropTarget(null);
                 }}
-                onDragEnd={clearRequestDragState}
-                onReorder={(draggedId, targetId, collectionId) =>
-                  void reorderRequestDrop(draggedId, targetId, collectionId)
+                onDragEndRequest={clearRequestDragState}
+                onReorderRequest={(draggedId, targetId, collectionId, folderId) =>
+                  void reorderRequestDrop(draggedId, targetId, collectionId, folderId)
                 }
-                requestDropTarget={requestDropTarget}
                 onRequestDropTargetChange={setRequestDropTarget}
-                onSectionAppendHover={(collectionId) => setCollectionAppendTargetId(collectionId)}
-                onDuplicate={(id) => void duplicateRequest(id)}
-                onDelete={(id) => setPendingDeleteRequestId(id)}
+                onDuplicateRequest={(id) => void duplicateRequest(id)}
+                onDeleteRequest={(id) => setPendingDeleteRequestId(id)}
+                onDropRequestIntoFolder={(requestId, collectionId, folderId) =>
+                  void moveRequestToFolder(requestId, collectionId, folderId)
+                }
+                onDragStartFolder={(id) => {
+                  setDraggedFolderId(id);
+                  setFolderReorderTargetId(null);
+                }}
+                onDragEndFolder={clearFolderDragState}
+                onFolderAppendHover={setFolderAppendTargetId}
+                onFolderReorderTargetChange={setFolderReorderTargetId}
+                onFolderDrop={(targetFolderId) => {
+                  const dragged = folders.find((f) => f.id === draggedFolderId);
+                  const target = folders.find((f) => f.id === targetFolderId);
+                  if (!dragged || !target || dragged.id === target.id) return;
+                  if (dragged.parentFolderId === target.parentFolderId) {
+                    void reorderFolders(dragged.id, target.id);
+                  } else {
+                    void moveFolderToParent(dragged.id, target.id);
+                  }
+                }}
+                onNewFolder={(collectionId, parentFolderId) =>
+                  void createFolderInline(collectionId, parentFolderId)
+                }
+                onNewRequestInFolder={(collectionId, folderId) =>
+                  void createRequest(collectionId, folderId)
+                }
+                onDeleteFolderRequest={(id) => setPendingDeleteFolderId(id)}
               />
             </SidebarSection>
           );
@@ -478,6 +584,28 @@ export function Sidebar() {
         onConfirm={() => {
           if (pendingDeleteCollectionId) void deleteCollection(pendingDeleteCollectionId);
           setPendingDeleteCollectionId(null);
+        }}
+      />
+
+      <ConfirmDeleteDialog
+        open={pendingDeleteFolderId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteFolderId(null);
+        }}
+        title="Delete folder"
+        description={(() => {
+          const folder = folders.find((f) => f.id === pendingDeleteFolderId);
+          if (!folder) return "";
+          const descendantFolderIds = new Set(collectDescendantFolderIds(folders, folder.id));
+          descendantFolderIds.add(folder.id);
+          const count = requests.filter(
+            (r) => !!r.folderId && descendantFolderIds.has(r.folderId),
+          ).length;
+          return `"${folder.name}" and everything inside it (${count} request${count === 1 ? "" : "s"}) will be permanently deleted. This can't be undone.`;
+        })()}
+        onConfirm={() => {
+          if (pendingDeleteFolderId) void deleteFolder(pendingDeleteFolderId);
+          setPendingDeleteFolderId(null);
         }}
       />
     </aside>
@@ -567,10 +695,229 @@ function SidebarSection({
   );
 }
 
+interface FolderTreeProps {
+  collectionId: string;
+  parentFolderId: string | null;
+  folders: Array<{
+    id: string;
+    collectionId: string;
+    parentFolderId: string | null;
+    name: string;
+    position: number;
+    createdAt: number;
+  }>;
+  requests: Array<{
+    id: string;
+    method: Parameters<typeof MethodBadge>[0]["method"];
+    name: string;
+    favorite?: boolean;
+    collectionId?: string | null;
+    folderId?: string | null;
+  }>;
+  collections: Array<{ id: string; name: string }>;
+  dragEnabled: boolean;
+  draggedRequest: { id: string; collectionId: string | null; folderId: string | null } | null;
+  requestDropTarget: {
+    targetId: string | null;
+    collectionId: string | null;
+    folderId: string | null;
+  } | null;
+  draggedFolderId: string | null;
+  folderReorderTargetId: string | null;
+  folderAppendTargetId: string | null;
+  activeRequestId?: string;
+  openMap: Record<string, boolean>;
+  renamingFolderId: string | null;
+  folderNameDraft: string;
+  onFolderNameDraftChange: (value: string) => void;
+  onToggleFolderOpen: (id: string, open: boolean) => void;
+  onStartFolderRename: (id: string, name: string) => void;
+  onSubmitFolderRename: (id: string) => void;
+  onCancelFolderRename: () => void;
+  onOpen: (id: string) => void;
+  onToggleFavorite: (id: string) => void;
+  onMove: (id: string, collectionId: string | null) => void;
+  onDragStartRequest: (id: string, collectionId: string | null, folderId: string | null) => void;
+  onDragEndRequest: () => void;
+  onReorderRequest: (
+    draggedId: string,
+    targetId: string | null,
+    collectionId: string | null,
+    folderId: string | null,
+  ) => void;
+  onRequestDropTargetChange: (
+    value: { targetId: string | null; collectionId: string | null; folderId: string | null } | null,
+  ) => void;
+  onDuplicateRequest: (id: string) => void;
+  onDeleteRequest: (id: string) => void;
+  onDropRequestIntoFolder: (requestId: string, collectionId: string, folderId: string) => void;
+  onDragStartFolder: (id: string) => void;
+  onDragEndFolder: () => void;
+  onFolderAppendHover: (id: string | null) => void;
+  onFolderReorderTargetChange: (id: string | null) => void;
+  onFolderDrop: (targetFolderId: string) => void;
+  onNewFolder: (collectionId: string, parentFolderId: string | null) => void;
+  onNewRequestInFolder: (collectionId: string, folderId: string) => void;
+  onDeleteFolderRequest: (id: string) => void;
+}
+
+function FolderTree(props: FolderTreeProps) {
+  const { collectionId, parentFolderId, folders, requests } = props;
+  const childFolders = folders
+    .filter((f) => f.collectionId === collectionId && f.parentFolderId === parentFolderId)
+    .sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
+  const childRequests = requests.filter(
+    (r) => (r.collectionId ?? null) === collectionId && (r.folderId ?? null) === parentFolderId,
+  );
+
+  return (
+    <>
+      {childFolders.map((folder) => {
+        const isOpen = props.openMap[folder.id] ?? true;
+        const isRenaming = props.renamingFolderId === folder.id;
+        return (
+          <SidebarSection
+            key={folder.id}
+            icon={<FolderClosed className="h-3.5 w-3.5 text-muted-foreground" />}
+            title={
+              isRenaming ? (
+                <input
+                  autoFocus
+                  value={props.folderNameDraft}
+                  onChange={(event) => props.onFolderNameDraftChange(event.target.value)}
+                  onClick={(event) => event.stopPropagation()}
+                  onBlur={() => props.onSubmitFolderRename(folder.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                    if (event.key === "Escape") props.onCancelFolderRename();
+                  }}
+                  className="h-7 min-w-0 rounded-lg border border-border/80 bg-background/80 px-2 text-xs font-medium outline-none transition focus:border-foreground/15"
+                />
+              ) : (
+                folder.name
+              )
+            }
+            count={requests.filter((r) => r.folderId === folder.id).length}
+            open={isOpen}
+            onToggle={() => props.onToggleFolderOpen(folder.id, !isOpen)}
+            draggable={props.dragEnabled && !isRenaming}
+            dragging={props.draggedFolderId === folder.id}
+            dragTargeted={props.folderReorderTargetId === folder.id}
+            onDragStart={() => props.onDragStartFolder(folder.id)}
+            onDragEnd={props.onDragEndFolder}
+            onDragOver={(event) => {
+              if (props.dragEnabled && props.draggedRequest) {
+                event.preventDefault();
+                props.onFolderAppendHover(folder.id);
+                props.onRequestDropTargetChange(null);
+                return;
+              }
+              if (
+                !props.dragEnabled ||
+                !props.draggedFolderId ||
+                props.draggedFolderId === folder.id
+              ) {
+                return;
+              }
+              event.preventDefault();
+              props.onFolderReorderTargetChange(folder.id);
+            }}
+            onDrop={() => {
+              if (props.dragEnabled && props.draggedRequest) {
+                props.onDropRequestIntoFolder(props.draggedRequest.id, collectionId, folder.id);
+                props.onDragEndRequest();
+                return;
+              }
+              if (
+                !props.dragEnabled ||
+                !props.draggedFolderId ||
+                props.draggedFolderId === folder.id
+              ) {
+                return;
+              }
+              props.onFolderDrop(folder.id);
+              props.onDragEndFolder();
+            }}
+            dropIndicator={
+              props.folderAppendTargetId === folder.id ? (
+                <DropIndicator label={`Drop to add to ${folder.name}`} />
+              ) : props.folderReorderTargetId === folder.id ? (
+                <DropIndicator label={`Drop near ${folder.name}`} tone="muted" />
+              ) : null
+            }
+            actions={
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(event) => event.stopPropagation()}
+                    className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                    title={`${folder.name} actions`}
+                  >
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={() => props.onStartFolderRename(folder.id, folder.name)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Rename folder
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => props.onNewRequestInFolder(collectionId, folder.id)}
+                  >
+                    <Plus className="h-3.5 w-3.5" /> New request in folder
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => props.onNewFolder(collectionId, folder.id)}>
+                    <FolderClosed className="h-3.5 w-3.5" /> New subfolder
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => props.onDeleteFolderRequest(folder.id)}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete folder
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            }
+          >
+            <FolderTree {...props} parentFolderId={folder.id} />
+          </SidebarSection>
+        );
+      })}
+      <RequestList
+        items={childRequests}
+        collections={props.collections}
+        listCollectionId={collectionId}
+        listFolderId={parentFolderId}
+        reorderEnabled={props.dragEnabled}
+        draggedRequest={props.draggedRequest}
+        requestDropTarget={props.requestDropTarget}
+        activeRequestId={props.activeRequestId}
+        onOpen={props.onOpen}
+        onToggleFavorite={props.onToggleFavorite}
+        onMove={props.onMove}
+        onDragStart={props.onDragStartRequest}
+        onDragEnd={props.onDragEndRequest}
+        onReorder={props.onReorderRequest}
+        onRequestDropTargetChange={props.onRequestDropTargetChange}
+        onSectionAppendHover={() => undefined}
+        onDuplicate={props.onDuplicateRequest}
+        onDelete={props.onDeleteRequest}
+      />
+    </>
+  );
+}
+
 function RequestList({
   items,
   collections,
   listCollectionId,
+  listFolderId,
   reorderEnabled,
   draggedRequest,
   requestDropTarget,
@@ -595,18 +942,28 @@ function RequestList({
   }>;
   collections: Array<{ id: string; name: string }>;
   listCollectionId: string | null;
+  listFolderId: string | null;
   reorderEnabled: boolean;
-  draggedRequest: { id: string; collectionId: string | null } | null;
-  requestDropTarget: { targetId: string | null; collectionId: string | null } | null;
+  draggedRequest: { id: string; collectionId: string | null; folderId: string | null } | null;
+  requestDropTarget: {
+    targetId: string | null;
+    collectionId: string | null;
+    folderId: string | null;
+  } | null;
   activeRequestId?: string;
   onOpen: (id: string) => void;
   onToggleFavorite: (id: string) => void;
   onMove: (id: string, collectionId: string | null) => void;
-  onDragStart: (id: string, collectionId: string | null) => void;
+  onDragStart: (id: string, collectionId: string | null, folderId: string | null) => void;
   onDragEnd: () => void;
-  onReorder: (draggedId: string, targetId: string | null, collectionId: string | null) => void;
+  onReorder: (
+    draggedId: string,
+    targetId: string | null,
+    collectionId: string | null,
+    folderId: string | null,
+  ) => void;
   onRequestDropTargetChange: (
-    value: { targetId: string | null; collectionId: string | null } | null,
+    value: { targetId: string | null; collectionId: string | null; folderId: string | null } | null,
   ) => void;
   onSectionAppendHover: (collectionId: string | null) => void;
   onDuplicate: (id: string) => void;
@@ -619,11 +976,15 @@ function RequestList({
           if (!reorderEnabled || !draggedRequest) return;
           event.preventDefault();
           onSectionAppendHover(listCollectionId);
-          onRequestDropTargetChange({ targetId: null, collectionId: listCollectionId });
+          onRequestDropTargetChange({
+            targetId: null,
+            collectionId: listCollectionId,
+            folderId: listFolderId,
+          });
         }}
         onDrop={() => {
           if (!reorderEnabled || !draggedRequest) return;
-          onReorder(draggedRequest.id, null, listCollectionId);
+          onReorder(draggedRequest.id, null, listCollectionId, listFolderId);
           onDragEnd();
         }}
         className={cn(
@@ -641,7 +1002,8 @@ function RequestList({
       {items.map((request) => (
         <div key={request.id}>
           {requestDropTarget?.targetId === request.id &&
-          requestDropTarget.collectionId === listCollectionId ? (
+          requestDropTarget.collectionId === listCollectionId &&
+          requestDropTarget.folderId === listFolderId ? (
             <DropIndicator label={`Drop before ${request.name || "Untitled"}`} compact />
           ) : null}
           <div
@@ -649,7 +1011,7 @@ function RequestList({
             onDragStart={(event) => {
               if (!reorderEnabled) return;
               event.dataTransfer.effectAllowed = "move";
-              onDragStart(request.id, listCollectionId);
+              onDragStart(request.id, listCollectionId, listFolderId);
             }}
             onDragEnd={onDragEnd}
             onDragOver={(event) => {
@@ -658,13 +1020,17 @@ function RequestList({
               }
               event.preventDefault();
               onSectionAppendHover(null);
-              onRequestDropTargetChange({ targetId: request.id, collectionId: listCollectionId });
+              onRequestDropTargetChange({
+                targetId: request.id,
+                collectionId: listCollectionId,
+                folderId: listFolderId,
+              });
             }}
             onDrop={() => {
               if (!reorderEnabled || !draggedRequest || draggedRequest.id === request.id) {
                 return;
               }
-              onReorder(draggedRequest.id, request.id, listCollectionId);
+              onReorder(draggedRequest.id, request.id, listCollectionId, listFolderId);
               onDragEnd();
             }}
             className={cn(
@@ -675,6 +1041,7 @@ function RequestList({
               reorderEnabled && "cursor-grab active:cursor-grabbing",
               requestDropTarget?.targetId === request.id &&
                 requestDropTarget.collectionId === listCollectionId &&
+                requestDropTarget.folderId === listFolderId &&
                 "bg-primary/5 ring-1 ring-primary/15",
             )}
             onClick={() => onOpen(request.id)}
@@ -809,4 +1176,12 @@ function SidebarStat({ label, value }: { label: string; value: number }) {
       <div className="mt-1 text-sm font-semibold tracking-tight text-foreground">{value}</div>
     </div>
   );
+}
+
+function collectDescendantFolderIds(
+  folders: Array<{ id: string; parentFolderId: string | null }>,
+  rootId: string,
+): string[] {
+  const children = folders.filter((folder) => folder.parentFolderId === rootId);
+  return children.flatMap((child) => [child.id, ...collectDescendantFolderIds(folders, child.id)]);
 }
