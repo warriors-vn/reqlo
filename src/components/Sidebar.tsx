@@ -14,6 +14,7 @@ import {
   Download,
   Pencil,
   CopyPlus,
+  FolderGit2,
 } from "lucide-react";
 import { useStore } from "@/stores/useStore";
 import { MethodBadge } from "./MethodBadge";
@@ -58,6 +59,7 @@ export function Sidebar() {
     moveRequestToFolder,
     toggleFavorite,
     exportCollectionById,
+    exportCollectionAsFilesById,
     reorderCollections,
     setPalette,
     sidebarTree,
@@ -435,6 +437,9 @@ export function Sidebar() {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onSelect={() => void exportCollectionById(col.id)}>
                       <Download className="h-3.5 w-3.5" /> Export collection
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void exportCollectionAsFilesById(col.id)}>
+                      <FolderGit2 className="h-3.5 w-3.5" /> Export as files (git-friendly)
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem

@@ -27,6 +27,12 @@ import {
   validateCollectionExport,
   validateWorkspaceExport,
 } from "@/services/portability";
+import {
+  buildCollectionFileTree,
+  downloadZip,
+  supportsDirectoryExport,
+  writeFilesToDirectory,
+} from "@/services/gitExport";
 
 interface Tab {
   id: string;
@@ -144,6 +150,7 @@ interface State {
   importCollectionJSON: (text: string) => Promise<Collection | null>;
   importWorkspaceJSON: (text: string) => Promise<Workspace | null>;
   exportCollectionById: (id: string) => Promise<void>;
+  exportCollectionAsFilesById: (id: string) => Promise<void>;
   exportActiveWorkspace: () => Promise<void>;
 
   // view
@@ -1120,6 +1127,18 @@ export const useStore = create<State>((set, get) => ({
     if (!col) return;
     const data = await buildCollectionExport(col);
     downloadJSON(data, `${slugify(col.name)}.reqlo.json`);
+  },
+
+  exportCollectionAsFilesById: async (id) => {
+    const col = get().collections.find((c) => c.id === id);
+    if (!col) return;
+    const files = await buildCollectionFileTree(col);
+    if (supportsDirectoryExport()) {
+      // Returns false if the user cancels the picker — respect that instead of falling back.
+      await writeFilesToDirectory(files);
+      return;
+    }
+    downloadZip(files, `${slugify(col.name)}.zip`, slugify(col.name));
   },
 
   exportActiveWorkspace: async () => {
