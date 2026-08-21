@@ -12,11 +12,9 @@ import {
   FileJson,
   Settings,
   History,
-  Sparkles,
   PanelLeft,
   Terminal,
   Globe,
-  FlaskConical,
   Code2,
   ChevronLeft,
   ChevronRight,
@@ -307,25 +305,6 @@ export function registerBuiltInCommands(): () => void {
       icon: Download,
       shortcut: "mod+alt+e",
       run: () => s().exportActiveWorkspace(),
-    },
-
-    // ─────────── AI ───────────
-    {
-      id: "ai.assistant",
-      title: "Open AI Assistant",
-      category: "ai",
-      icon: Sparkles,
-      shortcut: "mod+shift+a",
-      run: () => s().openOverlay("ai"),
-    },
-    {
-      id: "ai.generate-test",
-      title: "Generate Test Script",
-      description: "Draft a test for the active request",
-      category: "ai",
-      icon: FlaskConical,
-      when: (c) => c.hasActiveRequest,
-      run: () => s().openOverlay("ai"),
     },
 
     // ─────────── VIEW ───────────

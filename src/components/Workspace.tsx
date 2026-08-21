@@ -8,7 +8,6 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { ImportCurlModal } from "@/components/ImportCurlModal";
 import { HistoryDrawer } from "@/components/HistoryDrawer";
 import { SettingsModal } from "@/components/SettingsModal";
-import { AIAssistantPanel } from "@/components/AIAssistantPanel";
 import { EnvironmentSwitcher } from "@/components/EnvironmentSwitcher";
 import { executeRequest } from "@/services/executor";
 import { createRequestSnapshot, uid } from "@/services/db";
@@ -163,7 +162,6 @@ export function Workspace() {
       <ImportCurlModal />
       <HistoryDrawer />
       <SettingsModal />
-      <AIAssistantPanel />
       <EnvironmentSwitcher />
     </div>
   );
