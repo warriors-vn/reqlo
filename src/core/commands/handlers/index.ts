@@ -259,6 +259,20 @@ export function registerBuiltInCommands(): () => void {
       },
     },
     {
+      id: "import.postman",
+      title: "Import Postman Collection",
+      description: "Load a Postman Collection v2.1 export",
+      category: "import-export",
+      icon: Upload,
+      keywords: ["postman", "import", "migrate"],
+      run: async () => {
+        const text = await pickFile("application/json,.json");
+        if (!text) return;
+        const col = await s().importPostmanCollectionJSON(text);
+        if (!col) window.alert("Not a Postman Collection v2.1 export.");
+      },
+    },
+    {
       id: "import.workspace",
       title: "Restore Workspace",
       description: "Replace the local workspace from a backup export",
