@@ -85,10 +85,21 @@ export interface Collection {
   createdAt: number;
 }
 
+export interface Folder {
+  id: string;
+  workspaceId: string;
+  collectionId: string;
+  parentFolderId: string | null;
+  name: string;
+  position: number;
+  createdAt: number;
+}
+
 export interface ApiRequest {
   id: string;
   workspaceId: string;
   collectionId: string | null;
+  folderId: string | null;
   position: number;
   name: string;
   method: HttpMethod;
@@ -157,6 +168,7 @@ export interface Environment {
 class ReqloDB extends Dexie {
   workspaces!: Table<Workspace, string>;
   collections!: Table<Collection, string>;
+  folders!: Table<Folder, string>;
   requests!: Table<ApiRequest, string>;
   history!: Table<HistoryEntry, string>;
   environments!: Table<Environment, string>;
@@ -229,6 +241,26 @@ class ReqloDB extends Dexie {
               ),
           ),
         );
+      });
+    this.version(5)
+      .stores({
+        workspaces: "id, updatedAt",
+        collections: "id, workspaceId, position",
+        folders:
+          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
+        requests:
+          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
+        history:
+          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
+        environments: "id, workspaceId",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table<ApiRequest, string>("requests")
+          .toCollection()
+          .modify((request) => {
+            if (request.folderId === undefined) request.folderId = null;
+          });
       });
   }
 }
@@ -349,6 +381,7 @@ export function normalizeApiRequest(
   return {
     ...request,
     collectionId: request.collectionId ?? null,
+    folderId: request.folderId ?? null,
     position: request.position ?? request.createdAt,
     headers: cloneKV(request.headers ?? []),
     queryParams: cloneKV(request.queryParams ?? []),
@@ -470,6 +503,7 @@ export async function ensureSeed(): Promise<Workspace> {
       id: uid(),
       workspaceId: ws.id,
       collectionId: col.id,
+      folderId: null,
       position: 0,
       name: "List users",
       method: "GET",
@@ -487,6 +521,7 @@ export async function ensureSeed(): Promise<Workspace> {
       id: uid(),
       workspaceId: ws.id,
       collectionId: col.id,
+      folderId: null,
       position: 1,
       name: "Create post",
       method: "POST",
@@ -511,6 +546,7 @@ export async function ensureSeed(): Promise<Workspace> {
       id: uid(),
       workspaceId: ws.id,
       collectionId: col.id,
+      folderId: null,
       position: 2,
       name: "Get single todo",
       method: "GET",

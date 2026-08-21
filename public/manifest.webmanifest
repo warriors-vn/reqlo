@@ -1,0 +1,17 @@
+{
+  "name": "reqlo",
+  "short_name": "reqlo",
+  "description": "A local-first HTTP client.",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#3454d1",
+  "background_color": "#14161c",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

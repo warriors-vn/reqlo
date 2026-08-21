@@ -80,6 +80,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "A premium, local-first API workspace. Faster than Postman, cleaner than Insomnia, fully offline.",
       },
       { name: "author", content: "Reqlo" },
+      { name: "theme-color", content: "#3454d1" },
       { property: "og:title", content: "Reqlo — The modern local-first API workspace" },
       {
         property: "og:description",
@@ -92,6 +93,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
@@ -116,6 +118,13 @@ function RootShell({ children }: { children: React.ReactNode }) {
       <body>
         {children}
         <Scripts />
+        <script
+          // Registered manually (rather than via the plugin's auto-inject) because this SSR
+          // setup has no static index.html for vite-plugin-pwa to transform.
+          dangerouslySetInnerHTML={{
+            __html: `if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () {}); }); }`,
+          }}
+        />
       </body>
     </html>
   );
