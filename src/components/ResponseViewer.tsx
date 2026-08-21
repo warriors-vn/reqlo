@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { copyTextToClipboard } from "@/features/code-snippets/utils/clipboard";
 import { Check, Copy, Download, ExternalLink, Eye, FileJson2, FileText } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -130,7 +131,7 @@ export function ResponseViewer({
             disabled={!copyValue}
             onClick={() => {
               if (!copyValue) return;
-              void navigator.clipboard.writeText(copyValue);
+              void copyTextToClipboard(copyValue);
               setCopied(true);
               setTimeout(() => setCopied(false), 1200);
             }}
