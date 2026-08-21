@@ -6,6 +6,8 @@ Everything you compose — requests, collections, environments, history — live
 
 ``reqlo`` may look like [Postman](https://www.postman.com/) or [Insomnia](https://insomnia.rest/) at a glance, but it's built from scratch for a single workflow: open it, paste a cURL command or build a request by hand, send it, and keep working — no cloud workspace required.
 
+**Non-goal:** an account or login is never required to use ``reqlo``'s core features — composing requests, collections, environments, history. That's a hard line, not a default that hasn't been challenged yet; any future sync/team feature has to stay optional on top of it, never a gate in front of it.
+
 Why this name?
 ---------------
 

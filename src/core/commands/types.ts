@@ -6,7 +6,6 @@ export type CommandCategory =
   | "workspace"
   | "navigation"
   | "import-export"
-  | "ai"
   | "settings"
   | "view"
   | "developer";
