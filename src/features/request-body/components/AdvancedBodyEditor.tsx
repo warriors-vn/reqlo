@@ -6,7 +6,7 @@ import { KeyValueGrid } from "@/features/request-body/components/KeyValueGrid";
 import { BinaryBodyEditor } from "@/features/request-body/editors/BinaryBodyEditor";
 import { FormDataEditor } from "@/features/request-body/editors/FormDataEditor";
 import { GraphQLEditor } from "@/features/request-body/editors/GraphQLEditor";
-import { TextCodeEditor } from "@/features/request-body/editors/TextCodeEditor";
+import { LazyTextCodeEditor as TextCodeEditor } from "@/features/request-body/editors/LazyTextCodeEditor";
 import type { ApiRequest, RequestBodyDrafts, RequestBodyType } from "@/services/db";
 import {
   applyBodyTypeDefaults,

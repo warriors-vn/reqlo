@@ -458,6 +458,9 @@ export const useStore = create<State>((set, get) => ({
       queryParams: src.queryParams.map((p) => ({ ...p, id: uid() })),
       bodyDrafts: cloneBodyDrafts(src.bodyDrafts),
       auth: { ...src.auth },
+      extracts: src.extracts.map((rule) => ({ ...rule, id: uid() })),
+      assertions: src.assertions.map((rule) => ({ ...rule, id: uid() })),
+      mock: { ...src.mock },
       createdAt: now,
       updatedAt: now,
     };
@@ -562,6 +565,9 @@ export const useStore = create<State>((set, get) => ({
       queryParams: r.queryParams.map((p) => ({ ...p, id: uid() })),
       bodyDrafts: cloneBodyDrafts(r.bodyDrafts),
       auth: { ...r.auth },
+      extracts: r.extracts.map((rule) => ({ ...rule, id: uid() })),
+      assertions: r.assertions.map((rule) => ({ ...rule, id: uid() })),
+      mock: { ...r.mock },
       createdAt: now,
       updatedAt: now,
     }));
@@ -961,6 +967,8 @@ export const useStore = create<State>((set, get) => ({
         position: r.position ?? index,
         headers: (r.headers ?? []).map((h) => ({ ...h, id: uid() })),
         queryParams: (r.queryParams ?? []).map((p) => ({ ...p, id: uid() })),
+        extracts: (r.extracts ?? []).map((rule) => ({ ...rule, id: uid() })),
+        assertions: (r.assertions ?? []).map((rule) => ({ ...rule, id: uid() })),
         createdAt: now,
         updatedAt: now,
       }),
@@ -1089,6 +1097,8 @@ export const useStore = create<State>((set, get) => ({
         headers: remapKvIds(request.headers ?? []),
         queryParams: remapKvIds(request.queryParams ?? []),
         bodyDrafts: remapBodyDraftIds(request.bodyDrafts),
+        extracts: remapKvIds(request.extracts ?? []),
+        assertions: remapKvIds(request.assertions ?? []),
         createdAt: request.createdAt ?? now,
         updatedAt: request.updatedAt ?? now,
       });

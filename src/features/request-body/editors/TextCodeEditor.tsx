@@ -1,3 +1,4 @@
+import "@/lib/monaco-setup";
 import Editor from "@monaco-editor/react";
 import { Sparkles, WrapText } from "lucide-react";
 import { useMemo } from "react";
