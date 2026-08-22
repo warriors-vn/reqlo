@@ -12,6 +12,7 @@ import { evaluateAssertions } from "@/services/assertions";
 import { hasBodyContent } from "@/features/request-body/utils/body";
 import { Send, Loader2, Plus, X, ChevronDown } from "lucide-react";
 import { motion } from "framer-motion";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
@@ -120,6 +121,7 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
             <select
               value={request.method}
               onChange={(e) => updateRequest(request.id, { method: e.target.value as HttpMethod })}
+              aria-label="HTTP method"
               className="h-9 cursor-pointer appearance-none bg-transparent pl-3 pr-7 font-mono text-xs font-semibold uppercase tracking-wider outline-none"
               style={{ color: `var(--method-${request.method.toLowerCase()})` }}
             >
@@ -142,6 +144,7 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
             value={request.url}
             onChange={(e) => updateRequest(request.id, { url: e.target.value })}
             placeholder="https://api.example.com/endpoint"
+            aria-label="Request URL"
             spellCheck={false}
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === "Enter") onSend();
@@ -172,68 +175,79 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
         </motion.button>
       </div>
 
-      {/* Tab strip */}
-      <div className="flex items-center gap-1 border-b border-border px-3">
-        {tabs.map((t) => (
+      <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
+        {/* Tab strip */}
+        <div className="flex items-center gap-1 border-b border-border px-3">
+          <TabsList className="h-9 gap-1 rounded-none bg-transparent p-0">
+            {tabs.map((t) => (
+              <TabsTrigger
+                key={t.id}
+                value={t.id}
+                className="relative h-9 rounded-none bg-transparent px-2.5 text-xs font-medium text-muted-foreground shadow-none data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              >
+                {t.label}
+                {t.count !== undefined && (
+                  <span className="ml-1 text-3xs text-muted-foreground">{t.count}</span>
+                )}
+                {tab === t.id && (
+                  <motion.div
+                    layoutId="reqtab"
+                    className="absolute -bottom-px left-1 right-1 h-[2px] rounded-full bg-primary"
+                  />
+                )}
+              </TabsTrigger>
+            ))}
+          </TabsList>
           <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "relative h-9 px-2.5 text-xs font-medium transition",
-              tab === t.id ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-            )}
+            onClick={() => setPanelCollapsed((v) => !v)}
+            className="ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
+            title={
+              panelCollapsed
+                ? "Expand request panel"
+                : "Collapse request panel — more room for the response"
+            }
           >
-            {t.label}
-            {t.count !== undefined && (
-              <span className="ml-1 text-3xs text-muted-foreground">{t.count}</span>
-            )}
-            {tab === t.id && (
-              <motion.div
-                layoutId="reqtab"
-                className="absolute -bottom-px left-1 right-1 h-[2px] rounded-full bg-primary"
-              />
-            )}
+            <ChevronDown
+              className={cn("h-3.5 w-3.5 transition-transform", panelCollapsed && "-rotate-180")}
+            />
           </button>
-        ))}
-        <button
-          onClick={() => setPanelCollapsed((v) => !v)}
-          className="ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
-          title={
-            panelCollapsed
-              ? "Expand request panel"
-              : "Collapse request panel — more room for the response"
-          }
-        >
-          <ChevronDown
-            className={cn("h-3.5 w-3.5 transition-transform", panelCollapsed && "-rotate-180")}
-          />
-        </button>
-      </div>
-
-      {/* Panel */}
-      {!panelCollapsed && (
-        <div className="max-h-[40vh] min-h-[140px] overflow-auto px-4 py-3">
-          {tab === "params" && (
-            <KVEditor
-              list={request.queryParams}
-              onChange={(queryParams) => updateRequest(request.id, { queryParams })}
-              placeholder={["key", "value"]}
-            />
-          )}
-          {tab === "headers" && (
-            <KVEditor
-              list={request.headers}
-              onChange={(headers) => updateRequest(request.id, { headers })}
-              placeholder={["Header", "Value"]}
-            />
-          )}
-          {tab === "body" && <AdvancedBodyEditor request={request} />}
-          {tab === "auth" && <RequestAuthEditor request={request} />}
-          {tab === "extract" && <RequestExtractEditor request={request} result={result} />}
-          {tab === "tests" && <RequestAssertionEditor request={request} result={result} />}
-          {tab === "mock" && <RequestMockEditor request={request} />}
         </div>
-      )}
+
+        {/* Panel */}
+        {!panelCollapsed && (
+          <div className="max-h-[40vh] min-h-[140px] overflow-auto px-4 py-3">
+            <TabsContent value="params" className="mt-0">
+              <KVEditor
+                list={request.queryParams}
+                onChange={(queryParams) => updateRequest(request.id, { queryParams })}
+                placeholder={["key", "value"]}
+              />
+            </TabsContent>
+            <TabsContent value="headers" className="mt-0">
+              <KVEditor
+                list={request.headers}
+                onChange={(headers) => updateRequest(request.id, { headers })}
+                placeholder={["Header", "Value"]}
+              />
+            </TabsContent>
+            <TabsContent value="body" className="mt-0">
+              <AdvancedBodyEditor request={request} />
+            </TabsContent>
+            <TabsContent value="auth" className="mt-0">
+              <RequestAuthEditor request={request} />
+            </TabsContent>
+            <TabsContent value="extract" className="mt-0">
+              <RequestExtractEditor request={request} result={result} />
+            </TabsContent>
+            <TabsContent value="tests" className="mt-0">
+              <RequestAssertionEditor request={request} result={result} />
+            </TabsContent>
+            <TabsContent value="mock" className="mt-0">
+              <RequestMockEditor request={request} />
+            </TabsContent>
+          </div>
+        )}
+      </Tabs>
     </div>
   );
 }
@@ -285,6 +299,7 @@ function KVEditor({
           />
           <button
             onClick={() => remove(item.id)}
+            aria-label={`Remove ${item.key || placeholder[0].toLowerCase()}`}
             className="grid h-6 w-6 place-items-center rounded text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
           >
             <X className="h-3 w-3" />

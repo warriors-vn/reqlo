@@ -53,7 +53,13 @@ export interface SidebarTreeState {
   unfiled: boolean;
 }
 
-export type OverlayKey = "palette" | "import-curl" | "settings" | "history" | "env-switcher";
+export type OverlayKey =
+  | "palette"
+  | "import-curl"
+  | "settings"
+  | "history"
+  | "env-switcher"
+  | "shortcuts";
 
 interface State {
   ready: boolean;
@@ -187,6 +193,7 @@ export const useStore = create<State>((set, get) => ({
     settings: false,
     history: false,
     "env-switcher": false,
+    shortcuts: false,
   },
   sidebarCollapsed: false,
   sidebarWidth: 288,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   Search,
@@ -17,10 +17,14 @@ import {
   FolderGit2,
   Sun,
   Moon,
+  CheckCircle2,
+  Circle,
+  X,
 } from "lucide-react";
 import { useStore } from "@/stores/useStore";
 import { useIsDarkMode } from "@/hooks/useIsDarkMode";
 import { applyTheme, setStoredTheme } from "@/lib/theme";
+import { getRecent } from "@/core/commands/recent";
 import { MethodBadge } from "./MethodBadge";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { cn } from "@/lib/utils";
@@ -43,6 +47,7 @@ export function Sidebar() {
     collections,
     folders,
     requests,
+    history,
     openRequest,
     activeTabId,
     tabs,
@@ -206,7 +211,10 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-[var(--surface)]">
+    <aside
+      aria-label="Sidebar"
+      className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-[var(--surface)]"
+    >
       {/* Brand */}
       <div className="flex h-12 items-center justify-between px-4">
         <div className="flex items-center gap-2">
@@ -235,6 +243,7 @@ export function Sidebar() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search requests…"
+            aria-label="Search requests"
             className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground/70"
           />
           <button
@@ -250,10 +259,14 @@ export function Sidebar() {
           <SidebarStat label="Favorites" value={favorites.length} />
           <SidebarStat label="Collections" value={collections.length} />
         </div>
+        <OnboardingChecklist requestCount={requests.length} historyCount={history.length} />
       </div>
 
       {/* Tree */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      <nav
+        aria-label="Collections and requests"
+        className="min-h-0 flex-1 overflow-y-auto px-2 pb-3"
+      >
         <SidebarSection
           icon={<Heart className="h-3.5 w-3.5 text-muted-foreground" />}
           title="Favorites"
@@ -280,6 +293,9 @@ export function Sidebar() {
             onSectionAppendHover={() => undefined}
             onDuplicate={(id) => void duplicateRequest(id)}
             onDelete={(id) => setPendingDeleteRequestId(id)}
+            emptyIcon={<Heart className="h-3.5 w-3.5" />}
+            emptyTitle="No favorites yet"
+            emptyHint="Star a request to pin it here"
           />
         </SidebarSection>
 
@@ -331,6 +347,9 @@ export function Sidebar() {
             onSectionAppendHover={setCollectionAppendTargetId}
             onDuplicate={(id) => void duplicateRequest(id)}
             onDelete={(id) => setPendingDeleteRequestId(id)}
+            emptyIcon={<Inbox className="h-3.5 w-3.5" />}
+            emptyTitle="Nothing unfiled"
+            emptyHint="Drag a request here to unfile it"
           />
         </SidebarSection>
 
@@ -531,6 +550,8 @@ export function Sidebar() {
           );
         })}
 
+        {collections.length === 0 && !q ? <CollectionsEmptyState /> : null}
+
         <div className="mt-3 rounded-2xl border border-border/80 bg-background/50 p-2">
           <div className="mb-2 flex items-center gap-2 px-1 text-2xs font-medium text-muted-foreground">
             <Plus className="h-3.5 w-3.5" /> New collection
@@ -558,7 +579,7 @@ export function Sidebar() {
             </button>
           </div>
         </div>
-      </div>
+      </nav>
 
       <div className="border-t border-border px-4 py-2 text-3xs text-muted-foreground/70">
         Local-first · {requests.length} requests
@@ -662,6 +683,7 @@ function SidebarSection({
       <div className="group flex items-center gap-1">
         <button
           onClick={onToggle}
+          aria-expanded={open}
           draggable={draggable}
           onDragStart={() => onDragStart?.()}
           onDragEnd={() => onDragEnd?.()}
@@ -920,6 +942,11 @@ function FolderTree(props: FolderTreeProps) {
         onSectionAppendHover={() => undefined}
         onDuplicate={props.onDuplicateRequest}
         onDelete={props.onDeleteRequest}
+        emptyIcon={<FolderClosed className="h-3.5 w-3.5" />}
+        emptyTitle={parentFolderId ? "Folder is empty" : "No requests yet"}
+        emptyHint={
+          parentFolderId ? "Drag a request into this folder" : "Add a request or drag one in"
+        }
       />
     </>
   );
@@ -944,6 +971,9 @@ function RequestList({
   onSectionAppendHover,
   onDuplicate,
   onDelete,
+  emptyIcon = <Inbox className="h-3.5 w-3.5" />,
+  emptyTitle = "No requests",
+  emptyHint,
 }: {
   items: Array<{
     id: string;
@@ -980,10 +1010,17 @@ function RequestList({
   onSectionAppendHover: (collectionId: string | null) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
+  emptyIcon?: React.ReactNode;
+  emptyTitle?: string;
+  emptyHint?: string;
 }) {
   if (items.length === 0) {
+    const dragActive = reorderEnabled && !!draggedRequest;
     return (
-      <div
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.15 }}
         onDragOver={(event) => {
           if (!reorderEnabled || !draggedRequest) return;
           event.preventDefault();
@@ -1000,12 +1037,18 @@ function RequestList({
           onDragEnd();
         }}
         className={cn(
-          "rounded-md px-2 py-2 text-2xs text-muted-foreground/60",
-          reorderEnabled && draggedRequest && "border border-dashed border-primary/30 bg-primary/5",
+          "flex flex-col items-center gap-1 rounded-lg border border-dashed px-2 py-3 text-center transition",
+          dragActive ? "border-primary/35 bg-primary/5" : "border-border/60",
         )}
       >
-        No requests
-      </div>
+        <div className="grid h-6 w-6 place-items-center rounded-full bg-muted text-muted-foreground/70">
+          {emptyIcon}
+        </div>
+        <div className="text-2xs font-medium text-muted-foreground">{emptyTitle}</div>
+        {emptyHint ? (
+          <div className="text-3xs leading-4 text-muted-foreground/60">{emptyHint}</div>
+        ) : null}
+      </motion.div>
     );
   }
 
@@ -1046,7 +1089,7 @@ function RequestList({
               onDragEnd();
             }}
             className={cn(
-              "group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition",
+              "group flex items-center gap-2 rounded-md px-2 py-1.5 transition",
               activeRequestId === request.id
                 ? "bg-accent text-accent-foreground"
                 : "hover:bg-accent/60",
@@ -1056,13 +1099,19 @@ function RequestList({
                 requestDropTarget.folderId === listFolderId &&
                 "bg-primary/5 ring-1 ring-primary/15",
             )}
-            onClick={() => onOpen(request.id)}
           >
             {reorderEnabled ? (
-              <GripVertical className="h-3.5 w-3.5 text-muted-foreground/60" />
+              <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
             ) : null}
-            <MethodBadge method={request.method} className="w-10 shrink-0 text-right" />
-            <span className="truncate text-xs">{request.name || "Untitled"}</span>
+            <button
+              type="button"
+              onClick={() => onOpen(request.id)}
+              aria-current={activeRequestId === request.id ? "true" : undefined}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-ring"
+            >
+              <MethodBadge method={request.method} className="w-10 shrink-0 text-right" />
+              <span className="truncate text-xs">{request.name || "Untitled"}</span>
+            </button>
             <div className="ml-auto flex items-center gap-0.5 opacity-100 md:opacity-0 md:transition md:group-hover:opacity-100">
               <button
                 type="button"
@@ -1175,6 +1224,118 @@ function DropIndicator({
           )}
         />
       </div>
+    </div>
+  );
+}
+
+function CollectionsEmptyState() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18 }}
+      className="mt-3 flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border/70 px-4 py-6 text-center"
+    >
+      <div className="grid h-9 w-9 place-items-center rounded-xl bg-primary/10 text-primary">
+        <FolderClosed className="h-4 w-4" />
+      </div>
+      <div className="text-xs font-medium text-foreground">No collections yet</div>
+      <p className="text-2xs leading-4 text-muted-foreground">
+        Group related requests together to keep your workspace tidy.
+      </p>
+    </motion.div>
+  );
+}
+
+const ONBOARDING_DISMISSED_KEY = "reqlo:onboarding-dismissed";
+// ensureSeed() (db.ts) always creates exactly 3 sample requests — once the
+// workspace has more than that, the user has created one of their own.
+const SEEDED_REQUEST_COUNT = 3;
+
+function OnboardingChecklist({
+  requestCount,
+  historyCount,
+}: {
+  requestCount: number;
+  historyCount: number;
+}) {
+  const paletteOpen = useStore((s) => s.overlays.palette);
+  const isDark = useIsDarkMode();
+  const initialIsDark = useRef(isDark);
+
+  const [dismissed, setDismissed] = useState(
+    () =>
+      typeof localStorage !== "undefined" && localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "1",
+  );
+  const [usedPalette, setUsedPalette] = useState(() => getRecent().length > 0);
+  const [usedTheme, setUsedTheme] = useState(
+    () => typeof localStorage !== "undefined" && localStorage.getItem("reqlo:theme") !== null,
+  );
+
+  useEffect(() => {
+    if (paletteOpen) setUsedPalette(true);
+  }, [paletteOpen]);
+
+  useEffect(() => {
+    if (isDark !== initialIsDark.current) setUsedTheme(true);
+  }, [isDark]);
+
+  const items = [
+    { done: historyCount > 0, label: "Send a request" },
+    { done: usedPalette, label: "Open the command palette (⌘K)" },
+    { done: requestCount > SEEDED_REQUEST_COUNT, label: "Create a request of your own" },
+    { done: usedTheme, label: "Try dark mode" },
+  ];
+  const doneCount = items.filter((item) => item.done).length;
+  const complete = doneCount === items.length;
+
+  useEffect(() => {
+    if (complete) localStorage.setItem(ONBOARDING_DISMISSED_KEY, "1");
+  }, [complete]);
+
+  if (dismissed || complete) return null;
+
+  return (
+    <div className="rounded-xl border border-border/80 bg-background/70 p-2.5">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-3xs font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">
+          Getting started
+        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-3xs text-muted-foreground">
+            {doneCount}/{items.length}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setDismissed(true);
+              localStorage.setItem(ONBOARDING_DISMISSED_KEY, "1");
+            }}
+            aria-label="Dismiss getting-started checklist"
+            className="grid h-4 w-4 place-items-center rounded text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+      <ul className="space-y-1">
+        {items.map((item) => (
+          <li key={item.label} className="flex items-center gap-1.5 text-2xs">
+            {item.done ? (
+              <CheckCircle2 className="h-3 w-3 shrink-0 text-primary" />
+            ) : (
+              <Circle className="h-3 w-3 shrink-0 text-muted-foreground/40" />
+            )}
+            <span
+              className={cn(
+                item.done ? "text-muted-foreground line-through" : "text-foreground/80",
+              )}
+            >
+              {item.label}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

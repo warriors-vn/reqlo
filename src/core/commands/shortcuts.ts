@@ -46,13 +46,24 @@ export function parseShortcut(spec: string): ParsedShortcut {
   return out;
 }
 
+// Letter keys only change case under Shift, which the `.toLowerCase()` compare
+// below already absorbs — so matching still relies on `e.shiftKey` to tell
+// "r" from intentional "shift+r". Punctuation doesn't work that way: Shift+/
+// reports e.key as "?", an unrelated character, not a capitalized "/". Without
+// this map, a spec like "shift+/" would only ever match Shift+/ on a keyboard
+// layout where it doesn't (i.e. never, on a standard US layout).
+const SHIFTED_KEYS: Record<string, string> = {
+  "/": "?",
+};
+
 export function eventMatches(spec: string, e: KeyboardEvent): boolean {
   const s = parseShortcut(spec);
   const modKey = IS_MAC ? e.metaKey : e.ctrlKey;
   if (s.mod && !modKey) return false;
   if (!s.mod && (s.meta !== e.metaKey || s.ctrl !== e.ctrlKey)) return false;
-  if (s.shift !== e.shiftKey) return false;
   if (s.alt !== e.altKey) return false;
+  if (s.shift && SHIFTED_KEYS[s.key]) return e.key === SHIFTED_KEYS[s.key];
+  if (s.shift !== e.shiftKey) return false;
   const key = e.key.toLowerCase();
   if (s.key === "enter") return key === "enter";
   if (s.key === "escape") return key === "escape";
@@ -69,16 +80,16 @@ export function formatShortcut(spec: string): string {
   if (s.ctrl && !s.mod) out.push("⌃");
   if (s.alt) out.push(IS_MAC ? "⌥" : "Alt");
   if (s.shift) out.push(IS_MAC ? "⇧" : "Shift");
-  const key =
-    s.key === "enter"
-      ? "↵"
-      : s.key === "arrowleft"
-        ? "←"
-        : s.key === "arrowright"
-          ? "→"
-          : s.key.length === 1
-            ? s.key.toUpperCase()
-            : s.key;
+  const namedKeys: Record<string, string> = {
+    enter: "↵",
+    backspace: "⌫",
+    arrowleft: "←",
+    arrowright: "→",
+    arrowup: "↑",
+    arrowdown: "↓",
+    escape: "Esc",
+  };
+  const key = namedKeys[s.key] ?? (s.key.length === 1 ? s.key.toUpperCase() : s.key);
   out.push(key);
   return IS_MAC ? out.join("") : out.join("+");
 }

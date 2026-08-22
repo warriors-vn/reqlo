@@ -11,6 +11,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { ImportCurlModal } from "@/components/ImportCurlModal";
 import { HistoryDrawer } from "@/components/HistoryDrawer";
 import { SettingsModal } from "@/components/SettingsModal";
+import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { EnvironmentSwitcher } from "@/components/EnvironmentSwitcher";
 import { executeRequest } from "@/services/executor";
 import { createRequestSnapshot, uid } from "@/services/db";
@@ -175,7 +176,12 @@ export function Workspace() {
   }
 
   const mainContent = (
-    <div className="flex min-w-0 flex-1 overflow-hidden">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      aria-label="Request workspace"
+      className="flex min-w-0 flex-1 overflow-hidden outline-none"
+    >
       <div className="flex min-w-0 flex-1 flex-col">
         <TabBar />
         <div className="flex min-h-0 flex-1 flex-col">
@@ -206,11 +212,17 @@ export function Workspace() {
         </div>
       </div>
       <CodeSnippetPanel request={activeRequest} environment={activeEnvironment} />
-    </div>
+    </main>
   );
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:shadow-lg"
+      >
+        Skip to content
+      </a>
       {isMobile && (
         <Sheet open={!sidebarCollapsed} onOpenChange={() => toggleSidebar()}>
           <SheetContent side="left" className="w-72 max-w-[85vw] p-0 sm:max-w-[85vw]">
@@ -245,6 +257,7 @@ export function Workspace() {
       <ImportCurlModal />
       <HistoryDrawer />
       <SettingsModal />
+      <KeyboardShortcutsModal />
       <EnvironmentSwitcher />
     </div>
   );

@@ -377,6 +377,16 @@ export function registerBuiltInCommands(): () => void {
         });
       },
     },
+
+    // ─────────── HELP ───────────
+    {
+      id: "help.shortcuts",
+      title: "Keyboard Shortcuts",
+      description: "View all available keyboard shortcuts",
+      category: "navigation",
+      shortcut: "shift+/",
+      run: () => s().openOverlay("shortcuts"),
+    },
   ];
 
   return commandRegistry.registerMany(cmds);

@@ -34,10 +34,18 @@ export function useCommandSystem() {
   // Global shortcut handler.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Escape always closes the palette.
-      if (e.key === "Escape" && useStore.getState().overlays.palette) {
-        useStore.getState().closeOverlay("palette");
-        return;
+      // Escape closes whichever overlay is open. OverlayKey has no stacking order,
+      // so this picks whichever key happens to be open first — fine in practice
+      // since the app never opens a second overlay on top of an already-open one.
+      if (e.key === "Escape") {
+        const overlays = useStore.getState().overlays;
+        const openKey = (Object.keys(overlays) as (keyof typeof overlays)[]).find(
+          (k) => overlays[k],
+        );
+        if (openKey) {
+          useStore.getState().closeOverlay(openKey);
+          return;
+        }
       }
       // Ignore key events from inputs unless they include a modifier — keep typing fast.
       const target = e.target as HTMLElement | null;

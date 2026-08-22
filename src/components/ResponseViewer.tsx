@@ -45,7 +45,11 @@ export function ResponseViewer({
 
   if (loading && !result) {
     return (
-      <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex flex-1 items-center justify-center text-xs text-muted-foreground"
+      >
         <div className="flex items-center gap-2">
           <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
           Sending request…
@@ -85,7 +89,11 @@ export function ResponseViewer({
           : null;
 
   return (
-    <div className="flex h-full flex-col">
+    <Tabs
+      value={tab}
+      onValueChange={(value) => setTab(value as PrimaryTab)}
+      className="flex h-full flex-col"
+    >
       <div className="flex flex-wrap items-center gap-3 border-b border-border bg-[var(--surface)] px-4 py-3 text-2xs">
         <div className="flex flex-wrap items-center gap-2">
           <MetaPill
@@ -113,23 +121,17 @@ export function ResponseViewer({
             </span>
           )}
 
-          <div className="flex items-center gap-1">
+          <TabsList className="h-auto gap-1 rounded-xl bg-transparent p-0">
             {(["body", "headers"] as const).map((item) => (
-              <button
+              <TabsTrigger
                 key={item}
-                type="button"
-                onClick={() => setTab(item)}
-                className={cn(
-                  "rounded-xl px-2.5 py-1.5 font-medium transition",
-                  tab === item
-                    ? "bg-accent text-foreground"
-                    : "text-muted-foreground hover:bg-accent/60",
-                )}
+                value={item}
+                className="rounded-xl bg-transparent px-2.5 py-1.5 font-medium text-muted-foreground shadow-none data-[state=active]:bg-accent data-[state=active]:text-foreground data-[state=active]:shadow-none"
               >
                 {item === "body" ? "Body" : `Headers (${headerCount})`}
-              </button>
+              </TabsTrigger>
             ))}
-          </div>
+          </TabsList>
 
           <button
             type="button"
@@ -170,11 +172,7 @@ export function ResponseViewer({
         </div>
       </div>
 
-      <Tabs
-        value={tab}
-        onValueChange={(value) => setTab(value as PrimaryTab)}
-        className="flex min-h-0 flex-1 flex-col bg-[var(--surface-elevated)]"
-      >
+      <div className="flex min-h-0 flex-1 flex-col bg-[var(--surface-elevated)]">
         <TabsContent value="body" className="mt-0 flex min-h-0 flex-1 flex-col">
           {result.error ? (
             <div className="p-4">
@@ -223,8 +221,8 @@ export function ResponseViewer({
             )}
           </ScrollArea>
         </TabsContent>
-      </Tabs>
-    </div>
+      </div>
+    </Tabs>
   );
 }
 
