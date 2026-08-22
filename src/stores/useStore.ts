@@ -70,6 +70,7 @@ interface State {
 
   overlays: Record<OverlayKey, boolean>;
   sidebarCollapsed: boolean;
+  sidebarWidth: number;
   sidebarTree: SidebarTreeState;
   sidebarSelection: SidebarSelection | null;
 
@@ -159,6 +160,7 @@ interface State {
 
   // view
   toggleSidebar: () => void;
+  setSidebarWidth: (px: number) => void;
   setSidebarTreeOpen: (section: keyof SidebarTreeState | string, open: boolean) => void;
 }
 
@@ -187,6 +189,7 @@ export const useStore = create<State>((set, get) => ({
     "env-switcher": false,
   },
   sidebarCollapsed: false,
+  sidebarWidth: 288,
   sidebarTree: { ...DEFAULT_SIDEBAR_TREE, collections: {} },
   sidebarSelection: null,
   sendPing: 0,
@@ -218,6 +221,7 @@ export const useStore = create<State>((set, get) => ({
     let activeTabId: string | null = null;
     let activeEnvId: string | null = environments[0]?.id ?? null;
     let sidebarCollapsed = false;
+    let sidebarWidth = 288;
     let sidebarTree = { ...DEFAULT_SIDEBAR_TREE, collections: {} };
     try {
       const raw = localStorage.getItem("reqlo:session");
@@ -227,6 +231,7 @@ export const useStore = create<State>((set, get) => ({
           activeTabId: string | null;
           activeEnvId?: string | null;
           sidebarCollapsed?: boolean;
+          sidebarWidth?: number;
           sidebarTree?: SidebarTreeState;
         };
         const validIds = new Set(requests.map((r) => r.id));
@@ -238,6 +243,8 @@ export const useStore = create<State>((set, get) => ({
         if (parsed.activeEnvId && environments.find((e) => e.id === parsed.activeEnvId))
           activeEnvId = parsed.activeEnvId;
         sidebarCollapsed = !!parsed.sidebarCollapsed;
+        if (typeof parsed.sidebarWidth === "number")
+          sidebarWidth = Math.min(480, Math.max(220, Math.round(parsed.sidebarWidth)));
         sidebarTree = setSidebarTreeDefaults(parsed.sidebarTree);
       }
     } catch {
@@ -262,6 +269,7 @@ export const useStore = create<State>((set, get) => ({
       tabs,
       activeTabId,
       sidebarCollapsed,
+      sidebarWidth,
       sidebarTree,
     });
   },
@@ -1221,6 +1229,11 @@ export const useStore = create<State>((set, get) => ({
     persistSession(get);
   },
 
+  setSidebarWidth: (px) => {
+    set({ sidebarWidth: Math.min(480, Math.max(220, Math.round(px))) });
+    persistSession(get);
+  },
+
   setSidebarTreeOpen: (section, open) => {
     set((state) => ({
       sidebarTree:
@@ -1239,11 +1252,18 @@ export const useStore = create<State>((set, get) => ({
 export { pickFile };
 
 function persistSession(get: () => State) {
-  const { tabs, activeTabId, activeEnvId, sidebarCollapsed, sidebarTree } = get();
+  const { tabs, activeTabId, activeEnvId, sidebarCollapsed, sidebarWidth, sidebarTree } = get();
   try {
     localStorage.setItem(
       "reqlo:session",
-      JSON.stringify({ tabs, activeTabId, activeEnvId, sidebarCollapsed, sidebarTree }),
+      JSON.stringify({
+        tabs,
+        activeTabId,
+        activeEnvId,
+        sidebarCollapsed,
+        sidebarWidth,
+        sidebarTree,
+      }),
     );
   } catch {
     // Ignore storage write failures in private mode or quota-constrained environments.

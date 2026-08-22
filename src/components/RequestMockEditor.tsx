@@ -17,7 +17,7 @@ export function RequestMockEditor({ request }: Props) {
       <div className="flex items-start justify-between gap-4 rounded-[24px] border border-border/80 bg-background/70 p-4">
         <div>
           <div className="text-sm font-semibold tracking-tight">Mock this request</div>
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-2xs text-muted-foreground">
             Send returns the saved response below instead of calling the network. Useful for demoing
             or testing Extract/Tests rules offline — this only affects Send inside reqlo, it doesn't
             serve real traffic to other apps.
@@ -78,7 +78,7 @@ export function RequestMockEditor({ request }: Props) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+      <span className="text-2xs font-medium text-muted-foreground">{label}</span>
       {children}
     </label>
   );

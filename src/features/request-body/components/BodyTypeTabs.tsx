@@ -9,13 +9,13 @@ interface Props {
 
 export function BodyTypeTabs({ value, onChange }: Props) {
   return (
-    <div className="flex flex-wrap items-center gap-1 rounded-2xl border border-border/80 bg-background/70 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]">
+    <div className="flex flex-wrap items-center gap-1 rounded-2xl border border-border/80 bg-background/70 p-1 shadow-[inset_0_1px_0_color-mix(in_oklab,var(--foreground)_8%,transparent)]">
       {BODY_TYPE_OPTIONS.map((item) => (
         <button
           key={item.id}
           onClick={() => onChange(item.id)}
           className={cn(
-            "relative rounded-xl px-3 py-1.5 text-[11px] font-medium tracking-tight transition",
+            "relative rounded-xl px-3 py-1.5 text-2xs font-medium tracking-tight transition",
             value === item.id ? "text-foreground" : "text-muted-foreground hover:text-foreground",
           )}
         >

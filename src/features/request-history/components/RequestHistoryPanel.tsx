@@ -229,7 +229,7 @@ export function RequestHistoryPanel() {
             </button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-2xs text-muted-foreground">
           <div>
             {filteredHistory.length} matches · ⌘⇧H opens history · ⌘Enter re-runs selected item
           </div>
@@ -301,7 +301,7 @@ export function RequestHistoryPanel() {
                   row.type === "header" ? (
                     <div
                       key={row.id}
-                      className="sticky top-0 z-10 flex h-[56px] items-center px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/80"
+                      className="sticky top-0 z-10 flex h-[56px] items-center px-3 text-2xs font-semibold uppercase tracking-[0.2em] text-muted-foreground/80"
                     >
                       {row.label}
                     </div>
@@ -408,17 +408,17 @@ function HistoryRow({
             >
               {entry.requestName || entry.url}
             </button>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <span className="rounded-full bg-muted px-2 py-0.5 text-3xs font-medium text-muted-foreground">
               {formatRelativeHistoryTime(entry.executedAt)}
             </span>
             {entry.environmentName && (
-              <span className="rounded-full bg-background px-2 py-0.5 text-[10px] text-muted-foreground">
+              <span className="rounded-full bg-background px-2 py-0.5 text-3xs text-muted-foreground">
                 {entry.environmentName}
               </span>
             )}
           </div>
-          <div className="truncate font-mono text-[11px] text-muted-foreground">{entry.url}</div>
-          <div className="flex flex-wrap items-center gap-3 text-[11px]">
+          <div className="truncate font-mono text-2xs text-muted-foreground">{entry.url}</div>
+          <div className="flex flex-wrap items-center gap-3 text-2xs">
             <span className={cn("font-mono font-semibold", statusTone)}>
               {entry.errorMessage ? "ERR" : (entry.status ?? "—")}
             </span>

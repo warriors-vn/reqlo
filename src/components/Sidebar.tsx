@@ -15,8 +15,12 @@ import {
   Pencil,
   CopyPlus,
   FolderGit2,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { useStore } from "@/stores/useStore";
+import { useIsDarkMode } from "@/hooks/useIsDarkMode";
+import { applyTheme, setStoredTheme } from "@/lib/theme";
 import { MethodBadge } from "./MethodBadge";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { cn } from "@/lib/utils";
@@ -206,18 +210,21 @@ export function Sidebar() {
       {/* Brand */}
       <div className="flex h-12 items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <div className="grid h-6 w-6 place-items-center rounded-md bg-primary text-[10px] font-bold text-primary-foreground">
+          <div className="grid h-6 w-6 place-items-center rounded-md bg-primary text-3xs font-bold text-primary-foreground">
             R
           </div>
           <span className="text-sm font-semibold tracking-tight">Reqlo</span>
         </div>
-        <button
-          onClick={() => createRequest(activeCollectionId, activeFolderId)}
-          className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
-          title="New request"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <ThemeSwitch />
+          <button
+            onClick={() => createRequest(activeCollectionId, activeFolderId)}
+            className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
+            title="New request"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -233,13 +240,13 @@ export function Sidebar() {
           <button
             type="button"
             onClick={() => setPalette(true)}
-            className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/70 hover:text-foreground"
+            className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-3xs text-muted-foreground/70 hover:text-foreground"
             title="Open command palette"
           >
             ⌘K
           </button>
         </label>
-        <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+        <div className="grid grid-cols-2 gap-2 text-2xs text-muted-foreground">
           <SidebarStat label="Favorites" value={favorites.length} />
           <SidebarStat label="Collections" value={collections.length} />
         </div>
@@ -525,7 +532,7 @@ export function Sidebar() {
         })}
 
         <div className="mt-3 rounded-2xl border border-border/80 bg-background/50 p-2">
-          <div className="mb-2 flex items-center gap-2 px-1 text-[11px] font-medium text-muted-foreground">
+          <div className="mb-2 flex items-center gap-2 px-1 text-2xs font-medium text-muted-foreground">
             <Plus className="h-3.5 w-3.5" /> New collection
           </div>
           <div className="flex items-center gap-2">
@@ -553,7 +560,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="border-t border-border px-4 py-2 text-[10px] text-muted-foreground/70">
+      <div className="border-t border-border px-4 py-2 text-3xs text-muted-foreground/70">
         Local-first · {requests.length} requests
       </div>
 
@@ -677,7 +684,7 @@ function SidebarSection({
           )}
           {icon}
           <span className="min-w-0 flex-1 truncate text-left">{title}</span>
-          <span className="text-[10px] text-muted-foreground/70">{count}</span>
+          <span className="text-3xs text-muted-foreground/70">{count}</span>
         </button>
         {actions}
       </div>
@@ -993,7 +1000,7 @@ function RequestList({
           onDragEnd();
         }}
         className={cn(
-          "rounded-md px-2 py-2 text-[11px] text-muted-foreground/60",
+          "rounded-md px-2 py-2 text-2xs text-muted-foreground/60",
           reorderEnabled && draggedRequest && "border border-dashed border-primary/30 bg-primary/5",
         )}
       >
@@ -1153,7 +1160,7 @@ function DropIndicator({
         />
         <span
           className={cn(
-            "rounded-full border px-2 py-0.5 text-[10px] font-medium",
+            "rounded-full border px-2 py-0.5 text-3xs font-medium",
             tone === "primary"
               ? "border-primary/25 bg-primary/8 text-primary"
               : "border-border bg-background/70 text-muted-foreground",
@@ -1175,11 +1182,26 @@ function DropIndicator({
 function SidebarStat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-xl border border-border/80 bg-background/70 px-2.5 py-2">
-      <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground/80">
-        {label}
-      </div>
+      <div className="text-3xs uppercase tracking-[0.16em] text-muted-foreground/80">{label}</div>
       <div className="mt-1 text-sm font-semibold tracking-tight text-foreground">{value}</div>
     </div>
+  );
+}
+
+function ThemeSwitch() {
+  const isDark = useIsDarkMode();
+  return (
+    <button
+      onClick={() => {
+        const next = isDark ? "light" : "dark";
+        setStoredTheme(next);
+        applyTheme(next);
+      }}
+      className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
+      title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+    >
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </button>
   );
 }
 

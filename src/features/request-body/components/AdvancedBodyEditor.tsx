@@ -65,7 +65,7 @@ export function AdvancedBodyEditor({ request }: Props) {
     <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <BodyTypeTabs value={request.bodyType} onChange={setBodyType} />
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-2 text-2xs text-muted-foreground">
           {autoContentType ? (
             <div className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-background/80 px-3 py-1.5">
               <Sparkles className="h-3.5 w-3.5 text-primary" />
@@ -182,7 +182,7 @@ export function AdvancedBodyEditor({ request }: Props) {
 
       <div
         className={cn(
-          "rounded-2xl border px-3 py-2 text-[11px]",
+          "rounded-2xl border px-3 py-2 text-2xs",
           validation?.tone === "error"
             ? "border-destructive/25 bg-destructive/5 text-destructive"
             : "border-border/80 bg-background/60 text-muted-foreground",

@@ -10,7 +10,7 @@ import { RequestAssertionEditor } from "@/components/RequestAssertionEditor";
 import { RequestMockEditor } from "@/components/RequestMockEditor";
 import { evaluateAssertions } from "@/services/assertions";
 import { hasBodyContent } from "@/features/request-body/utils/body";
-import { Send, Loader2, Plus, X } from "lucide-react";
+import { Send, Loader2, Plus, X, ChevronDown } from "lucide-react";
 import { motion } from "framer-motion";
 
 const METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -39,6 +39,7 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
     "params" | "headers" | "body" | "auth" | "extract" | "tests" | "mock"
   >("params");
   const [nameEdit, setNameEdit] = useState(false);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   const assertionOutcomes = evaluateAssertions(request.assertions, result);
   const testsCount = request.assertions.filter((rule) => rule.enabled).length;
@@ -150,7 +151,7 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
         </div>
         {request.mock.enabled && (
           <span
-            className="flex h-9 shrink-0 items-center rounded-lg border border-[var(--status-warn)]/40 bg-[var(--status-warn)]/10 px-2.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--status-warn)]"
+            className="flex h-9 shrink-0 items-center rounded-lg border border-[var(--status-warn)]/40 bg-[var(--status-warn)]/10 px-2.5 text-2xs font-semibold uppercase tracking-wide text-[var(--status-warn)]"
             title="Send returns the saved mock response instead of calling the network"
           >
             Mocked
@@ -184,7 +185,7 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
           >
             {t.label}
             {t.count !== undefined && (
-              <span className="ml-1 text-[10px] text-muted-foreground">{t.count}</span>
+              <span className="ml-1 text-3xs text-muted-foreground">{t.count}</span>
             )}
             {tab === t.id && (
               <motion.div
@@ -194,30 +195,45 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
             )}
           </button>
         ))}
+        <button
+          onClick={() => setPanelCollapsed((v) => !v)}
+          className="ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
+          title={
+            panelCollapsed
+              ? "Expand request panel"
+              : "Collapse request panel — more room for the response"
+          }
+        >
+          <ChevronDown
+            className={cn("h-3.5 w-3.5 transition-transform", panelCollapsed && "-rotate-180")}
+          />
+        </button>
       </div>
 
       {/* Panel */}
-      <div className="max-h-[40vh] min-h-[140px] overflow-auto px-4 py-3">
-        {tab === "params" && (
-          <KVEditor
-            list={request.queryParams}
-            onChange={(queryParams) => updateRequest(request.id, { queryParams })}
-            placeholder={["key", "value"]}
-          />
-        )}
-        {tab === "headers" && (
-          <KVEditor
-            list={request.headers}
-            onChange={(headers) => updateRequest(request.id, { headers })}
-            placeholder={["Header", "Value"]}
-          />
-        )}
-        {tab === "body" && <AdvancedBodyEditor request={request} />}
-        {tab === "auth" && <RequestAuthEditor request={request} />}
-        {tab === "extract" && <RequestExtractEditor request={request} result={result} />}
-        {tab === "tests" && <RequestAssertionEditor request={request} result={result} />}
-        {tab === "mock" && <RequestMockEditor request={request} />}
-      </div>
+      {!panelCollapsed && (
+        <div className="max-h-[40vh] min-h-[140px] overflow-auto px-4 py-3">
+          {tab === "params" && (
+            <KVEditor
+              list={request.queryParams}
+              onChange={(queryParams) => updateRequest(request.id, { queryParams })}
+              placeholder={["key", "value"]}
+            />
+          )}
+          {tab === "headers" && (
+            <KVEditor
+              list={request.headers}
+              onChange={(headers) => updateRequest(request.id, { headers })}
+              placeholder={["Header", "Value"]}
+            />
+          )}
+          {tab === "body" && <AdvancedBodyEditor request={request} />}
+          {tab === "auth" && <RequestAuthEditor request={request} />}
+          {tab === "extract" && <RequestExtractEditor request={request} result={result} />}
+          {tab === "tests" && <RequestAssertionEditor request={request} result={result} />}
+          {tab === "mock" && <RequestMockEditor request={request} />}
+        </div>
+      )}
     </div>
   );
 }

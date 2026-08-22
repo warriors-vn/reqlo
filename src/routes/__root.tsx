@@ -10,6 +10,7 @@ import {
 
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 function NotFoundComponent() {
   return (
@@ -80,7 +81,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "A premium, local-first API workspace. Faster than Postman, cleaner than Insomnia, fully offline.",
       },
       { name: "author", content: "Reqlo" },
-      { name: "theme-color", content: "#3454d1" },
+      { name: "theme-color", content: "#fafcff", media: "(prefers-color-scheme: light)" },
+      { name: "theme-color", content: "#141a24", media: "(prefers-color-scheme: dark)" },
       { property: "og:title", content: "Reqlo — The modern local-first API workspace" },
       {
         property: "og:description",
@@ -113,6 +115,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />
       </head>
       <body>

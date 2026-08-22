@@ -73,7 +73,7 @@ export function CommandPalette() {
                   placeholder="Search commands, requests…"
                   className="h-12 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
-                <kbd className="rounded border border-border bg-[var(--surface)] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                <kbd className="rounded border border-border bg-[var(--surface)] px-1.5 py-0.5 font-mono text-3xs text-muted-foreground">
                   ESC
                 </kbd>
               </div>
@@ -133,7 +133,7 @@ export function CommandPalette() {
                       >
                         <MethodBadge method={r.method} className="w-10 text-right" />
                         <span className="truncate">{r.name}</span>
-                        <span className="ml-auto truncate font-mono text-[10px] text-muted-foreground">
+                        <span className="ml-auto truncate font-mono text-3xs text-muted-foreground">
                           {r.url}
                         </span>
                       </Command.Item>
@@ -142,7 +142,7 @@ export function CommandPalette() {
                 )}
               </Command.List>
 
-              <div className="flex items-center gap-3 border-t border-border bg-[var(--surface)]/80 px-3 py-1.5 text-[10px] text-muted-foreground">
+              <div className="flex items-center gap-3 border-t border-border bg-[var(--surface)]/80 px-3 py-1.5 text-3xs text-muted-foreground">
                 <span>↑↓ navigate</span>
                 <span>↵ select</span>
                 <span className="ml-auto">{commands.length} commands</span>
@@ -159,7 +159,7 @@ function Group({ heading, children }: { heading: string; children: React.ReactNo
   return (
     <Command.Group
       heading={heading}
-      className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-muted-foreground"
+      className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-3xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-muted-foreground"
     >
       {children}
     </Command.Group>
@@ -179,12 +179,10 @@ function CommandRow({ cmd, onRun }: { cmd: CommandDescriptor; onRun: () => void 
       </span>
       <span className="truncate">{cmd.title}</span>
       {cmd.description && (
-        <span className="ml-2 truncate text-[10px] text-muted-foreground/80">
-          {cmd.description}
-        </span>
+        <span className="ml-2 truncate text-3xs text-muted-foreground/80">{cmd.description}</span>
       )}
       {cmd.shortcut && (
-        <kbd className="ml-auto rounded border border-border bg-[var(--surface)] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+        <kbd className="ml-auto rounded border border-border bg-[var(--surface)] px-1.5 py-0.5 font-mono text-3xs text-muted-foreground">
           {formatShortcut(cmd.shortcut)}
         </kbd>
       )}

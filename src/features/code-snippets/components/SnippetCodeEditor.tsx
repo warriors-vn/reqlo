@@ -103,10 +103,10 @@ export function SnippetCodeEditor({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[26px] border border-white/50 bg-[linear-gradient(180deg,rgba(255,255,255,0.76),rgba(255,255,255,0.48))] shadow-[0_22px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/50 bg-white/50 px-3 py-2.5 backdrop-blur-xl">
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span className="rounded-full border border-white/60 bg-white/70 px-2.5 py-1 font-semibold uppercase tracking-[0.18em] text-foreground/75">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[26px] border border-[var(--border)]/50 bg-[linear-gradient(180deg,color-mix(in_oklab,var(--surface-elevated)_76%,transparent),color-mix(in_oklab,var(--surface-elevated)_48%,transparent))] shadow-[0_22px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)]/50 bg-[var(--surface-elevated)]/50 px-3 py-2.5 backdrop-blur-xl">
+        <div className="flex items-center gap-2 text-2xs text-muted-foreground">
+          <span className="rounded-full border border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 px-2.5 py-1 font-semibold uppercase tracking-[0.18em] text-foreground/75">
             {language}
           </span>
           <span>{code.split("\n").length} lines</span>
@@ -114,7 +114,7 @@ export function SnippetCodeEditor({
 
         <div className="flex items-center gap-1.5">
           {searchOpen && (
-            <div className="flex items-center gap-1 rounded-2xl border border-white/60 bg-white/75 px-2 py-1 shadow-sm">
+            <div className="flex items-center gap-1 rounded-2xl border border-[var(--border)]/60 bg-[var(--surface-elevated)]/75 px-2 py-1 shadow-sm">
               <Search className="h-3.5 w-3.5 text-muted-foreground" />
               <input
                 ref={queryInputRef}
@@ -131,9 +131,9 @@ export function SnippetCodeEditor({
                   }
                 }}
                 placeholder="Search snippet"
-                className="w-32 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground/70"
+                className="w-32 bg-transparent text-2xs outline-none placeholder:text-muted-foreground/70"
               />
-              <span className="min-w-[42px] text-right font-mono text-[10px] text-muted-foreground">
+              <span className="min-w-[42px] text-right font-mono text-3xs text-muted-foreground">
                 {matchCount ? `${activeMatchIndex + 1}/${matchCount}` : "0"}
               </span>
               <button
@@ -167,7 +167,7 @@ export function SnippetCodeEditor({
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
-              className="inline-flex h-8 items-center gap-1 rounded-2xl border border-white/60 bg-white/70 px-3 text-[11px] font-medium text-muted-foreground transition hover:bg-white hover:text-foreground"
+              className="inline-flex h-8 items-center gap-1 rounded-2xl border border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 px-3 text-2xs font-medium text-muted-foreground transition hover:bg-[var(--surface-elevated)] hover:text-foreground"
             >
               <Search className="h-3.5 w-3.5" /> Search
             </button>
@@ -177,10 +177,10 @@ export function SnippetCodeEditor({
             type="button"
             onClick={() => onWrapLinesChange(!wrapLines)}
             className={cn(
-              "inline-flex h-8 items-center gap-1 rounded-2xl border px-3 text-[11px] font-medium transition",
+              "inline-flex h-8 items-center gap-1 rounded-2xl border px-3 text-2xs font-medium transition",
               wrapLines
                 ? "border-primary/20 bg-primary/10 text-primary"
-                : "border-white/60 bg-white/70 text-muted-foreground hover:bg-white hover:text-foreground",
+                : "border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 text-muted-foreground hover:bg-[var(--surface-elevated)] hover:text-foreground",
             )}
           >
             <WrapText className="h-3.5 w-3.5" /> Wrap

@@ -15,7 +15,7 @@ export function MethodBadge({ method, className }: { method: HttpMethod; classNa
   return (
     <span
       className={cn(
-        "font-mono text-[10px] font-semibold tracking-wider uppercase",
+        "font-mono text-3xs font-semibold tracking-wider uppercase",
         COLOR[method],
         className,
       )}
