@@ -6,6 +6,9 @@ import { cn } from "@/lib/utils";
 import { AdvancedBodyEditor } from "@/features/request-body/components/AdvancedBodyEditor";
 import { RequestAuthEditor } from "@/components/RequestAuthEditor";
 import { RequestExtractEditor } from "@/components/RequestExtractEditor";
+import { RequestAssertionEditor } from "@/components/RequestAssertionEditor";
+import { RequestMockEditor } from "@/components/RequestMockEditor";
+import { evaluateAssertions } from "@/services/assertions";
 import { hasBodyContent } from "@/features/request-body/utils/body";
 import { Send, Loader2, Plus, X } from "lucide-react";
 import { motion } from "framer-motion";
@@ -32,8 +35,16 @@ interface Props {
 export function RequestBuilder({ request, onSend, sending, result = null }: Props) {
   const updateRequest = useStore((s) => s.updateRequest);
   const renameRequest = useStore((s) => s.renameRequest);
-  const [tab, setTab] = useState<"params" | "headers" | "body" | "auth" | "extract">("params");
+  const [tab, setTab] = useState<
+    "params" | "headers" | "body" | "auth" | "extract" | "tests" | "mock"
+  >("params");
   const [nameEdit, setNameEdit] = useState(false);
+
+  const assertionOutcomes = evaluateAssertions(request.assertions, result);
+  const testsCount = request.assertions.filter((rule) => rule.enabled).length;
+  const testsBadge = assertionOutcomes.length
+    ? (`${assertionOutcomes.filter((o) => o.passed).length}/${assertionOutcomes.length}` as const)
+    : testsCount || undefined;
 
   const tabs = [
     {
@@ -60,6 +71,16 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
       id: "extract" as const,
       label: "Extract",
       count: request.extracts.filter((rule) => rule.enabled).length || undefined,
+    },
+    {
+      id: "tests" as const,
+      label: "Tests",
+      count: testsBadge,
+    },
+    {
+      id: "mock" as const,
+      label: "Mock",
+      count: request.mock.enabled ? ("ON" as const) : undefined,
     },
   ];
 
@@ -127,6 +148,14 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
             className="h-9 flex-1 bg-transparent px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60"
           />
         </div>
+        {request.mock.enabled && (
+          <span
+            className="flex h-9 shrink-0 items-center rounded-lg border border-[var(--status-warn)]/40 bg-[var(--status-warn)]/10 px-2.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--status-warn)]"
+            title="Send returns the saved mock response instead of calling the network"
+          >
+            Mocked
+          </span>
+        )}
         <motion.button
           whileTap={{ scale: 0.97 }}
           onClick={onSend}
@@ -186,6 +215,8 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
         {tab === "body" && <AdvancedBodyEditor request={request} />}
         {tab === "auth" && <RequestAuthEditor request={request} />}
         {tab === "extract" && <RequestExtractEditor request={request} result={result} />}
+        {tab === "tests" && <RequestAssertionEditor request={request} result={result} />}
+        {tab === "mock" && <RequestMockEditor request={request} />}
       </div>
     </div>
   );

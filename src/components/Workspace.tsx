@@ -20,6 +20,7 @@ import {
   type ExecutionResult,
 } from "@/services/execution";
 import { resolveExtractPath, stringifyExtractedValue } from "@/services/extract";
+import { evaluateAssertions } from "@/services/assertions";
 import type { ApiRequest, Environment } from "@/services/db";
 import { toast } from "sonner";
 
@@ -74,6 +75,7 @@ export function Workspace() {
     if (res.responseKind === "json" && res.body) {
       await applyExtractRules(activeRequest, res.body, activeEnvironment, updateEnvironment);
     }
+    reportFailedAssertions(activeRequest, res);
     await addHistory({
       id: uid(),
       workspaceId: workspace.id,
@@ -262,4 +264,20 @@ async function applyExtractRules(
       description: failed.join(", "),
     });
   }
+}
+
+function reportFailedAssertions(request: ApiRequest, result: ExecutionResult) {
+  const outcomes = evaluateAssertions(request.assertions, result);
+  const failed = outcomes.filter((outcome) => !outcome.passed);
+  if (!failed.length) return;
+
+  toast.warning(
+    `${failed.length} of ${outcomes.length} test${outcomes.length > 1 ? "s" : ""} failed`,
+    {
+      description: failed
+        .slice(0, 3)
+        .map((outcome) => outcome.message)
+        .join(" · "),
+    },
+  );
 }

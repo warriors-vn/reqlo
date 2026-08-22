@@ -13,6 +13,8 @@ export interface ExecutionResult {
   blob: Blob | null;
   fileName: string | null;
   error?: string;
+  /** True when this result came from a saved mock instead of a real network call. */
+  mocked?: boolean;
 }
 
 export function formatBytes(n: number) {

@@ -13,6 +13,7 @@ import {
   type Environment,
   createDefaultAuth,
   createDefaultBodyDrafts,
+  createDefaultMock,
   cloneBodyDrafts,
   ensureSeed,
   normalizeApiRequest,
@@ -349,6 +350,8 @@ export const useStore = create<State>((set, get) => ({
       bodyDrafts: createDefaultBodyDrafts(),
       auth: createDefaultAuth(),
       extracts: [],
+      assertions: [],
+      mock: createDefaultMock(),
       createdAt: now,
       updatedAt: now,
     };

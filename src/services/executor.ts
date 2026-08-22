@@ -1,4 +1,4 @@
-import type { ApiRequest, Environment } from "@/services/db";
+import type { ApiRequest, Environment, MockConfig } from "@/services/db";
 import { buildResolvedRequestArtifacts } from "@/features/code-snippets/utils/request-resolver";
 import type { ExecutionResult, ResponseKind } from "@/services/execution";
 
@@ -6,6 +6,10 @@ export async function executeRequest(
   req: ApiRequest,
   environment?: Environment | null,
 ): Promise<ExecutionResult> {
+  if (req.mock.enabled) {
+    return buildMockResult(req.mock);
+  }
+
   const started = performance.now();
   try {
     const {
@@ -64,6 +68,31 @@ export async function executeRequest(
       error: `Request failed: ${msg}. Check the URL, CORS, or network connection.`,
     };
   }
+}
+
+async function buildMockResult(mock: MockConfig): Promise<ExecutionResult> {
+  const started = performance.now();
+  if (mock.delayMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, mock.delayMs));
+  }
+
+  const bytes = new TextEncoder().encode(mock.body).length;
+  const responseKind = detectResponseKind(mock.contentType, mock.status, bytes);
+
+  return {
+    status: mock.status,
+    statusText: "",
+    durationMs: performance.now() - started,
+    sizeBytes: bytes,
+    headers: mock.contentType ? { "content-type": mock.contentType } : {},
+    body: isTextualResponse(responseKind) ? mock.body : "",
+    contentType: mock.contentType,
+    ok: mock.status >= 200 && mock.status < 300,
+    responseKind,
+    blob: new Blob([mock.body], { type: mock.contentType || "text/plain" }),
+    fileName: null,
+    mocked: true,
+  };
 }
 
 function detectResponseKind(contentType: string, status: number, sizeBytes: number): ResponseKind {

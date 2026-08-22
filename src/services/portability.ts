@@ -1,5 +1,6 @@
 import {
   blobToBase64,
+  createDefaultMock,
   db,
   type ApiRequest,
   type Collection,
@@ -185,6 +186,8 @@ async function sanitizeHistoryForExport(history: HistoryEntry): Promise<HistoryE
     bodyDrafts: history.snapshot.bodyDrafts,
     auth: history.snapshot.auth,
     extracts: [],
+    assertions: [],
+    mock: createDefaultMock(),
     favorite: false,
     createdAt: history.executedAt,
     updatedAt: history.executedAt,
