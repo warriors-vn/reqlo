@@ -99,6 +99,11 @@ export function ResponseViewer({
             label="Type"
             value={result.contentType || formatResponseKindLabel(result.responseKind)}
           />
+          {result.mocked && (
+            <span className="inline-flex items-center rounded-full border border-[var(--status-warn)]/40 bg-[var(--status-warn)]/10 px-2.5 py-1 font-semibold uppercase tracking-wide text-[var(--status-warn)]">
+              Mocked
+            </span>
+          )}
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">

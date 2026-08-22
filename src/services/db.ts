@@ -77,6 +77,29 @@ export interface ExtractRule {
   enabled: boolean;
 }
 
+export type AssertionKind = "status" | "jsonBody";
+export type AssertionOperator = "equals" | "exists" | "contains";
+
+export interface AssertionRule {
+  id: string;
+  enabled: boolean;
+  kind: AssertionKind;
+  /** Dot/bracket path into the JSON body — only used when kind is "jsonBody". */
+  path: string;
+  /** Ignored when kind is "status" (status checks are always an equality check). */
+  operator: AssertionOperator;
+  expected: string;
+}
+
+export interface MockConfig {
+  enabled: boolean;
+  status: number;
+  contentType: string;
+  body: string;
+  /** Artificial latency, in milliseconds, so a mock can simulate a slow endpoint. */
+  delayMs: number;
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -118,6 +141,8 @@ export interface ApiRequest {
   bodyDrafts: RequestBodyDrafts;
   auth: RequestAuth;
   extracts: ExtractRule[];
+  assertions: AssertionRule[];
+  mock: MockConfig;
   favorite?: boolean;
   createdAt: number;
   updatedAt: number;
@@ -290,6 +315,46 @@ class ReqloDB extends Dexie {
             if (request.extracts === undefined) request.extracts = [];
           });
       });
+    this.version(7)
+      .stores({
+        workspaces: "id, updatedAt",
+        collections: "id, workspaceId, position",
+        folders:
+          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
+        requests:
+          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
+        history:
+          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
+        environments: "id, workspaceId",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table<ApiRequest, string>("requests")
+          .toCollection()
+          .modify((request) => {
+            if (request.assertions === undefined) request.assertions = [];
+          });
+      });
+    this.version(8)
+      .stores({
+        workspaces: "id, updatedAt",
+        collections: "id, workspaceId, position",
+        folders:
+          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
+        requests:
+          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
+        history:
+          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
+        environments: "id, workspaceId",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table<ApiRequest, string>("requests")
+          .toCollection()
+          .modify((request) => {
+            if (request.mock === undefined) request.mock = createDefaultMock();
+          });
+      });
   }
 }
 
@@ -321,6 +386,27 @@ export function createEmptyKV(key = "", value = ""): KV {
 
 export function createEmptyExtractRule(): ExtractRule {
   return { id: uid(), path: "", variableName: "", enabled: true };
+}
+
+export function createEmptyAssertionRule(): AssertionRule {
+  return {
+    id: uid(),
+    enabled: true,
+    kind: "status",
+    path: "",
+    operator: "equals",
+    expected: "200",
+  };
+}
+
+export function createDefaultMock(): MockConfig {
+  return {
+    enabled: false,
+    status: 200,
+    contentType: "application/json",
+    body: "{\n  \n}",
+    delayMs: 0,
+  };
 }
 
 export function createEmptyFormDataRow(kind: FormDataRow["kind"] = "text"): FormDataRow {
@@ -422,6 +508,8 @@ export function normalizeApiRequest(
     bodyDrafts: normalizeBodyDrafts(request.bodyDrafts, body, legacyBodyType),
     auth: request.auth ?? createDefaultAuth(),
     extracts: request.extracts ?? [],
+    assertions: request.assertions ?? [],
+    mock: request.mock ?? createDefaultMock(),
     favorite: request.favorite ?? false,
   } as ApiRequest;
 }
@@ -548,6 +636,8 @@ export async function ensureSeed(): Promise<Workspace> {
       bodyDrafts: createDefaultBodyDrafts(),
       auth: createDefaultAuth(),
       extracts: [],
+      assertions: [],
+      mock: createDefaultMock(),
       createdAt: now,
       updatedAt: now,
     },
@@ -574,6 +664,8 @@ export async function ensureSeed(): Promise<Workspace> {
       },
       auth: createDefaultAuth(),
       extracts: [],
+      assertions: [],
+      mock: createDefaultMock(),
       createdAt: now,
       updatedAt: now,
     },
@@ -593,6 +685,8 @@ export async function ensureSeed(): Promise<Workspace> {
       bodyDrafts: createDefaultBodyDrafts(),
       auth: createDefaultAuth(),
       extracts: [],
+      assertions: [],
+      mock: createDefaultMock(),
       createdAt: now,
       updatedAt: now,
     },
