@@ -1,4 +1,4 @@
-# reqlo [![Framework][framework-img]][framework] [![Bundler][bundler-img]][bundler] [![TypeScript][ts-img]][ts]
+# reqlo [![Framework][framework-img]][framework] [![Bundler][bundler-img]][bundler] [![TypeScript][ts-img]][ts] [![Release][release-img]][release]
 
 ``reqlo`` is a local-first HTTP client built with [React](https://reactjs.org) and [TanStack](https://tanstack.com) tooling.
 
@@ -7,6 +7,21 @@ Everything you compose — requests, collections, environments, history — live
 ``reqlo`` may look like [Postman](https://www.postman.com/) or [Insomnia](https://insomnia.rest/) at a glance, but it's built from scratch for a single workflow: open it, paste a cURL command or build a request by hand, send it, and keep working — no cloud workspace required.
 
 **Non-goal:** an account or login is never required to use ``reqlo``'s core features — composing requests, collections, environments, history. That's a hard line, not a default that hasn't been challenged yet; any future sync/team feature has to stay optional on top of it, never a gate in front of it.
+
+Features
+--------
+
+* **Collections & nested folders** — organize requests in folders nested to any depth; drag-and-drop to reorder or re-parent.
+* **Environments** — swap `{{VARIABLE}}` values per environment without touching the request itself.
+* **cURL import** — paste a curl command from your terminal or devtools, get a full request back.
+* **Postman import** — import a Postman v2.1 collection directly; anything that can't translate 1:1 (OAuth2, form-data files) surfaces as a clear warning instead of failing silently.
+* **Git-friendly export** — export a collection as a folder of plain files instead of one giant JSON blob, so diffs in version control are actually readable.
+* **Request chaining** — extract a value from one response (status, header, JSON path) and feed it into a later request.
+* **Assertions** — simple pass/fail checks on status or JSON body — no scripting engine, no `eval`.
+* **Local mock responses** — flip a request into mock mode and get a saved response back instantly, with zero network calls.
+* **History** — every send is recorded and searchable, with side-by-side comparison.
+* **Installable & offline** — reqlo is a PWA; install it and it keeps working without a network connection.
+* **Durable storage** — asks the browser to treat its IndexedDB data as persistent rather than evictable under disk pressure.
 
 Why this name?
 ---------------
@@ -104,3 +119,5 @@ Authors
 [bundler]: https://vitejs.dev
 [ts-img]: https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white
 [ts]: https://www.typescriptlang.org
+[release-img]: https://img.shields.io/github/v/release/warriors-vn/reqlo
+[release]: https://github.com/warriors-vn/reqlo/releases
