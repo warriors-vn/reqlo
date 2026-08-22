@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, CopyPlus, Globe, Plus, Trash2 } from "lucide-react";
 import { Overlay } from "./Overlay";
 import { KeyValueGrid } from "@/features/request-body/components/KeyValueGrid";
@@ -55,7 +55,18 @@ export function EnvironmentSwitcher() {
     setDeleteArmId(null);
   }, [selectedEnvId, selectedEnvironment?.name]);
 
+  // Escape blurs the input to cancel editing, which fires onBlur => commitName
+  // synchronously — before the setNameDraft(revert) it just queued has applied.
+  // Without this guard, commitName would read the stale (in-progress) draft
+  // and commit it instead of reverting. Set right before blurring on Escape,
+  // consumed (and cleared) the next time commitName runs.
+  const cancelingRef = useRef(false);
+
   const commitName = () => {
+    if (cancelingRef.current) {
+      cancelingRef.current = false;
+      return;
+    }
     if (!selectedEnvironment) return;
     const nextName = nameDraft.trim();
     if (!nextName) {
@@ -231,6 +242,8 @@ export function EnvironmentSwitcher() {
                             (event.currentTarget as HTMLInputElement).blur();
                           }
                           if (event.key === "Escape") {
+                            event.stopPropagation();
+                            cancelingRef.current = true;
                             setNameDraft(selectedEnvironment.name);
                             (event.currentTarget as HTMLInputElement).blur();
                           }

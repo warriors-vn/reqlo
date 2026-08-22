@@ -30,6 +30,9 @@ export function Overlay({ open, onClose, title, subtitle, children, maxW = "max-
             transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
             className={`glass w-full ${maxW} overflow-hidden rounded-2xl border border-border shadow-2xl`}
             onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
           >
             <div className="flex items-center gap-3 border-b border-border px-4 py-3">
               <div className="min-w-0 flex-1">
@@ -40,6 +43,7 @@ export function Overlay({ open, onClose, title, subtitle, children, maxW = "max-
               </div>
               <button
                 onClick={onClose}
+                aria-label="Close"
                 className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <X className="h-3.5 w-3.5" />

@@ -62,6 +62,9 @@ export function CommandPalette() {
             transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
             className="glass w-full max-w-xl overflow-hidden rounded-2xl border border-border shadow-2xl"
             onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command palette"
           >
             <Command className="flex flex-col" loop shouldFilter={false}>
               <div className="flex items-center gap-2 border-b border-border px-4">
@@ -71,6 +74,7 @@ export function CommandPalette() {
                   value={query}
                   onValueChange={setQuery}
                   placeholder="Search commands, requests…"
+                  aria-label="Search commands and requests"
                   className="h-12 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
                 <kbd className="rounded border border-border bg-[var(--surface)] px-1.5 py-0.5 font-mono text-3xs text-muted-foreground">
