@@ -1,6 +1,6 @@
 import { Sparkles } from "lucide-react";
 import type { GraphqlBodyDraft } from "@/features/request-body/types";
-import { TextCodeEditor } from "@/features/request-body/editors/TextCodeEditor";
+import { LazyTextCodeEditor as TextCodeEditor } from "@/features/request-body/editors/LazyTextCodeEditor";
 import { formatJson } from "@/features/request-body/utils/body";
 
 interface Props {

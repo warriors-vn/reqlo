@@ -23,7 +23,7 @@ import {
   clampPanelWidth,
   useCodeSnippetPanelStore,
 } from "@/features/code-snippets/stores/useCodeSnippetPanelStore";
-import { SnippetCodeEditor } from "@/features/code-snippets/components/SnippetCodeEditor";
+import { LazySnippetCodeEditor as SnippetCodeEditor } from "@/features/code-snippets/components/LazySnippetCodeEditor";
 import { copyTextToClipboard } from "@/features/code-snippets/utils/clipboard";
 import type { SnippetLanguage } from "@/features/code-snippets/types";
 import type { ApiRequest, Environment } from "@/services/db";

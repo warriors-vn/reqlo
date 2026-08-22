@@ -1,3 +1,4 @@
+import "@/lib/monaco-setup";
 import Editor from "@monaco-editor/react";
 import type { editor as MonacoEditor, IDisposable } from "monaco-editor";
 import { ChevronDown, ChevronUp, Search, WrapText, X } from "lucide-react";
