@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "@/stores/useStore";
 import { Sidebar } from "@/components/Sidebar";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { TabBar } from "@/components/TabBar";
 import { RequestBuilder } from "@/components/RequestBuilder";
 import { ResponseViewer } from "@/components/ResponseViewer";
@@ -36,6 +39,8 @@ export function Workspace() {
     workspace,
     addHistory,
     sidebarCollapsed,
+    toggleSidebar,
+    sidebarWidth,
     sendPing,
     environments,
     activeEnvId,
@@ -44,10 +49,43 @@ export function Workspace() {
   const [results, setResults] = useState<Record<string, ExecutionResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const lastPing = useRef(0);
+  const isMobile = useMediaQuery("(max-width: 767px)");
+  const forcedMobileCollapse = useRef(false);
+  const sidebarObserverCleanup = useRef<() => void>(() => {});
+
+  // Persist the sidebar's resized width by watching the panel's real box directly.
+  // A callback ref (rather than a useEffect keyed on render-time state) fires exactly
+  // when React attaches/detaches the panel's DOM node — including the mount that
+  // happens once `ready` flips true, which a dependency-array effect would miss.
+  const sidebarPanelElRef = useCallback((el: HTMLDivElement | null) => {
+    sidebarObserverCleanup.current();
+    sidebarObserverCleanup.current = () => {};
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let timeout: ReturnType<typeof setTimeout>;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry.contentRect.width;
+      clearTimeout(timeout);
+      timeout = setTimeout(() => useStore.getState().setSidebarWidth(width), 300);
+    });
+    observer.observe(el);
+    sidebarObserverCleanup.current = () => {
+      clearTimeout(timeout);
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     init();
   }, [init]);
+
+  // The sidebar's persisted desktop preference shouldn't auto-open an overlay
+  // drawer on a phone-sized viewport the first time it's seen.
+  useEffect(() => {
+    if (isMobile && !sidebarCollapsed && !forcedMobileCollapse.current) {
+      forcedMobileCollapse.current = true;
+      toggleSidebar();
+    }
+  }, [isMobile, sidebarCollapsed, toggleSidebar]);
 
   // Install global command + shortcut system.
   useCommandSystem();
@@ -136,41 +174,71 @@ export function Workspace() {
     );
   }
 
+  const mainContent = (
+    <div className="flex min-w-0 flex-1 overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TabBar />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <AnimatePresence mode="wait">
+            {activeRequest ? (
+              <motion.div
+                key={activeRequest.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex min-h-0 flex-1 flex-col"
+              >
+                <RequestBuilder
+                  request={activeRequest}
+                  onSend={send}
+                  sending={isLoading}
+                  result={result}
+                />
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <ResponseViewer result={result ?? null} loading={isLoading} />
+                </div>
+              </motion.div>
+            ) : (
+              <EmptyState key="empty" />
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+      <CodeSnippetPanel request={activeRequest} environment={activeEnvironment} />
+    </div>
+  );
+
   return (
     <div className="flex h-screen w-screen overflow-hidden">
-      {!sidebarCollapsed && <Sidebar />}
-      <div className="flex min-w-0 flex-1 overflow-hidden">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <TabBar />
-          <div className="flex min-h-0 flex-1 flex-col">
-            <AnimatePresence mode="wait">
-              {activeRequest ? (
-                <motion.div
-                  key={activeRequest.id}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="flex min-h-0 flex-1 flex-col"
-                >
-                  <RequestBuilder
-                    request={activeRequest}
-                    onSend={send}
-                    sending={isLoading}
-                    result={result}
-                  />
-                  <div className="flex min-h-0 flex-1 flex-col">
-                    <ResponseViewer result={result ?? null} loading={isLoading} />
-                  </div>
-                </motion.div>
-              ) : (
-                <EmptyState key="empty" />
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-        <CodeSnippetPanel request={activeRequest} environment={activeEnvironment} />
-      </div>
+      {isMobile && (
+        <Sheet open={!sidebarCollapsed} onOpenChange={() => toggleSidebar()}>
+          <SheetContent side="left" className="w-72 max-w-[85vw] p-0 sm:max-w-[85vw]">
+            <SheetTitle className="sr-only">Sidebar</SheetTitle>
+            <Sidebar />
+          </SheetContent>
+        </Sheet>
+      )}
+      {!isMobile && !sidebarCollapsed ? (
+        <ResizablePanelGroup orientation="horizontal" className="h-full w-full">
+          <ResizablePanel
+            id="sidebar"
+            defaultSize={`${sidebarWidth}px`}
+            minSize="220px"
+            maxSize="480px"
+            elementRef={sidebarPanelElRef}
+            className="flex h-full"
+          >
+            <Sidebar />
+          </ResizablePanel>
+          <ResizableHandle />
+          <ResizablePanel id="main" minSize="30%" className="flex min-w-0 flex-1">
+            {mainContent}
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      ) : (
+        mainContent
+      )}
 
       {/* Overlays */}
       <CommandPalette />
@@ -208,7 +276,7 @@ function EmptyState() {
           onClick={() => openOverlay("palette")}
           className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent"
         >
-          Search <kbd className="ml-1 font-mono text-[10px] text-muted-foreground">⌘K</kbd>
+          Search <kbd className="ml-1 font-mono text-3xs text-muted-foreground">⌘K</kbd>
         </button>
       </div>
     </motion.div>

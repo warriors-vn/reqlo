@@ -58,7 +58,7 @@ export function ResponseViewer({
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
         <div className="text-xs font-medium text-foreground/70">No response yet</div>
-        <div className="text-[11px] text-muted-foreground">
+        <div className="text-2xs text-muted-foreground">
           Press{" "}
           <kbd className="rounded border border-border bg-[var(--surface)] px-1 font-mono">⌘ ↵</kbd>{" "}
           to send
@@ -86,7 +86,7 @@ export function ResponseViewer({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border bg-[var(--surface)] px-4 py-3 text-[11px]">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border bg-[var(--surface)] px-4 py-3 text-2xs">
         <div className="flex flex-wrap items-center gap-2">
           <MetaPill
             label="Status"
@@ -108,7 +108,7 @@ export function ResponseViewer({
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {result.fileName && (
-            <span className="rounded-full border border-border/80 bg-background/60 px-2.5 py-1 font-mono text-[10px] text-muted-foreground">
+            <span className="rounded-full border border-border/80 bg-background/60 px-2.5 py-1 font-mono text-3xs text-muted-foreground">
               {result.fileName}
             </span>
           )}
@@ -190,7 +190,7 @@ export function ResponseViewer({
                   <ResponsePreview result={result} previewUrl={previewUrl} />
                 ) : (
                   <ScrollArea className="h-full">
-                    <pre className="p-4 font-mono text-[12px] leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
+                    <pre className="p-4 font-mono text-xs leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
                       {bodyView === "pretty"
                         ? prettyBody || "(empty body)"
                         : result.body || "(empty body)"}
@@ -209,7 +209,7 @@ export function ResponseViewer({
                 {Object.entries(result.headers).map(([key, value]) => (
                   <div
                     key={key}
-                    className="grid gap-2 px-4 py-3 font-mono text-[11px] md:grid-cols-[220px_1fr]"
+                    className="grid gap-2 px-4 py-3 font-mono text-2xs md:grid-cols-[220px_1fr]"
                   >
                     <span className="truncate text-muted-foreground">{key}</span>
                     <span className="break-all text-foreground/90">{value}</span>
@@ -311,7 +311,7 @@ function ResponsePreview({
           This response type does not support inline preview yet. Use download to inspect the full
           payload.
         </p>
-        <div className="mt-3 text-[11px] font-mono text-muted-foreground">
+        <div className="mt-3 text-2xs font-mono text-muted-foreground">
           {formatResponseKindLabel(result.responseKind)} · {formatBytes(result.sizeBytes)}
         </div>
       </div>

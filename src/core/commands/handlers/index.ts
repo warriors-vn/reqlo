@@ -18,10 +18,12 @@ import {
   Code2,
   ChevronLeft,
   ChevronRight,
+  SunMoon,
 } from "lucide-react";
 import { commandRegistry } from "../registry";
 import type { CommandDescriptor } from "../types";
 import { useStore, pickFile } from "@/stores/useStore";
+import { applyTheme, getStoredTheme, resolveTheme, setStoredTheme } from "@/lib/theme";
 import { useCodeSnippetPanelStore } from "@/features/code-snippets/stores/useCodeSnippetPanelStore";
 import { generateSnippetFromRequest } from "@/features/code-snippets/utils/generate-snippet";
 import { copyTextToClipboard } from "@/features/code-snippets/utils/clipboard";
@@ -338,6 +340,21 @@ export function registerBuiltInCommands(): () => void {
       icon: Code2,
       shortcut: "mod+shift+c",
       run: () => useCodeSnippetPanelStore.getState().toggleCollapsed(),
+    },
+    {
+      id: "view.toggle-theme",
+      title: "Toggle Theme",
+      description: "Cycle Light → Dark → System",
+      category: "view",
+      icon: SunMoon,
+      shortcut: "mod+alt+t",
+      run: () => {
+        const current = getStoredTheme();
+        const next = current === "light" ? "dark" : current === "dark" ? "system" : "light";
+        setStoredTheme(next);
+        applyTheme(next);
+        toast.success(`Theme: ${next === "system" ? `System (${resolveTheme(next)})` : next}`);
+      },
     },
     {
       id: "snippet.copy",

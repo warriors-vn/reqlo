@@ -48,7 +48,7 @@ export function FormDataEditor({ rows, onChange }: Props) {
   return (
     <div className="space-y-3">
       <div className="rounded-[24px] border border-border/75 bg-[color-mix(in_oklab,var(--surface-elevated)_85%,transparent)] p-2 shadow-[0_18px_60px_rgba(15,23,42,0.05)] backdrop-blur-xl">
-        <div className="grid grid-cols-[36px_88px_minmax(120px,1fr)_minmax(180px,1.4fr)_minmax(120px,0.9fr)_100px] gap-2 px-2 pb-2 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground/80">
+        <div className="grid grid-cols-[36px_88px_minmax(120px,1fr)_minmax(180px,1.4fr)_minmax(120px,0.9fr)_100px] gap-2 px-2 pb-2 text-3xs font-medium uppercase tracking-[0.18em] text-muted-foreground/80">
           <div />
           <div>Status</div>
           <div>Key</div>
@@ -152,7 +152,7 @@ function FormDataEditorRow({
             })
           }
           className={cn(
-            "inline-flex h-8 items-center gap-1 rounded-xl px-2 text-[11px] font-medium transition",
+            "inline-flex h-8 items-center gap-1 rounded-xl px-2 text-2xs font-medium transition",
             row.kind === "file"
               ? "bg-accent text-foreground"
               : "text-muted-foreground hover:bg-accent/70 hover:text-foreground",
@@ -206,18 +206,18 @@ function FormDataEditorRow({
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2 rounded-xl bg-accent px-2.5 py-1.5 text-[11px] font-medium text-foreground transition hover:opacity-90"
+              className="inline-flex items-center gap-2 rounded-xl bg-accent px-2.5 py-1.5 text-2xs font-medium text-foreground transition hover:opacity-90"
             >
               <FileUp className="h-3.5 w-3.5" /> Choose files
             </button>
             <div className="flex flex-wrap gap-1.5">
               {row.files.length === 0 && (
-                <span className="text-[11px] text-muted-foreground">No files selected</span>
+                <span className="text-2xs text-muted-foreground">No files selected</span>
               )}
               {row.files.map((file) => (
                 <span
                   key={file.id}
-                  className="inline-flex items-center gap-1 rounded-full bg-background px-2.5 py-1 text-[10px] text-foreground shadow-sm"
+                  className="inline-flex items-center gap-1 rounded-full bg-background px-2.5 py-1 text-3xs text-foreground shadow-sm"
                 >
                   <span className="truncate max-w-[140px]">{file.name}</span>
                   <span className="text-muted-foreground">{readableFileSize(file.size)}</span>

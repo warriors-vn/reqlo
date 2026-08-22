@@ -44,7 +44,7 @@ export function KeyValueGrid({ rows, onChange, keyLabel = "Key", valueLabel = "V
 
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-[36px_110px_minmax(120px,1fr)_minmax(160px,1.4fr)_108px] gap-2 px-2 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground/80">
+      <div className="grid grid-cols-[36px_110px_minmax(120px,1fr)_minmax(160px,1.4fr)_108px] gap-2 px-2 text-3xs font-medium uppercase tracking-[0.18em] text-muted-foreground/80">
         <div />
         <div>On</div>
         <div>{keyLabel}</div>

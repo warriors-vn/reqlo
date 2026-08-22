@@ -50,7 +50,7 @@ export function BinaryBodyEditor({ value, onChange }: Props) {
             </div>
             <div className="min-w-0 space-y-1">
               <div className="truncate text-sm font-medium">{file.name}</div>
-              <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+              <div className="flex flex-wrap gap-3 text-2xs text-muted-foreground">
                 <span>{file.type || "application/octet-stream"}</span>
                 <span>{readableFileSize(file.size)}</span>
                 <span>{new Date(file.lastModified).toLocaleString()}</span>

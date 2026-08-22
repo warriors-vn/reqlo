@@ -101,7 +101,7 @@ export function TabBar() {
           type="button"
           onClick={toggleCollapsed}
           className={cn(
-            "inline-flex h-8 items-center gap-2 rounded-xl border px-2.5 text-[11px] font-medium shadow-sm transition",
+            "inline-flex h-8 items-center gap-2 rounded-xl border px-2.5 text-2xs font-medium shadow-sm transition",
             collapsed
               ? "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
               : "border-border bg-[var(--surface-elevated)] text-foreground",

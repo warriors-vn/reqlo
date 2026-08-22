@@ -1,7 +1,16 @@
+import { useEffect, useState } from "react";
 import { Overlay } from "./Overlay";
 import { pickFile, useStore } from "@/stores/useStore";
 import { IS_MAC } from "@/core/commands/shortcuts";
+import { applyTheme, getStoredTheme, setStoredTheme, type Theme } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+
+const THEME_OPTIONS: { value: Theme; label: string }[] = [
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+  { value: "system", label: "System" },
+];
 
 type RestoreCapableStore = ReturnType<typeof useStore.getState> & {
   importWorkspaceJSON: (text: string) => Promise<{ name: string } | null>;
@@ -15,10 +24,40 @@ export function SettingsModal() {
   const requests = useStore((s) => s.requests);
   const environments = useStore((s) => s.environments);
   const exportActiveWorkspace = useStore((s) => s.exportActiveWorkspace);
+  const [theme, setTheme] = useState<Theme>(() => getStoredTheme());
+
+  // SettingsModal stays mounted (Overlay only hides it), and the theme can also
+  // change via the command palette while this is closed — resync on every open.
+  useEffect(() => {
+    if (open) setTheme(getStoredTheme());
+  }, [open]);
 
   return (
     <Overlay open={open} onClose={close} title="Settings" subtitle="Reqlo workspace preferences">
       <div className="space-y-5 text-xs">
+        <Section label="Appearance">
+          <div className="flex gap-1 rounded-lg border border-border bg-background p-1">
+            {THEME_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => {
+                  setTheme(option.value);
+                  setStoredTheme(option.value);
+                  applyTheme(option.value);
+                }}
+                className={cn(
+                  "flex-1 rounded-md px-2 py-1 text-2xs font-medium transition-colors",
+                  theme === option.value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </Section>
+
         <Section label="Workspace">
           <Row k="Name" v={workspace?.name ?? "—"} />
           <Row k="Collections" v={String(collections.length)} />
@@ -35,7 +74,7 @@ export function SettingsModal() {
           <div className="space-y-2">
             <button
               onClick={() => void exportActiveWorkspace()}
-              className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-medium text-foreground hover:bg-accent"
+              className="rounded-lg border border-border px-3 py-1.5 text-2xs font-medium text-foreground hover:bg-accent"
             >
               Export workspace backup
             </button>
@@ -72,11 +111,11 @@ export function SettingsModal() {
                   description: `${workspace.name} · ${state.requests.length} requests · ${state.history.length} history entries`,
                 });
               }}
-              className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-medium text-foreground hover:bg-accent"
+              className="rounded-lg border border-border px-3 py-1.5 text-2xs font-medium text-foreground hover:bg-accent"
             >
               Restore workspace backup
             </button>
-            <p className="text-[11px] leading-5 text-muted-foreground">
+            <p className="text-2xs leading-5 text-muted-foreground">
               Export creates a full local backup. Restore replaces the current workspace, including
               requests, environments, and history.
             </p>
@@ -92,7 +131,7 @@ export function SettingsModal() {
               localStorage.removeItem("reqlo:recent-commands");
               window.location.reload();
             }}
-            className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-1.5 text-[11px] font-medium text-destructive hover:bg-destructive/10"
+            className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-1.5 text-2xs font-medium text-destructive hover:bg-destructive/10"
           >
             Reset local workspace
           </button>
@@ -105,7 +144,7 @@ export function SettingsModal() {
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="mb-1.5 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
       <div className="space-y-1 rounded-lg border border-border bg-[var(--surface)] p-3">

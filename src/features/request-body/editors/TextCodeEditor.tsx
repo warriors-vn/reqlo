@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { useRequestBodyStore } from "@/features/request-body/stores/useRequestBodyStore";
 import type { BodyEditorValidation } from "@/features/request-body/types";
 import { cn } from "@/lib/utils";
+import { useIsDarkMode } from "@/hooks/useIsDarkMode";
 
 interface Props {
   language: "json" | "plaintext" | "xml";
@@ -29,6 +30,8 @@ export function TextCodeEditor({
   const fontSize = useRequestBodyStore((state) => state.fontSize);
   const showLineNumbers = useRequestBodyStore((state) => state.showLineNumbers);
   const setWrapLines = useRequestBodyStore((state) => state.setWrapLines);
+  const isDark = useIsDarkMode();
+  const monacoTheme = isDark ? "reqlo-dark" : "reqlo-light";
 
   const validationTone = useMemo(() => {
     switch (validation?.tone) {
@@ -44,7 +47,7 @@ export function TextCodeEditor({
   return (
     <div className="overflow-hidden rounded-[22px] border border-border/80 bg-background/80 shadow-[0_16px_40px_rgba(15,23,42,0.06)] backdrop-blur-sm">
       <div className="flex items-center justify-between border-b border-border/70 bg-[color-mix(in_oklab,var(--surface)_88%,transparent)] px-3 py-2">
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-2 text-2xs text-muted-foreground">
           <span className="rounded-full bg-muted px-2 py-0.5 font-medium uppercase tracking-[0.16em]">
             {language}
           </span>
@@ -54,16 +57,14 @@ export function TextCodeEditor({
             </span>
           )}
           {validation?.detail && (
-            <span className="truncate text-[10px] text-muted-foreground/80">
-              {validation.detail}
-            </span>
+            <span className="truncate text-3xs text-muted-foreground/80">{validation.detail}</span>
           )}
         </div>
         <div className="flex items-center gap-1">
           {onFormat && (
             <button
               onClick={onFormat}
-              className="inline-flex h-8 items-center gap-1 rounded-xl px-2.5 text-[11px] font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              className="inline-flex h-8 items-center gap-1 rounded-xl px-2.5 text-2xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
             >
               <Sparkles className="h-3.5 w-3.5" /> Format
             </button>
@@ -71,7 +72,7 @@ export function TextCodeEditor({
           <button
             onClick={() => setWrapLines(!wrapLines)}
             className={cn(
-              "inline-flex h-8 items-center gap-1 rounded-xl px-2.5 text-[11px] font-medium transition",
+              "inline-flex h-8 items-center gap-1 rounded-xl px-2.5 text-2xs font-medium transition",
               wrapLines
                 ? "bg-accent text-foreground"
                 : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -86,7 +87,7 @@ export function TextCodeEditor({
           height={minHeight}
           language={language}
           value={value}
-          theme="vs-light"
+          theme={monacoTheme}
           loading={
             <div className="grid h-full place-items-center text-xs text-muted-foreground">
               Loading editor…
@@ -106,9 +107,21 @@ export function TextCodeEditor({
                 "editor.inactiveSelectionBackground": "#EBEEF580",
               },
             });
+            monaco.editor.defineTheme("reqlo-dark", {
+              base: "vs-dark",
+              inherit: true,
+              rules: [],
+              colors: {
+                "editor.background": "#02061700",
+                "editor.lineHighlightBackground": "#0F172A55",
+                "editorLineNumber.foreground": "#64748B",
+                "editor.selectionBackground": "#1D4ED880",
+                "editor.inactiveSelectionBackground": "#0F172A80",
+              },
+            });
           }}
           options={{
-            theme: "reqlo-light",
+            theme: monacoTheme,
             minimap: { enabled: false },
             fontSize,
             wordWrap: wrapLines ? "on" : "off",

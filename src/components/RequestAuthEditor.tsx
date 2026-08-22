@@ -72,7 +72,7 @@ export function RequestAuthEditor({ request }: Props) {
               )}
             >
               <div className="text-sm font-semibold tracking-tight">{authType.label}</div>
-              <div className="mt-1 text-[11px] text-muted-foreground">{authType.description}</div>
+              <div className="mt-1 text-2xs text-muted-foreground">{authType.description}</div>
             </button>
           );
         })}
@@ -159,16 +159,16 @@ export function RequestAuthEditor({ request }: Props) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="text-sm font-semibold tracking-tight">Resolved auth preview</div>
-            <div className="text-[11px] text-muted-foreground">
+            <div className="text-2xs text-muted-foreground">
               {environment ? `Environment: ${environment.name}` : "No environment selected"}
             </div>
           </div>
-          <span className="rounded-full bg-muted px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          <span className="rounded-full bg-muted px-2.5 py-1 text-3xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {request.auth.type}
           </span>
         </div>
 
-        <div className="mt-3 space-y-2 text-[11px]">
+        <div className="mt-3 space-y-2 text-2xs">
           {authHeader ? (
             <PreviewRow label="Header" value={`${authHeader[0]}: ${maskPreview(authHeader[1])}`} />
           ) : null}
@@ -200,10 +200,10 @@ function Field({
 }) {
   return (
     <label className="block space-y-1.5">
-      <span className="flex items-center justify-between gap-2 text-[11px] font-medium text-muted-foreground">
+      <span className="flex items-center justify-between gap-2 text-2xs font-medium text-muted-foreground">
         <span>{label}</span>
         {hint ? (
-          <span className="text-[10px] font-normal text-muted-foreground/70">{hint}</span>
+          <span className="text-3xs font-normal text-muted-foreground/70">{hint}</span>
         ) : null}
       </span>
       {children}

@@ -41,6 +41,15 @@
   --color-status-warn: var(--status-warn);
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "SF Pro Display", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /*
+   * Micro type scale: the app leaned on scattered text-[10px]/text-[11px]/text-[12px]
+   * arbitrary values for dense UI chrome (badges, kbd hints, meta labels) with no shared
+   * scale behind them. These two steps formalize that range below Tailwind's own text-xs
+   * (12px) so every size in the app now resolves to a named token.
+   */
+  --text-3xs: 0.625rem; /* 10px */
+  --text-2xs: 0.6875rem; /* 11px */
 }
 
 :root {
@@ -86,6 +95,49 @@
   --status-success: oklch(0.62 0.16 150);
   --status-error: oklch(0.6 0.22 27);
   --status-warn: oklch(0.7 0.16 75);
+}
+
+.dark {
+  /* Dark, premium neutrals mirroring the light palette's hue/chroma */
+  --background: oklch(0.16 0.012 260);
+  --foreground: oklch(0.95 0.005 260);
+  --surface: oklch(0.19 0.012 260);
+  --surface-elevated: oklch(0.23 0.013 260);
+
+  --card: oklch(0.2 0.012 260);
+  --card-foreground: oklch(0.95 0.005 260);
+  --popover: oklch(0.21 0.013 260);
+  --popover-foreground: oklch(0.95 0.005 260);
+
+  --primary: oklch(0.68 0.19 262);
+  --primary-foreground: oklch(0.99 0 0);
+
+  --secondary: oklch(0.25 0.01 260);
+  --secondary-foreground: oklch(0.92 0.008 260);
+
+  --muted: oklch(0.24 0.01 260);
+  --muted-foreground: oklch(0.65 0.015 260);
+
+  --accent: oklch(0.27 0.03 262);
+  --accent-foreground: oklch(0.86 0.06 262);
+
+  --destructive: oklch(0.66 0.21 27);
+  --destructive-foreground: oklch(0.99 0 0);
+
+  --border: oklch(0.3 0.012 258);
+  --input: oklch(0.27 0.012 258);
+  --ring: oklch(0.68 0.16 262);
+
+  /* HTTP methods (brightened for contrast on a dark surface) */
+  --method-get: oklch(0.72 0.16 150);
+  --method-post: oklch(0.7 0.17 50);
+  --method-put: oklch(0.72 0.16 230);
+  --method-patch: oklch(0.7 0.16 290);
+  --method-delete: oklch(0.7 0.22 27);
+
+  --status-success: oklch(0.72 0.16 150);
+  --status-error: oklch(0.7 0.22 27);
+  --status-warn: oklch(0.66 0.12 75);
 }
 
 @layer base {

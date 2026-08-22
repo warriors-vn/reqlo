@@ -25,7 +25,7 @@ export function RequestExtractEditor({ request, result }: Props) {
 
   return (
     <div className="space-y-3">
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-2xs text-muted-foreground">
         After this request sends, pull a field out of the JSON response straight into an environment
         variable — the usual reason people reach for scripting is just chaining an auth token into
         the next request.
@@ -55,7 +55,7 @@ export function RequestExtractEditor({ request, result }: Props) {
             spellCheck={false}
             className="h-8 rounded-lg border border-transparent bg-transparent px-2 font-mono text-xs outline-none focus:border-border focus:bg-background"
           />
-          <span className="justify-self-center text-[10px] uppercase tracking-wide text-muted-foreground">
+          <span className="justify-self-center text-3xs uppercase tracking-wide text-muted-foreground">
             into
           </span>
           <input
@@ -107,7 +107,7 @@ function LastResponsePreview({
   return (
     <div className="rounded-[24px] border border-border/80 bg-background/70 p-4 shadow-[0_10px_32px_rgba(15,23,42,0.04)]">
       <div className="text-sm font-semibold tracking-tight">Last response preview</div>
-      <div className="mt-3 space-y-2 text-[11px]">
+      <div className="mt-3 space-y-2 text-2xs">
         {request.extracts
           .filter((rule) => rule.enabled && rule.path.trim())
           .map((rule) => {

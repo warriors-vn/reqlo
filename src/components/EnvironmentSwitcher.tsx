@@ -107,7 +107,7 @@ export function EnvironmentSwitcher() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold tracking-tight">Workspace environments</div>
-              <div className="text-[11px] text-muted-foreground">
+              <div className="text-2xs text-muted-foreground">
                 {environments.length} total · {activeEnvId ? "1 active" : "No active env"}
               </div>
             </div>
@@ -142,7 +142,7 @@ export function EnvironmentSwitcher() {
                     <div className="truncate text-sm font-medium tracking-tight">
                       {environment.name}
                     </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">
+                    <div className="mt-1 text-2xs text-muted-foreground">
                       {enabledCount} enabled variable{enabledCount === 1 ? "" : "s"}
                     </div>
                   </button>
@@ -150,7 +150,7 @@ export function EnvironmentSwitcher() {
                     type="button"
                     onClick={() => setActiveEnv(environment.id)}
                     className={cn(
-                      "inline-flex h-9 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-medium transition",
+                      "inline-flex h-9 items-center gap-1 rounded-xl border px-2.5 text-2xs font-medium transition",
                       active
                         ? "border-primary/20 bg-primary/10 text-primary"
                         : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -172,7 +172,7 @@ export function EnvironmentSwitcher() {
           </div>
 
           <div className="rounded-[24px] border border-dashed border-border bg-background/65 p-3">
-            <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            <div className="text-2xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
               New environment
             </div>
             <input
@@ -194,7 +194,7 @@ export function EnvironmentSwitcher() {
             >
               <Plus className="h-3.5 w-3.5" /> Create environment
             </button>
-            <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+            <p className="mt-2 text-2xs leading-5 text-muted-foreground">
               Variables resolve in URLs, auth, headers, query params, request bodies, and code
               snippets.
             </p>
@@ -208,16 +208,16 @@ export function EnvironmentSwitcher() {
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-muted px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                      <span className="rounded-full bg-muted px-2.5 py-1 text-3xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                         {selectedEnvironment.id === activeEnvId ? "Active" : "Inactive"}
                       </span>
-                      <span className="rounded-full bg-background px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+                      <span className="rounded-full bg-background px-2.5 py-1 text-3xs font-medium text-muted-foreground">
                         {selectedEnvironment.variables.length} variable
                         {selectedEnvironment.variables.length === 1 ? "" : "s"}
                       </span>
                     </div>
                     <label className="block space-y-1.5">
-                      <span className="text-[11px] font-medium text-muted-foreground">
+                      <span className="text-2xs font-medium text-muted-foreground">
                         Environment name
                       </span>
                       <input
@@ -238,7 +238,7 @@ export function EnvironmentSwitcher() {
                         className="h-11 w-full rounded-2xl border border-border/80 bg-background/80 px-3 text-sm outline-none transition focus:border-foreground/15"
                       />
                     </label>
-                    <p className="text-[11px] leading-5 text-muted-foreground">
+                    <p className="text-2xs leading-5 text-muted-foreground">
                       Use short, memorable names like Local, Staging, or Production. Templates
                       resolve against the active environment across send, snippets, and auth
                       preview.
@@ -296,11 +296,11 @@ export function EnvironmentSwitcher() {
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <div className="text-sm font-semibold tracking-tight">Variables</div>
-                    <div className="text-[11px] text-muted-foreground">
+                    <div className="text-2xs text-muted-foreground">
                       Enabled keys are available to template expressions like {"{{API_TOKEN}}"}.
                     </div>
                   </div>
-                  <span className="rounded-full bg-muted px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  <span className="rounded-full bg-muted px-2.5 py-1 text-3xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                     {`${selectedEnvironment.variables.filter((item) => item.enabled && item.key.trim()).length} active`}
                   </span>
                 </div>
@@ -321,11 +321,11 @@ export function EnvironmentSwitcher() {
                       <div className="text-sm font-semibold tracking-tight">
                         Active request preview
                       </div>
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-2xs text-muted-foreground">
                         See how the selected environment resolves the current request.
                       </div>
                     </div>
-                    <span className="rounded-full bg-background px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+                    <span className="rounded-full bg-background px-2.5 py-1 text-3xs font-medium text-muted-foreground">
                       {activeRequest
                         ? activeRequest.name || "Untitled request"
                         : "No request selected"}
@@ -361,7 +361,7 @@ export function EnvironmentSwitcher() {
                     <div className="text-sm font-semibold tracking-tight">
                       Detected template keys
                     </div>
-                    <div className="text-[11px] text-muted-foreground">
+                    <div className="text-2xs text-muted-foreground">
                       Tokens referenced by the active request.
                     </div>
                   </div>
@@ -374,7 +374,7 @@ export function EnvironmentSwitcher() {
                           <span
                             key={token}
                             className={cn(
-                              "rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em]",
+                              "rounded-full border px-2.5 py-1 text-3xs font-medium uppercase tracking-[0.14em]",
                               resolved
                                 ? "border-primary/20 bg-primary/10 text-primary"
                                 : "border-border bg-muted/40 text-muted-foreground",
@@ -415,8 +415,8 @@ export function EnvironmentSwitcher() {
 function PreviewRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid gap-2 rounded-2xl border border-border/70 bg-background/70 px-3 py-2 md:grid-cols-[96px_1fr]">
-      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
-      <span className="truncate font-mono text-[11px] text-foreground/90">{value}</span>
+      <span className="text-2xs font-medium text-muted-foreground">{label}</span>
+      <span className="truncate font-mono text-2xs text-foreground/90">{value}</span>
     </div>
   );
 }

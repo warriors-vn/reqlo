@@ -35,7 +35,7 @@ export function Overlay({ open, onClose, title, subtitle, children, maxW = "max-
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold tracking-tight">{title}</div>
                 {subtitle && (
-                  <div className="truncate text-[11px] text-muted-foreground">{subtitle}</div>
+                  <div className="truncate text-2xs text-muted-foreground">{subtitle}</div>
                 )}
               </div>
               <button

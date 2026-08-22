@@ -125,7 +125,7 @@ export function CodeSnippetPanel({ request, environment }: Props) {
         initial={false}
         animate={{ width: panelWidthPx, opacity: 1 }}
         transition={{ type: "spring", stiffness: 260, damping: 30, mass: 0.9 }}
-        className="relative flex h-full shrink-0 border-l border-white/40 bg-[linear-gradient(180deg,rgba(244,244,245,0.4),rgba(244,244,245,0.18))] backdrop-blur-2xl"
+        className="relative flex h-full shrink-0 border-l border-[var(--border)]/40 bg-[linear-gradient(180deg,color-mix(in_oklab,var(--surface-elevated)_40%,transparent),color-mix(in_oklab,var(--surface-elevated)_18%,transparent))] backdrop-blur-2xl"
       >
         {!collapsed && (
           <button
@@ -134,7 +134,7 @@ export function CodeSnippetPanel({ request, environment }: Props) {
             className="absolute inset-y-0 left-0 z-30 flex w-3 -translate-x-1/2 items-center justify-center text-muted-foreground/60 transition hover:text-foreground"
             aria-label="Resize code snippet panel"
           >
-            <span className="flex h-16 w-2 items-center justify-center rounded-full bg-white/70 shadow-[0_12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+            <span className="flex h-16 w-2 items-center justify-center rounded-full bg-[var(--surface-elevated)]/70 shadow-[0_12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl">
               <GripVertical className="h-3.5 w-3.5" />
             </span>
           </button>
@@ -239,28 +239,28 @@ function PanelSurface({
 }) {
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
-      <div className="flex items-center justify-between gap-3 border-b border-white/45 bg-white/40 px-4 py-3 backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--border)]/45 bg-[var(--surface-elevated)]/40 px-4 py-3 backdrop-blur-xl">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <div className="grid h-9 w-9 place-items-center rounded-2xl border border-white/60 bg-white/70 text-foreground shadow-[0_10px_24px_rgba(15,23,42,0.08)]">
+            <div className="grid h-9 w-9 place-items-center rounded-2xl border border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 text-foreground shadow-[0_10px_24px_rgba(15,23,42,0.08)]">
               <Code2 className="h-4 w-4" />
             </div>
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold tracking-tight">Code snippets</div>
-              <div className="truncate text-[11px] text-muted-foreground">{requestSummary}</div>
+              <div className="truncate text-2xs text-muted-foreground">{requestSummary}</div>
             </div>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-3xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             <span
               className={cn(
-                "rounded-full px-2 py-1 text-foreground shadow-sm",
+                "rounded-full px-2 py-1 text-foreground shadow-sm dark:brightness-[0.55] dark:saturate-[0.35]",
                 `bg-gradient-to-r ${activeMeta.accent}`,
               )}
             >
               {activeMeta.family}
             </span>
             {environment && (
-              <span className="rounded-full border border-white/60 bg-white/70 px-2 py-1 text-foreground/80">
+              <span className="rounded-full border border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 px-2 py-1 text-foreground/80">
                 {environment.name}
               </span>
             )}
@@ -272,7 +272,7 @@ function PanelSurface({
           <button
             type="button"
             onClick={onToggleFullscreen}
-            className="grid h-9 w-9 place-items-center rounded-2xl border border-white/60 bg-white/70 text-muted-foreground shadow-sm transition hover:bg-white hover:text-foreground"
+            className="grid h-9 w-9 place-items-center rounded-2xl border border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 text-muted-foreground shadow-sm transition hover:bg-[var(--surface-elevated)] hover:text-foreground"
             title={fullscreen ? "Exit fullscreen" : "Open fullscreen"}
           >
             {fullscreen ? <Shrink className="h-4 w-4" /> : <Expand className="h-4 w-4" />}
@@ -281,7 +281,7 @@ function PanelSurface({
             <button
               type="button"
               onClick={onToggleCollapse}
-              className="grid h-9 w-9 place-items-center rounded-2xl border border-white/60 bg-white/70 text-muted-foreground shadow-sm transition hover:bg-white hover:text-foreground"
+              className="grid h-9 w-9 place-items-center rounded-2xl border border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 text-muted-foreground shadow-sm transition hover:bg-[var(--surface-elevated)] hover:text-foreground"
               title="Collapse snippets"
             >
               <ChevronRight className="h-4 w-4" />
@@ -291,7 +291,7 @@ function PanelSurface({
             <button
               type="button"
               onClick={onToggleFullscreen}
-              className="grid h-9 w-9 place-items-center rounded-2xl border border-white/60 bg-white/70 text-muted-foreground shadow-sm transition hover:bg-white hover:text-foreground"
+              className="grid h-9 w-9 place-items-center rounded-2xl border border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 text-muted-foreground shadow-sm transition hover:bg-[var(--surface-elevated)] hover:text-foreground"
               title="Close fullscreen"
             >
               <ChevronRight className="h-4 w-4 rotate-180" />
@@ -300,12 +300,12 @@ function PanelSurface({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-white/45 bg-white/30 px-4 py-3 backdrop-blur-xl">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)]/45 bg-[var(--surface-elevated)]/30 px-4 py-3 backdrop-blur-xl">
         <Select value={selectedLanguage} onValueChange={onSelectLanguage}>
-          <SelectTrigger className="h-10 min-w-[220px] rounded-2xl border-white/60 bg-white/75 text-xs shadow-sm">
+          <SelectTrigger className="h-10 min-w-[220px] rounded-2xl border-[var(--border)]/60 bg-[var(--surface-elevated)]/75 text-xs shadow-sm">
             <SelectValue placeholder="Choose language" />
           </SelectTrigger>
-          <SelectContent className="rounded-2xl border-white/60 bg-white/92 backdrop-blur-2xl">
+          <SelectContent className="rounded-2xl border-[var(--border)]/60 bg-[var(--surface-elevated)]/92 backdrop-blur-2xl">
             {snippetGenerators.map((generator) => (
               <SelectItem
                 key={generator.meta.id}
@@ -316,7 +316,7 @@ function PanelSurface({
                   <span className="text-sm font-medium text-foreground">
                     {generator.meta.label}
                   </span>
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-2xs text-muted-foreground">
                     {generator.meta.description}
                   </span>
                 </div>
@@ -328,7 +328,7 @@ function PanelSurface({
         <button
           type="button"
           onClick={onCopy}
-          className="inline-flex h-10 items-center gap-2 rounded-2xl border border-white/60 bg-white/75 px-3.5 text-xs font-semibold text-foreground shadow-sm transition hover:bg-white"
+          className="inline-flex h-10 items-center gap-2 rounded-2xl border border-[var(--border)]/60 bg-[var(--surface-elevated)]/75 px-3.5 text-xs font-semibold text-foreground shadow-sm transition hover:bg-[var(--surface-elevated)]"
         >
           {copied ? (
             <Check className="h-4 w-4 text-[var(--status-success)]" />
@@ -336,12 +336,12 @@ function PanelSurface({
             <Copy className="h-4 w-4" />
           )}
           {copied ? "Copied" : "Copy snippet"}
-          <kbd className="rounded-lg border border-white/70 bg-white/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+          <kbd className="rounded-lg border border-[var(--border)]/70 bg-[var(--surface-elevated)]/70 px-1.5 py-0.5 font-mono text-3xs text-muted-foreground">
             ⌘⇧Y
           </kbd>
         </button>
 
-        <div className="ml-auto rounded-2xl border border-white/60 bg-white/70 px-3 py-2 text-[11px] text-muted-foreground shadow-sm">
+        <div className="ml-auto rounded-2xl border border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 px-3 py-2 text-2xs text-muted-foreground shadow-sm">
           {hasRequest ? "Live updates enabled" : "Waiting for an active request"}
         </div>
       </div>
@@ -376,7 +376,7 @@ function CollapsedRail({
         <button
           type="button"
           onClick={onExpand}
-          className="grid h-11 w-11 place-items-center rounded-2xl border border-white/60 bg-white/75 text-foreground shadow-[0_14px_28px_rgba(15,23,42,0.08)] transition hover:bg-white"
+          className="grid h-11 w-11 place-items-center rounded-2xl border border-[var(--border)]/60 bg-[var(--surface-elevated)]/75 text-foreground shadow-[0_14px_28px_rgba(15,23,42,0.08)] transition hover:bg-[var(--surface-elevated)]"
           title="Expand code snippet panel (⌘⇧C)"
         >
           <Code2 className="h-4 w-4" />
@@ -384,20 +384,20 @@ function CollapsedRail({
         <button
           type="button"
           onClick={onExpand}
-          className="grid h-9 w-9 place-items-center rounded-2xl border border-white/60 bg-white/70 text-muted-foreground shadow-sm transition hover:bg-white hover:text-foreground"
+          className="grid h-9 w-9 place-items-center rounded-2xl border border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 text-muted-foreground shadow-sm transition hover:bg-[var(--surface-elevated)] hover:text-foreground"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
       </div>
 
       <div className="flex rotate-180 flex-col items-center gap-3 [writing-mode:vertical-rl]">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+        <span className="text-3xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
           {languageLabel}
         </span>
         <button
           type="button"
           onClick={onCopy}
-          className="grid h-9 w-9 place-items-center rounded-2xl border border-white/60 bg-white/70 text-muted-foreground shadow-sm transition hover:bg-white hover:text-foreground"
+          className="grid h-9 w-9 place-items-center rounded-2xl border border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 text-muted-foreground shadow-sm transition hover:bg-[var(--surface-elevated)] hover:text-foreground"
           title="Copy current snippet"
         >
           {copied ? (

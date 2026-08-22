@@ -29,7 +29,7 @@ function EditorFallback({ fullscreen }: { fullscreen?: boolean }) {
   return (
     <div
       style={{ height: fullscreen ? "calc(100vh - 14rem)" : "100%" }}
-      className="grid place-items-center rounded-[26px] border border-white/50 bg-white/40 text-xs text-muted-foreground backdrop-blur-2xl"
+      className="grid place-items-center rounded-[26px] border border-[var(--border)]/50 bg-[var(--surface-elevated)]/40 text-xs text-muted-foreground backdrop-blur-2xl"
     >
       Loading editor…
     </div>

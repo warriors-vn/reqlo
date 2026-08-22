@@ -49,7 +49,7 @@ export function ImportCurlModal() {
 
         {preview && preview.url && (
           <div className="rounded-lg border border-border bg-[var(--surface)] p-3">
-            <div className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+            <div className="mb-2 text-3xs uppercase tracking-wider text-muted-foreground">
               Preview
             </div>
             <div className="flex items-center gap-2 text-xs">
@@ -57,7 +57,7 @@ export function ImportCurlModal() {
               <span className="truncate font-mono">{preview.url}</span>
             </div>
             {(preview.headers.length > 0 || preview.body) && (
-              <div className="mt-2 space-y-1 text-[11px] text-muted-foreground">
+              <div className="mt-2 space-y-1 text-2xs text-muted-foreground">
                 {preview.headers.length > 0 && (
                   <div>
                     {preview.headers.length} header{preview.headers.length === 1 ? "" : "s"}

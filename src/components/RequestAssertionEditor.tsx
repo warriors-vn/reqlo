@@ -36,7 +36,7 @@ export function RequestAssertionEditor({ request, result }: Props) {
 
   return (
     <div className="space-y-3">
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-2xs text-muted-foreground">
         A structured check, not a script — "status is 200" or "body has field X" covers most of what
         people reach for Postman's test scripts for. Rules run after every Send.
       </p>
@@ -72,7 +72,7 @@ export function RequestAssertionEditor({ request, result }: Props) {
 
               {rule.kind === "status" ? (
                 <>
-                  <span className="text-[11px] text-muted-foreground">is</span>
+                  <span className="text-2xs text-muted-foreground">is</span>
                   <input
                     value={rule.expected}
                     onChange={(event) => update(rule.id, { expected: event.target.value })}
@@ -123,7 +123,7 @@ export function RequestAssertionEditor({ request, result }: Props) {
             {outcome && (
               <div
                 className={cn(
-                  "flex items-center gap-1.5 text-[11px]",
+                  "flex items-center gap-1.5 text-2xs",
                   outcome.passed ? "text-[var(--status-success)]" : "text-destructive",
                 )}
               >
