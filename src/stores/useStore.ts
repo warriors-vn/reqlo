@@ -18,6 +18,7 @@ import {
   ensureSeed,
   normalizeApiRequest,
   normalizeHistoryEntry,
+  requestPersistentStorage,
 } from "@/services/db";
 import { parseCurl } from "@/services/curl";
 import { looksLikePostmanCollection, parsePostmanCollection } from "@/services/postman";
@@ -191,6 +192,7 @@ export const useStore = create<State>((set, get) => ({
   sendPing: 0,
 
   init: async () => {
+    void requestPersistentStorage();
     const ws = await ensureSeed();
     const [collections, folders, requests, history, environments] = await Promise.all([
       db.collections.where("workspaceId").equals(ws.id).toArray(),

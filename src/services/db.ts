@@ -703,3 +703,21 @@ export async function ensureSeed(): Promise<Workspace> {
   await db.environments.add(defaultEnv);
   return ws;
 }
+
+/**
+ * Without this, the browser treats reqlo's IndexedDB data as "best-effort" —
+ * evictable under disk pressure (and, on Safari, after ~7 days without a
+ * visit). Asking for persistent storage tells the browser this data matters
+ * and shouldn't be silently cleared. Most browsers grant it automatically
+ * based on engagement heuristics rather than prompting; there's nothing for
+ * the user to click either way, so this just fires once at startup.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  if (typeof navigator === "undefined" || !navigator.storage?.persist) return false;
+  try {
+    if (await navigator.storage.persisted?.()) return true;
+    return await navigator.storage.persist();
+  } catch {
+    return false;
+  }
+}
