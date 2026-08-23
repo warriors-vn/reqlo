@@ -13,22 +13,13 @@ import { HistoryDrawer } from "@/components/HistoryDrawer";
 import { LazySettingsModal } from "@/components/LazySettingsModal";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LazyEnvironmentSwitcher } from "@/components/LazyEnvironmentSwitcher";
-import { executeRequest } from "@/services/executor";
-import { createRequestSnapshot, uid } from "@/services/db";
+import { LazyCollectionRunnerModal } from "@/components/LazyCollectionRunnerModal";
+import { runSingleRequest } from "@/services/runner";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCommandSystem } from "@/hooks/useCommandSystem";
 import { CodeSnippetPanel } from "@/features/code-snippets/components/CodeSnippetPanel";
-import {
-  getExecutionResultExcerpt,
-  isTextualResponse,
-  type ExecutionResult,
-} from "@/services/execution";
-import { resolveExtractPath, stringifyExtractedValue } from "@/services/extract";
-import { evaluateAssertions } from "@/services/assertions";
-import type { ApiRequest, Environment } from "@/services/db";
+import type { ExecutionResult } from "@/services/execution";
 import { toast } from "sonner";
-
-const MAX_HISTORY_RESPONSE_BODY = 40_000;
 
 export function Workspace() {
   const {
@@ -100,59 +91,37 @@ export function Workspace() {
   const send = async () => {
     if (!activeRequest || !workspace) return;
     setLoading((s) => ({ ...s, [activeRequest.id]: true }));
-    const res = await executeRequest(activeRequest, activeEnvironment);
-    const responseExcerpt = getExecutionResultExcerpt(res);
-    const responseBody =
-      isTextualResponse(res.responseKind) && res.body.length > MAX_HISTORY_RESPONSE_BODY
-        ? res.body.slice(0, MAX_HISTORY_RESPONSE_BODY)
-        : isTextualResponse(res.responseKind)
-          ? res.body
-          : "";
-    setResults((s) => ({ ...s, [activeRequest.id]: res }));
+    const outcome = await runSingleRequest(activeRequest, activeEnvironment, {
+      workspaceId: workspace.id,
+      addHistory,
+      updateEnvironment,
+    });
+    setResults((s) => ({ ...s, [activeRequest.id]: outcome.result }));
     setLoading((s) => ({ ...s, [activeRequest.id]: false }));
 
-    if (res.responseKind === "json" && res.body) {
-      await applyExtractRules(activeRequest, res.body, activeEnvironment, updateEnvironment);
+    if (outcome.noActiveEnvironment) {
+      toast.warning("Couldn't save extracted variables", {
+        description: "No active environment is selected.",
+      });
+    } else if (outcome.extractFailures.length) {
+      toast.warning(
+        `Couldn't extract ${outcome.extractFailures.length} variable${outcome.extractFailures.length > 1 ? "s" : ""}`,
+        { description: outcome.extractFailures.join(", ") },
+      );
     }
-    reportFailedAssertions(activeRequest, res);
-    await addHistory({
-      id: uid(),
-      workspaceId: workspace.id,
-      requestId: activeRequest.id,
-      requestName: activeRequest.name,
-      method: activeRequest.method,
-      url: activeRequest.url,
-      status: res.status,
-      ok: res.ok,
-      durationMs: res.durationMs,
-      sizeBytes: res.sizeBytes,
-      executedAt: Date.now(),
-      environmentId: activeEnvironment?.id ?? null,
-      environmentName: activeEnvironment?.name ?? null,
-      favorite: false,
-      pinned: false,
-      snapshot: createRequestSnapshot(activeRequest),
-      responseKind: res.responseKind,
-      responseContentType: res.contentType,
-      responseHeaders: { ...res.headers },
-      responseBody,
-      responseBodyTruncated:
-        isTextualResponse(res.responseKind) && res.body.length > MAX_HISTORY_RESPONSE_BODY,
-      searchText: [
-        activeRequest.name,
-        activeRequest.method,
-        activeRequest.url,
-        res.status,
-        activeEnvironment?.name,
-        responseExcerpt,
-        res.error,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase(),
-      errorMessage: res.error,
-      responseExcerpt,
-    });
+
+    const failedAssertions = outcome.assertionOutcomes.filter((o) => !o.passed);
+    if (failedAssertions.length) {
+      toast.warning(
+        `${failedAssertions.length} of ${outcome.assertionOutcomes.length} test${outcome.assertionOutcomes.length > 1 ? "s" : ""} failed`,
+        {
+          description: failedAssertions
+            .slice(0, 3)
+            .map((o) => o.message)
+            .join(" · "),
+        },
+      );
+    }
   };
 
   // The "request.send" command bumps sendPing — execute here so we own response state.
@@ -259,6 +228,7 @@ export function Workspace() {
       <LazySettingsModal />
       <KeyboardShortcutsModal />
       <LazyEnvironmentSwitcher />
+      <LazyCollectionRunnerModal />
     </div>
   );
 }
@@ -293,72 +263,5 @@ function EmptyState() {
         </button>
       </div>
     </motion.div>
-  );
-}
-
-async function applyExtractRules(
-  request: ApiRequest,
-  responseBody: string,
-  environment: Environment | null,
-  updateEnvironment: (id: string, patch: { variables: Environment["variables"] }) => Promise<void>,
-) {
-  const rules = request.extracts.filter(
-    (rule) => rule.enabled && rule.path.trim() && rule.variableName.trim(),
-  );
-  if (!rules.length) return;
-
-  if (!environment) {
-    toast.warning("Couldn't save extracted variables", {
-      description: "No active environment is selected.",
-    });
-    return;
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(responseBody);
-  } catch {
-    return;
-  }
-
-  const updates: { key: string; value: string }[] = [];
-  const failed: string[] = [];
-  for (const rule of rules) {
-    const result = resolveExtractPath(parsed, rule.path);
-    if (result.ok)
-      updates.push({ key: rule.variableName.trim(), value: stringifyExtractedValue(result.value) });
-    else failed.push(rule.variableName.trim() || rule.path);
-  }
-
-  if (updates.length) {
-    const nextVariables = [...environment.variables];
-    for (const { key, value } of updates) {
-      const index = nextVariables.findIndex((item) => item.key === key);
-      if (index >= 0) nextVariables[index] = { ...nextVariables[index], value, enabled: true };
-      else nextVariables.push({ id: uid(), key, value, enabled: true });
-    }
-    await updateEnvironment(environment.id, { variables: nextVariables });
-  }
-
-  if (failed.length) {
-    toast.warning(`Couldn't extract ${failed.length} variable${failed.length > 1 ? "s" : ""}`, {
-      description: failed.join(", "),
-    });
-  }
-}
-
-function reportFailedAssertions(request: ApiRequest, result: ExecutionResult) {
-  const outcomes = evaluateAssertions(request.assertions, result);
-  const failed = outcomes.filter((outcome) => !outcome.passed);
-  if (!failed.length) return;
-
-  toast.warning(
-    `${failed.length} of ${outcomes.length} test${outcomes.length > 1 ? "s" : ""} failed`,
-    {
-      description: failed
-        .slice(0, 3)
-        .map((outcome) => outcome.message)
-        .join(" · "),
-    },
   );
 }

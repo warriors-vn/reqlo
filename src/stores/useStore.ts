@@ -23,6 +23,7 @@ import {
 import { parseCurl } from "@/services/curl";
 import { looksLikePostmanCollection, parsePostmanCollection } from "@/services/postman";
 import { looksLikeOpenApiDocument, parseOpenApiDocument } from "@/services/openapi";
+import type { RunTarget } from "@/services/runner";
 import {
   exportCollection as buildCollectionExport,
   exportWorkspace as buildWorkspaceExport,
@@ -60,7 +61,8 @@ export type OverlayKey =
   | "settings"
   | "history"
   | "env-switcher"
-  | "shortcuts";
+  | "shortcuts"
+  | "runner";
 
 interface State {
   ready: boolean;
@@ -83,6 +85,8 @@ interface State {
 
   // last fire time, used to ping AnimatePresence-style listeners
   sendPing: number;
+  // set by startRun; CollectionRunnerModal watches the token to detect a new run
+  runnerTarget: (RunTarget & { token: number }) | null;
 
   init: () => Promise<void>;
 
@@ -91,6 +95,9 @@ interface State {
   closeOverlay: (k: OverlayKey) => void;
   toggleOverlay: (k: OverlayKey) => void;
   setPalette: (open: boolean) => void; // legacy alias
+
+  // collection runner
+  startRun: (target: RunTarget) => void;
 
   // tabs / selection
   openRequest: (requestId: string) => void;
@@ -196,12 +203,14 @@ export const useStore = create<State>((set, get) => ({
     history: false,
     "env-switcher": false,
     shortcuts: false,
+    runner: false,
   },
   sidebarCollapsed: false,
   sidebarWidth: 288,
   sidebarTree: { ...DEFAULT_SIDEBAR_TREE, collections: {} },
   sidebarSelection: null,
   sendPing: 0,
+  runnerTarget: null,
 
   init: async () => {
     void requestPersistentStorage();
@@ -496,6 +505,13 @@ export const useStore = create<State>((set, get) => ({
   },
 
   requestSend: () => set({ sendPing: Date.now() }),
+
+  startRun: (target) => {
+    set((s) => ({
+      runnerTarget: { ...target, token: Date.now() },
+      overlays: { ...s.overlays, runner: true },
+    }));
+  },
 
   createCollection: async (name) => {
     const ws = get().workspace!;

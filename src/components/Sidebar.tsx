@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   Circle,
   X,
+  Play,
 } from "lucide-react";
 import { useStore } from "@/stores/useStore";
 import { useIsDarkMode } from "@/hooks/useIsDarkMode";
@@ -459,6 +460,14 @@ export function Sidebar() {
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => void duplicateCollection(col.id)}>
                       <CopyPlus className="h-3.5 w-3.5" /> Duplicate collection
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        useStore.getState().startRun({ type: "collection", id: col.id })
+                      }
+                    >
+                      <Play className="h-3.5 w-3.5" /> Run all requests
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onSelect={() => void exportCollectionById(col.id)}>
@@ -907,6 +916,12 @@ function FolderTree(props: FolderTreeProps) {
                   </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => props.onNewFolder(collectionId, folder.id)}>
                     <FolderClosed className="h-3.5 w-3.5" /> New subfolder
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => useStore.getState().startRun({ type: "folder", id: folder.id })}
+                  >
+                    <Play className="h-3.5 w-3.5" /> Run all requests
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem

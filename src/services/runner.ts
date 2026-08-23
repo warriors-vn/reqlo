@@ -1,0 +1,204 @@
+import { executeRequest } from "@/services/executor";
+import {
+  createRequestSnapshot,
+  uid,
+  type ApiRequest,
+  type Environment,
+  type Folder,
+  type HistoryEntry,
+  type KV,
+} from "@/services/db";
+import {
+  getExecutionResultExcerpt,
+  isTextualResponse,
+  type ExecutionResult,
+} from "@/services/execution";
+import { resolveExtractPath, stringifyExtractedValue } from "@/services/extract";
+import { evaluateAssertions, type AssertionOutcome } from "@/services/assertions";
+
+const MAX_HISTORY_RESPONSE_BODY = 40_000;
+
+export interface RunSingleRequestDeps {
+  workspaceId: string;
+  addHistory: (entry: HistoryEntry) => Promise<void>;
+  updateEnvironment: (id: string, patch: { variables: KV[] }) => Promise<void>;
+}
+
+export interface RunSingleRequestOutcome {
+  result: ExecutionResult;
+  assertionOutcomes: AssertionOutcome[];
+  extractedVariables: string[];
+  extractFailures: string[];
+  noActiveEnvironment: boolean;
+}
+
+/**
+ * The single-request pipeline (execute → extract → assert → log to history) —
+ * shared by interactive Send (Workspace.tsx) and the collection runner
+ * (CollectionRunnerModal.tsx) so there's exactly one execution path, not two.
+ * Unlike Send, this never toasts directly — it returns a structured outcome and
+ * lets each caller decide how to surface it (a toast per send vs. aggregated
+ * rows in a batch run).
+ */
+export async function runSingleRequest(
+  request: ApiRequest,
+  environment: Environment | null,
+  deps: RunSingleRequestDeps,
+): Promise<RunSingleRequestOutcome> {
+  const result = await executeRequest(request, environment);
+  const responseExcerpt = getExecutionResultExcerpt(result);
+  const responseBody =
+    isTextualResponse(result.responseKind) && result.body.length > MAX_HISTORY_RESPONSE_BODY
+      ? result.body.slice(0, MAX_HISTORY_RESPONSE_BODY)
+      : isTextualResponse(result.responseKind)
+        ? result.body
+        : "";
+
+  let extractedVariables: string[] = [];
+  let extractFailures: string[] = [];
+  let noActiveEnvironment = false;
+  if (result.responseKind === "json" && result.body) {
+    const outcome = await applyExtractRules(
+      request,
+      result.body,
+      environment,
+      deps.updateEnvironment,
+    );
+    extractedVariables = outcome.extracted;
+    extractFailures = outcome.failed;
+    noActiveEnvironment = outcome.noActiveEnvironment;
+  }
+
+  const assertionOutcomes = evaluateAssertions(request.assertions, result);
+
+  await deps.addHistory({
+    id: uid(),
+    workspaceId: deps.workspaceId,
+    requestId: request.id,
+    requestName: request.name,
+    method: request.method,
+    url: request.url,
+    status: result.status,
+    ok: result.ok,
+    durationMs: result.durationMs,
+    sizeBytes: result.sizeBytes,
+    executedAt: Date.now(),
+    environmentId: environment?.id ?? null,
+    environmentName: environment?.name ?? null,
+    favorite: false,
+    pinned: false,
+    snapshot: createRequestSnapshot(request),
+    responseKind: result.responseKind,
+    responseContentType: result.contentType,
+    responseHeaders: { ...result.headers },
+    responseBody,
+    responseBodyTruncated:
+      isTextualResponse(result.responseKind) && result.body.length > MAX_HISTORY_RESPONSE_BODY,
+    searchText: [
+      request.name,
+      request.method,
+      request.url,
+      result.status,
+      environment?.name,
+      responseExcerpt,
+      result.error,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase(),
+    errorMessage: result.error,
+    responseExcerpt,
+  });
+
+  return { result, assertionOutcomes, extractedVariables, extractFailures, noActiveEnvironment };
+}
+
+async function applyExtractRules(
+  request: ApiRequest,
+  responseBody: string,
+  environment: Environment | null,
+  updateEnvironment: RunSingleRequestDeps["updateEnvironment"],
+): Promise<{ extracted: string[]; failed: string[]; noActiveEnvironment: boolean }> {
+  const rules = request.extracts.filter(
+    (rule) => rule.enabled && rule.path.trim() && rule.variableName.trim(),
+  );
+  if (!rules.length) return { extracted: [], failed: [], noActiveEnvironment: false };
+  if (!environment) return { extracted: [], failed: [], noActiveEnvironment: true };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(responseBody);
+  } catch {
+    return { extracted: [], failed: [], noActiveEnvironment: false };
+  }
+
+  const updates: { key: string; value: string }[] = [];
+  const failed: string[] = [];
+  for (const rule of rules) {
+    const resolved = resolveExtractPath(parsed, rule.path);
+    if (resolved.ok) {
+      updates.push({
+        key: rule.variableName.trim(),
+        value: stringifyExtractedValue(resolved.value),
+      });
+    } else {
+      failed.push(rule.variableName.trim() || rule.path);
+    }
+  }
+
+  if (updates.length) {
+    const nextVariables = [...environment.variables];
+    for (const { key, value } of updates) {
+      const index = nextVariables.findIndex((item) => item.key === key);
+      if (index >= 0) nextVariables[index] = { ...nextVariables[index], value, enabled: true };
+      else nextVariables.push({ id: uid(), key, value, enabled: true });
+    }
+    await updateEnvironment(environment.id, { variables: nextVariables });
+  }
+
+  return { extracted: updates.map((u) => u.key), failed, noActiveEnvironment: false };
+}
+
+export type RunTarget = { type: "collection" | "folder"; id: string };
+
+/**
+ * Every request under a collection or folder, in the same order the sidebar
+ * renders them: each level's child folders first (depth-first, position order),
+ * then that level's own direct requests.
+ */
+export function collectRequestsInTreeOrder(
+  target: RunTarget,
+  requests: ApiRequest[],
+  folders: Folder[],
+): ApiRequest[] {
+  const collectionId =
+    target.type === "collection"
+      ? target.id
+      : folders.find((f) => f.id === target.id)?.collectionId;
+  if (!collectionId) return [];
+  const rootFolderId = target.type === "folder" ? target.id : null;
+  return walkTree(collectionId, rootFolderId, requests, folders);
+}
+
+function walkTree(
+  collectionId: string,
+  parentFolderId: string | null,
+  requests: ApiRequest[],
+  folders: Folder[],
+): ApiRequest[] {
+  const childFolders = folders
+    .filter((f) => f.collectionId === collectionId && f.parentFolderId === parentFolderId)
+    .sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
+  const ownRequests = requests
+    .filter(
+      (r) => (r.collectionId ?? null) === collectionId && (r.folderId ?? null) === parentFolderId,
+    )
+    .sort((a, b) => a.position - b.position);
+
+  const out: ApiRequest[] = [];
+  for (const folder of childFolders) {
+    out.push(...walkTree(collectionId, folder.id, requests, folders));
+  }
+  out.push(...ownRequests);
+  return out;
+}
