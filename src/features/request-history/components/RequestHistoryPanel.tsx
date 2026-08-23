@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { MethodBadge } from "@/components/MethodBadge";
-import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
+import { LazyConfirmDeleteDialog as ConfirmDeleteDialog } from "@/components/LazyConfirmDeleteDialog";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/stores/useStore";
 import { useDebouncedValue } from "@/features/request-history/hooks/useDebouncedValue";

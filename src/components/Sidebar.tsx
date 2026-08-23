@@ -26,7 +26,7 @@ import { useIsDarkMode } from "@/hooks/useIsDarkMode";
 import { applyTheme, setStoredTheme } from "@/lib/theme";
 import { getRecent } from "@/core/commands/recent";
 import { MethodBadge } from "./MethodBadge";
-import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
+import { LazyConfirmDeleteDialog as ConfirmDeleteDialog } from "./LazyConfirmDeleteDialog";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
