@@ -61,13 +61,38 @@ export interface RequestBodyDrafts {
 }
 
 export interface RequestAuth {
-  type: "none" | "basic" | "bearer" | "api-key";
+  type: "none" | "basic" | "bearer" | "api-key" | "oauth2";
   username?: string;
   password?: string;
   token?: string;
   key?: string;
   value?: string;
   addTo?: "header" | "query";
+  oauth2?: OAuth2Config;
+}
+
+export type OAuth2GrantType = "authorization_code" | "client_credentials";
+
+export interface OAuth2Config {
+  grantType: OAuth2GrantType;
+  /** Required for authorization_code, unused for client_credentials. */
+  authUrl?: string;
+  tokenUrl: string;
+  clientId: string;
+  clientSecret?: string;
+  scope?: string;
+  cachedToken?: OAuth2CachedToken;
+}
+
+export interface OAuth2CachedToken {
+  accessToken: string;
+  tokenType: string;
+  /** Epoch ms, or null when the provider didn't return an expires_in. */
+  expiresAt: number | null;
+  refreshToken?: string;
+  /** Environment the token was fetched under — lets the editor flag a stale cache after switching environments. */
+  environmentId: string | null;
+  fetchedAt: number;
 }
 
 export interface ExtractRule {
@@ -378,6 +403,10 @@ export function uid(): string {
 
 export function createDefaultAuth(): RequestAuth {
   return { type: "none" };
+}
+
+export function createDefaultOAuth2Config(): OAuth2Config {
+  return { grantType: "authorization_code", authUrl: "", tokenUrl: "", clientId: "", scope: "" };
 }
 
 export function createEmptyKV(key = "", value = ""): KV {
