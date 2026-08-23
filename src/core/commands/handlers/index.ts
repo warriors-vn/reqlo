@@ -275,6 +275,20 @@ export function registerBuiltInCommands(): () => void {
       },
     },
     {
+      id: "import.openapi",
+      title: "Import OpenAPI Spec",
+      description: "Load an OpenAPI 3.0/3.1 document (JSON or YAML)",
+      category: "import-export",
+      icon: Upload,
+      keywords: ["openapi", "swagger", "import", "spec"],
+      run: async () => {
+        const text = await pickFile("application/json,application/yaml,.json,.yaml,.yml");
+        if (!text) return;
+        const col = await s().importOpenApiText(text);
+        if (!col) window.alert("Not a recognized OpenAPI 3.0/3.1 document.");
+      },
+    },
+    {
       id: "import.workspace",
       title: "Restore Workspace",
       description: "Replace the local workspace from a backup export",
