@@ -91,6 +91,13 @@ export function applyResolvedAuth(
       headers[key] = value;
       return;
     }
+    case "oauth2": {
+      const cached = request.auth.oauth2?.cachedToken;
+      if (!cached) return;
+      if (cached.expiresAt !== null && cached.expiresAt <= Date.now()) return;
+      headers.Authorization = `${cached.tokenType} ${cached.accessToken}`;
+      return;
+    }
     case "none":
       return;
   }
