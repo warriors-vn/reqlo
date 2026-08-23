@@ -7,12 +7,12 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { TabBar } from "@/components/TabBar";
 import { RequestBuilder } from "@/components/RequestBuilder";
 import { ResponseViewer } from "@/components/ResponseViewer";
-import { CommandPalette } from "@/components/CommandPalette";
-import { ImportCurlModal } from "@/components/ImportCurlModal";
+import { LazyCommandPalette } from "@/components/LazyCommandPalette";
+import { LazyImportCurlModal } from "@/components/LazyImportCurlModal";
 import { HistoryDrawer } from "@/components/HistoryDrawer";
-import { SettingsModal } from "@/components/SettingsModal";
+import { LazySettingsModal } from "@/components/LazySettingsModal";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
-import { EnvironmentSwitcher } from "@/components/EnvironmentSwitcher";
+import { LazyEnvironmentSwitcher } from "@/components/LazyEnvironmentSwitcher";
 import { executeRequest } from "@/services/executor";
 import { createRequestSnapshot, uid } from "@/services/db";
 import { motion, AnimatePresence } from "framer-motion";
@@ -253,12 +253,12 @@ export function Workspace() {
       )}
 
       {/* Overlays */}
-      <CommandPalette />
-      <ImportCurlModal />
+      <LazyCommandPalette />
+      <LazyImportCurlModal />
       <HistoryDrawer />
-      <SettingsModal />
+      <LazySettingsModal />
       <KeyboardShortcutsModal />
-      <EnvironmentSwitcher />
+      <LazyEnvironmentSwitcher />
     </div>
   );
 }
