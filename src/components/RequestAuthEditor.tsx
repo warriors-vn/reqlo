@@ -17,6 +17,7 @@ import {
   type RequestAuth,
 } from "@/services/db";
 import { cn } from "@/lib/utils";
+import { maskPreview } from "@/lib/mask";
 
 interface Props {
   request: ApiRequest;
@@ -402,10 +403,4 @@ function TokenStatus({
         : " · no expiry reported"}
     </span>
   );
-}
-
-function maskPreview(value: string) {
-  if (!value) return "(empty)";
-  if (value.length <= 6) return "•".repeat(value.length);
-  return `${value.slice(0, 3)}${"•".repeat(Math.min(8, value.length - 5))}${value.slice(-2)}`;
 }

@@ -16,6 +16,7 @@ import {
 import {
   exportCollection,
   exportWorkspace,
+  sanitizeEnvironmentForExport,
   sanitizeRequestForExport,
   validateCollectionExport,
   validateWorkspaceExport,
@@ -178,6 +179,34 @@ describe("sanitizeRequestForExport", () => {
   });
 });
 
+describe("sanitizeEnvironmentForExport", () => {
+  const environment: Environment = {
+    id: "env-1",
+    workspaceId: "ws-1",
+    name: "Local",
+    variables: [
+      { id: "v1", key: "API_KEY", value: "shh", enabled: true, secret: true },
+      { id: "v2", key: "BASE_URL", value: "https://api.example.com", enabled: true },
+      { id: "v3", key: "DISABLED_SECRET", value: "also-shh", enabled: false, secret: true },
+    ],
+    createdAt: Date.now(),
+  };
+
+  it("blanks the value of every secret variable, leaves the rest untouched", () => {
+    const sanitized = sanitizeEnvironmentForExport(environment);
+    expect(sanitized.variables).toEqual([
+      { id: "v1", key: "API_KEY", value: "", enabled: true, secret: true },
+      { id: "v2", key: "BASE_URL", value: "https://api.example.com", enabled: true },
+      { id: "v3", key: "DISABLED_SECRET", value: "", enabled: false, secret: true },
+    ]);
+  });
+
+  it("does not mutate the original environment", () => {
+    sanitizeEnvironmentForExport(environment);
+    expect(environment.variables[0].value).toBe("shh");
+  });
+});
+
 describe("exportCollection / exportWorkspace round-trips", () => {
   it("exports a collection's requests and folders sorted by position", async () => {
     const workspaceId = uid();
@@ -245,7 +274,10 @@ describe("exportCollection / exportWorkspace round-trips", () => {
       id: uid(),
       workspaceId: workspace.id,
       name: "Local",
-      variables: [],
+      variables: [
+        { id: "v1", key: "API_KEY", value: "super-secret-value", enabled: true, secret: true },
+        { id: "v2", key: "BASE_URL", value: "https://api.example.com", enabled: true },
+      ],
       createdAt: Date.now(),
     };
     await db.environments.add(environment);
@@ -294,6 +326,14 @@ describe("exportCollection / exportWorkspace round-trips", () => {
     expect(result.history).toHaveLength(1);
     expect(result.history[0].id).toBe(historyEntry.id);
     expect(result.history[0].snapshot.requestId).toBe(req.id);
+
+    // Secret variables are blanked in the export; non-secret ones are untouched.
+    const exportedVars = result.environments[0].variables;
+    expect(exportedVars.find((v) => v.key === "API_KEY")?.value).toBe("");
+    expect(exportedVars.find((v) => v.key === "BASE_URL")?.value).toBe("https://api.example.com");
+    // The live store/DB value itself is never mutated by exporting.
+    const liveEnv = await db.environments.get(environment.id);
+    expect(liveEnv?.variables.find((v) => v.key === "API_KEY")?.value).toBe("super-secret-value");
 
     // validateWorkspaceExport should accept its own output.
     expect(validateWorkspaceExport(result)).toBe(true);

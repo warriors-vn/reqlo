@@ -85,7 +85,7 @@ export async function exportWorkspace(workspace: Workspace): Promise<WorkspaceEx
     collections,
     folders,
     requests: await Promise.all(requests.map(sanitizeRequestForExport)),
-    environments,
+    environments: environments.map(sanitizeEnvironmentForExport),
     history: await Promise.all(history.map(sanitizeHistoryForExport)),
   };
 }
@@ -141,6 +141,15 @@ export function validateWorkspaceExport(obj: unknown): obj is WorkspaceExport {
     Array.isArray(o.history) &&
     !!o.workspace
   );
+}
+
+export function sanitizeEnvironmentForExport(environment: Environment): Environment {
+  return {
+    ...environment,
+    variables: environment.variables.map((variable) =>
+      variable.secret ? { ...variable, value: "" } : variable,
+    ),
+  };
 }
 
 async function exportStoredFile(file: StoredFileBlob): Promise<StoredFileBlob> {

@@ -1302,6 +1302,16 @@ export const useStore = create<State>((set, get) => ({
     if (!ws) return;
     const data = await buildWorkspaceExport(ws);
     downloadJSON(data, `${slugify(ws.name)}-workspace.reqlo.json`);
+
+    const secretCount = get().environments.reduce(
+      (sum, env) => sum + env.variables.filter((v) => v.secret).length,
+      0,
+    );
+    if (secretCount > 0) {
+      toast.info(
+        `${secretCount} secret value${secretCount > 1 ? "s were" : " was"} left out of this export`,
+      );
+    }
   },
 
   toggleSidebar: () => {
