@@ -1,6 +1,6 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CopyPlus, GripVertical, Plus, Trash2 } from "lucide-react";
+import { CopyPlus, Eye, EyeOff, GripVertical, Lock, LockOpen, Plus, Trash2 } from "lucide-react";
 import { createEmptyKV, type KV } from "@/services/db";
 import { cn } from "@/lib/utils";
 
@@ -9,10 +9,29 @@ interface Props {
   onChange: (rows: KV[]) => void;
   keyLabel?: string;
   valueLabel?: string;
+  /** Adds a per-row "mark as secret" toggle that masks the value input by default. */
+  supportsSecret?: boolean;
 }
 
-export function KeyValueGrid({ rows, onChange, keyLabel = "Key", valueLabel = "Value" }: Props) {
+export function KeyValueGrid({
+  rows,
+  onChange,
+  keyLabel = "Key",
+  valueLabel = "Value",
+  supportsSecret = false,
+}: Props) {
   const dragRowId = useRef<string | null>(null);
+  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
+  const toggleRevealed = (id: string) =>
+    setRevealedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const gridTemplate = supportsSecret
+    ? "grid-cols-[36px_110px_minmax(120px,1fr)_minmax(160px,1.4fr)_40px_108px]"
+    : "grid-cols-[36px_110px_minmax(120px,1fr)_minmax(160px,1.4fr)_108px]";
 
   const updateRow = (id: string, patch: Partial<KV>) =>
     onChange(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
@@ -44,11 +63,17 @@ export function KeyValueGrid({ rows, onChange, keyLabel = "Key", valueLabel = "V
 
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-[36px_110px_minmax(120px,1fr)_minmax(160px,1.4fr)_108px] gap-2 px-2 text-3xs font-medium uppercase tracking-[0.18em] text-muted-foreground/80">
+      <div
+        className={cn(
+          "grid gap-2 px-2 text-3xs font-medium uppercase tracking-[0.18em] text-muted-foreground/80",
+          gridTemplate,
+        )}
+      >
         <div />
         <div>On</div>
         <div>{keyLabel}</div>
         <div>{valueLabel}</div>
+        {supportsSecret && <div />}
         <div className="text-right">Actions</div>
       </div>
       <div className="space-y-2">
@@ -67,7 +92,10 @@ export function KeyValueGrid({ rows, onChange, keyLabel = "Key", valueLabel = "V
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.16 }}
-              className="grid grid-cols-[36px_110px_minmax(120px,1fr)_minmax(160px,1.4fr)_108px] items-center gap-2 rounded-2xl border border-border/70 bg-background/75 p-2 shadow-[0_8px_30px_rgba(15,23,42,0.03)] backdrop-blur"
+              className={cn(
+                "grid items-center gap-2 rounded-2xl border border-border/70 bg-background/75 p-2 shadow-[0_8px_30px_rgba(15,23,42,0.03)] backdrop-blur",
+                gridTemplate,
+              )}
             >
               <div className="grid h-8 w-8 place-items-center rounded-xl text-muted-foreground hover:bg-accent/70">
                 <GripVertical className="h-3.5 w-3.5" />
@@ -90,21 +118,59 @@ export function KeyValueGrid({ rows, onChange, keyLabel = "Key", valueLabel = "V
                   !row.enabled && "opacity-55",
                 )}
               />
-              <input
-                value={row.value}
-                onChange={(event) => updateRow(row.id, { value: event.target.value })}
-                placeholder={valueLabel}
-                className={cn(
-                  "h-10 rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",
-                  !row.enabled && "opacity-55",
+              <div className="relative">
+                <input
+                  type={row.secret && !revealedIds.has(row.id) ? "password" : "text"}
+                  value={row.value}
+                  onChange={(event) => updateRow(row.id, { value: event.target.value })}
+                  placeholder={valueLabel}
+                  autoComplete="off"
+                  className={cn(
+                    "h-10 w-full rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",
+                    row.secret && "pr-9",
+                    !row.enabled && "opacity-55",
+                  )}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      addRow();
+                    }
+                  }}
+                />
+                {row.secret && (
+                  <button
+                    type="button"
+                    onClick={() => toggleRevealed(row.id)}
+                    className="absolute inset-y-0 right-2 grid place-items-center text-muted-foreground transition hover:text-foreground"
+                    title={revealedIds.has(row.id) ? "Hide value" : "Reveal value"}
+                  >
+                    {revealedIds.has(row.id) ? (
+                      <EyeOff className="h-3.5 w-3.5" />
+                    ) : (
+                      <Eye className="h-3.5 w-3.5" />
+                    )}
+                  </button>
                 )}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    addRow();
-                  }
-                }}
-              />
+              </div>
+              {supportsSecret && (
+                <button
+                  type="button"
+                  onClick={() => updateRow(row.id, { secret: !row.secret })}
+                  className={cn(
+                    "grid h-8 w-8 place-items-center rounded-xl transition",
+                    row.secret
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                  title={row.secret ? "Marked as secret" : "Mark as secret"}
+                >
+                  {row.secret ? (
+                    <Lock className="h-3.5 w-3.5" />
+                  ) : (
+                    <LockOpen className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              )}
               <div className="flex items-center justify-end gap-1">
                 <button
                   onClick={() => duplicateRow(row.id)}

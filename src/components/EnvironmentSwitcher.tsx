@@ -4,7 +4,8 @@ import { Overlay } from "./Overlay";
 import { KeyValueGrid } from "@/features/request-body/components/KeyValueGrid";
 import { buildResolvedRequestArtifacts } from "@/features/code-snippets/utils/request-resolver";
 import { cn } from "@/lib/utils";
-import type { ApiRequest } from "@/services/db";
+import { maskPreview } from "@/lib/mask";
+import type { ApiRequest, KV } from "@/services/db";
 import { useStore } from "@/stores/useStore";
 
 export function EnvironmentSwitcher() {
@@ -104,6 +105,9 @@ export function EnvironmentSwitcher() {
     activeRequest && preview
       ? formatResolvedAuth(activeRequest, preview.resolvedHeaders, preview.resolvedQueryParams)
       : null;
+  const redactedResolvedUrl = preview
+    ? redactSecretValues(preview.url, selectedEnvironment?.variables ?? [])
+    : "";
 
   return (
     <Overlay
@@ -324,6 +328,7 @@ export function EnvironmentSwitcher() {
                   }
                   keyLabel="Variable"
                   valueLabel="Value"
+                  supportsSecret
                 />
               </div>
 
@@ -347,7 +352,7 @@ export function EnvironmentSwitcher() {
 
                   {activeRequest && preview ? (
                     <div className="mt-4 space-y-3">
-                      <PreviewRow label="Resolved URL" value={preview.url || "—"} />
+                      <PreviewRow label="Resolved URL" value={redactedResolvedUrl || "—"} />
                       <PreviewRow
                         label="Auth"
                         value={activeAuthPreview ?? "No auth data injected for this request"}
@@ -502,8 +507,12 @@ function formatResolvedAuth(
   return null;
 }
 
-function maskPreview(value: string) {
-  if (!value) return "(empty)";
-  if (value.length <= 6) return "•".repeat(value.length);
-  return `${value.slice(0, 3)}${"•".repeat(Math.min(8, value.length - 5))}${value.slice(-2)}`;
+/** Replaces any literal occurrence of a secret variable's value with its masked form. */
+function redactSecretValues(text: string, variables: KV[]) {
+  let out = text;
+  for (const variable of variables) {
+    if (!variable.secret || !variable.value) continue;
+    out = out.split(variable.value).join(maskPreview(variable.value));
+  }
+  return out;
 }

@@ -17,6 +17,8 @@ export interface KV {
   key: string;
   value: string;
   enabled: boolean;
+  /** When true, the value is masked in editable grids and blanked out of workspace exports. */
+  secret?: boolean;
 }
 
 export interface StoredFileBlob {
