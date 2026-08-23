@@ -22,6 +22,7 @@ import {
 } from "@/services/db";
 import { parseCurl } from "@/services/curl";
 import { looksLikePostmanCollection, parsePostmanCollection } from "@/services/postman";
+import { looksLikeOpenApiDocument, parseOpenApiDocument } from "@/services/openapi";
 import {
   exportCollection as buildCollectionExport,
   exportWorkspace as buildWorkspaceExport,
@@ -159,6 +160,7 @@ interface State {
   importCurl: (text: string) => Promise<ApiRequest | null>;
   importCollectionJSON: (text: string) => Promise<Collection | null>;
   importPostmanCollectionJSON: (text: string) => Promise<Collection | null>;
+  importOpenApiText: (text: string) => Promise<Collection | null>;
   importWorkspaceJSON: (text: string) => Promise<Workspace | null>;
   exportCollectionById: (id: string) => Promise<void>;
   exportCollectionAsFilesById: (id: string) => Promise<void>;
@@ -1015,6 +1017,61 @@ export const useStore = create<State>((set, get) => ({
     if (!looksLikePostmanCollection(parsed)) return null;
 
     const result = parsePostmanCollection(parsed, ws.id);
+    const position = getNextCollectionPosition(get().collections);
+    const newCol: Collection = {
+      id: uid(),
+      workspaceId: ws.id,
+      name: result.collectionName,
+      position,
+      createdAt: Date.now(),
+    };
+    const newFolders: Folder[] = result.folders.map((folder) => ({
+      ...folder,
+      workspaceId: ws.id,
+      collectionId: newCol.id,
+    }));
+    const newReqs: ApiRequest[] = result.requests.map((request) => ({
+      ...request,
+      workspaceId: ws.id,
+      collectionId: newCol.id,
+    }));
+
+    await db.transaction("rw", db.collections, db.folders, db.requests, async () => {
+      await db.collections.add(newCol);
+      if (newFolders.length) await db.folders.bulkAdd(newFolders);
+      if (newReqs.length) await db.requests.bulkAdd(newReqs);
+    });
+    set((s) => ({
+      collections: [...s.collections, newCol],
+      folders: [...s.folders, ...newFolders],
+      requests: [...s.requests, ...newReqs],
+    }));
+
+    if (result.warnings.length) {
+      toast.warning(`Imported with ${result.warnings.length} note(s)`, {
+        description: result.warnings.slice(0, 3).join(" · "),
+      });
+    }
+    return newCol;
+  },
+
+  importOpenApiText: async (text) => {
+    const ws = get().workspace;
+    if (!ws) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      try {
+        const yaml = await import("js-yaml");
+        parsed = yaml.load(text);
+      } catch {
+        return null;
+      }
+    }
+    if (!looksLikeOpenApiDocument(parsed)) return null;
+
+    const result = parseOpenApiDocument(parsed, ws.id);
     const position = getNextCollectionPosition(get().collections);
     const newCol: Collection = {
       id: uid(),
