@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { useIsDarkMode } from "@/hooks/useIsDarkMode";
 
 interface Props {
-  language: "json" | "plaintext" | "xml";
+  language: "json" | "plaintext" | "xml" | "javascript";
   value: string;
   onChange: (value: string) => void;
   onFormat?: () => void;

@@ -14,6 +14,7 @@ import {
   createDefaultAuth,
   createDefaultBodyDrafts,
   createDefaultMock,
+  createDefaultPreRequestScript,
   cloneBodyDrafts,
   ensureSeed,
   normalizeApiRequest,
@@ -380,6 +381,7 @@ export const useStore = create<State>((set, get) => ({
       extracts: [],
       assertions: [],
       mock: createDefaultMock(),
+      preRequestScript: createDefaultPreRequestScript(),
       createdAt: now,
       updatedAt: now,
     };

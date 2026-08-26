@@ -1,6 +1,7 @@
 import { executeRequest } from "@/services/executor";
 import {
   createRequestSnapshot,
+  mergeEnvironmentVariables,
   uid,
   type ApiRequest,
   type Environment,
@@ -30,6 +31,9 @@ export interface RunSingleRequestOutcome {
   extractedVariables: string[];
   extractFailures: string[];
   noActiveEnvironment: boolean;
+  /** True when a pre-request script returned an `environment` patch but there
+   * was no active environment to persist it into — the patch was dropped. */
+  scriptEnvironmentDropped: boolean;
 }
 
 /**
@@ -46,6 +50,16 @@ export async function runSingleRequest(
   deps: RunSingleRequestDeps,
 ): Promise<RunSingleRequestOutcome> {
   const result = await executeRequest(request, environment);
+
+  const scriptUpdates = Object.entries(result.scriptEnvironmentPatch ?? {}).map(([key, value]) => ({
+    key,
+    value,
+  }));
+  const scriptEnvironmentDropped = scriptUpdates.length > 0 && !environment;
+  if (environment && scriptUpdates.length) {
+    await upsertEnvironmentVariables(environment, scriptUpdates, deps.updateEnvironment);
+  }
+
   const responseExcerpt = getExecutionResultExcerpt(result);
   const responseBody =
     isTextualResponse(result.responseKind) && result.body.length > MAX_HISTORY_RESPONSE_BODY
@@ -110,7 +124,14 @@ export async function runSingleRequest(
     responseExcerpt,
   });
 
-  return { result, assertionOutcomes, extractedVariables, extractFailures, noActiveEnvironment };
+  return {
+    result,
+    assertionOutcomes,
+    extractedVariables,
+    extractFailures,
+    noActiveEnvironment,
+    scriptEnvironmentDropped,
+  };
 }
 
 async function applyExtractRules(
@@ -146,17 +167,20 @@ async function applyExtractRules(
     }
   }
 
-  if (updates.length) {
-    const nextVariables = [...environment.variables];
-    for (const { key, value } of updates) {
-      const index = nextVariables.findIndex((item) => item.key === key);
-      if (index >= 0) nextVariables[index] = { ...nextVariables[index], value, enabled: true };
-      else nextVariables.push({ id: uid(), key, value, enabled: true });
-    }
-    await updateEnvironment(environment.id, { variables: nextVariables });
-  }
+  if (updates.length) await upsertEnvironmentVariables(environment, updates, updateEnvironment);
 
   return { extracted: updates.map((u) => u.key), failed, noActiveEnvironment: false };
+}
+
+/** Upserts `{key,value}` pairs into an environment's variables by key — shared
+ * by Extract rule writes and pre-request script `environment` patches. */
+async function upsertEnvironmentVariables(
+  environment: Environment,
+  updates: { key: string; value: string }[],
+  updateEnvironment: RunSingleRequestDeps["updateEnvironment"],
+): Promise<void> {
+  const nextVariables = mergeEnvironmentVariables(environment.variables, updates);
+  await updateEnvironment(environment.id, { variables: nextVariables });
 }
 
 export type RunTarget = { type: "collection" | "folder"; id: string };

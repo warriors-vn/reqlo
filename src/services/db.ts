@@ -118,6 +118,12 @@ export interface AssertionRule {
   expected: string;
 }
 
+export interface PreRequestScriptConfig {
+  enabled: boolean;
+  /** JavaScript source, run sandboxed (QuickJS-in-wasm) before the request is sent. */
+  source: string;
+}
+
 export interface MockConfig {
   enabled: boolean;
   status: number;
@@ -170,6 +176,7 @@ export interface ApiRequest {
   extracts: ExtractRule[];
   assertions: AssertionRule[];
   mock: MockConfig;
+  preRequestScript: PreRequestScriptConfig;
   favorite?: boolean;
   createdAt: number;
   updatedAt: number;
@@ -382,6 +389,28 @@ class ReqloDB extends Dexie {
             if (request.mock === undefined) request.mock = createDefaultMock();
           });
       });
+    this.version(9)
+      .stores({
+        workspaces: "id, updatedAt",
+        collections: "id, workspaceId, position",
+        folders:
+          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
+        requests:
+          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
+        history:
+          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
+        environments: "id, workspaceId",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table<ApiRequest, string>("requests")
+          .toCollection()
+          .modify((request) => {
+            if (request.preRequestScript === undefined) {
+              request.preRequestScript = createDefaultPreRequestScript();
+            }
+          });
+      });
   }
 }
 
@@ -440,6 +469,10 @@ export function createDefaultMock(): MockConfig {
   };
 }
 
+export function createDefaultPreRequestScript(): PreRequestScriptConfig {
+  return { enabled: false, source: "" };
+}
+
 export function createEmptyFormDataRow(kind: FormDataRow["kind"] = "text"): FormDataRow {
   return { id: uid(), key: "", enabled: true, kind, value: "", files: [] };
 }
@@ -458,6 +491,23 @@ export function createDefaultBodyDrafts(): RequestBodyDrafts {
 
 export function cloneKV(list: KV[]): KV[] {
   return list.map((item) => ({ ...item }));
+}
+
+/** Upserts `{key,value}` pairs into a variables list by key — shared by
+ * Extract rule writes and pre-request script `environment` patches, both as
+ * an in-memory preview (executor.ts) and as the persisted result (runner.ts),
+ * so the merge semantics can't drift between the two call sites. */
+export function mergeEnvironmentVariables(
+  variables: KV[],
+  updates: { key: string; value: string }[],
+): KV[] {
+  const next = cloneKV(variables);
+  for (const { key, value } of updates) {
+    const index = next.findIndex((item) => item.key === key);
+    if (index >= 0) next[index] = { ...next[index], value, enabled: true };
+    else next.push({ id: uid(), key, value, enabled: true });
+  }
+  return next;
 }
 
 export async function blobToBase64(blob: Blob): Promise<string> {
@@ -541,6 +591,7 @@ export function normalizeApiRequest(
     extracts: request.extracts ?? [],
     assertions: request.assertions ?? [],
     mock: request.mock ?? createDefaultMock(),
+    preRequestScript: request.preRequestScript ?? createDefaultPreRequestScript(),
     favorite: request.favorite ?? false,
   } as ApiRequest;
 }
@@ -669,6 +720,7 @@ export async function ensureSeed(): Promise<Workspace> {
       extracts: [],
       assertions: [],
       mock: createDefaultMock(),
+      preRequestScript: createDefaultPreRequestScript(),
       createdAt: now,
       updatedAt: now,
     },
@@ -697,6 +749,7 @@ export async function ensureSeed(): Promise<Workspace> {
       extracts: [],
       assertions: [],
       mock: createDefaultMock(),
+      preRequestScript: createDefaultPreRequestScript(),
       createdAt: now,
       updatedAt: now,
     },
@@ -718,6 +771,7 @@ export async function ensureSeed(): Promise<Workspace> {
       extracts: [],
       assertions: [],
       mock: createDefaultMock(),
+      preRequestScript: createDefaultPreRequestScript(),
       createdAt: now,
       updatedAt: now,
     },

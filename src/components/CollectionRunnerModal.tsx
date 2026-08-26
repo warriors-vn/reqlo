@@ -20,7 +20,10 @@ interface RunRow {
 function rowPassed(outcome: RunSingleRequestOutcome | undefined) {
   if (!outcome) return false;
   return (
-    !outcome.result.error && outcome.result.ok && outcome.assertionOutcomes.every((o) => o.passed)
+    !outcome.result.error &&
+    !outcome.result.scriptError &&
+    outcome.result.ok &&
+    outcome.assertionOutcomes.every((o) => o.passed)
   );
 }
 
@@ -175,14 +178,29 @@ function RunRowView({ row }: { row: RunRow }) {
           {outcome.result.error}
         </p>
       )}
-      {!outcome?.result.error && failedAssertions.length > 0 && (
+      {!outcome?.result.error && outcome?.result.scriptError && (
         <p className="mt-1.5 truncate text-3xs text-[var(--status-error)]">
-          {failedAssertions
-            .slice(0, 2)
-            .map((o) => o.message)
-            .join(" · ")}
+          Script: {outcome.result.scriptError}
         </p>
       )}
+      {!outcome?.result.error &&
+        !outcome?.result.scriptError &&
+        outcome?.scriptEnvironmentDropped && (
+          <p className="mt-1.5 truncate text-3xs text-[var(--status-error)]">
+            Script's environment variable(s) not saved — no active environment.
+          </p>
+        )}
+      {!outcome?.result.error &&
+        !outcome?.result.scriptError &&
+        !outcome?.scriptEnvironmentDropped &&
+        failedAssertions.length > 0 && (
+          <p className="mt-1.5 truncate text-3xs text-[var(--status-error)]">
+            {failedAssertions
+              .slice(0, 2)
+              .map((o) => o.message)
+              .join(" · ")}
+          </p>
+        )}
     </div>
   );
 }
