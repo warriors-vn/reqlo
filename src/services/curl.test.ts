@@ -136,4 +136,126 @@ describe("parseCurl", () => {
     expect(req.url).toBe("");
     expect(req.name).toBe("Imported cURL");
   });
+
+  it("populates bodyDrafts.urlEncoded when Content-Type sniffing selects x-www-form-urlencoded", () => {
+    const req = parseCurl(
+      `curl -H "Content-Type: application/x-www-form-urlencoded" https://api.example.com -d 'a=1&b=2'`,
+      WORKSPACE_ID,
+      null,
+    );
+    expect(req.bodyType).toBe("x-www-form-urlencoded");
+    expect(req.bodyDrafts.urlEncoded.map((r) => [r.key, r.value])).toEqual([
+      ["a", "1"],
+      ["b", "2"],
+    ]);
+  });
+
+  it("parses -F/--form text fields into bodyDrafts.formData", () => {
+    const req = parseCurl(
+      `curl -F "name=Reqlo" -F "kind=client" https://api.example.com`,
+      WORKSPACE_ID,
+      null,
+    );
+    expect(req.bodyType).toBe("form-data");
+    expect(req.method).toBe("POST");
+    expect(req.bodyDrafts.formData.map((r) => [r.kind, r.key, r.value])).toEqual([
+      ["text", "name", "Reqlo"],
+      ["text", "kind", "client"],
+    ]);
+  });
+
+  it("parses -F file fields with empty files, ready for manual reattachment", () => {
+    const req = parseCurl(
+      `curl -F "avatar=@/Users/me/pic.png;type=image/png" https://api.example.com`,
+      WORKSPACE_ID,
+      null,
+    );
+    expect(req.bodyDrafts.formData).toEqual([
+      { id: expect.any(String), key: "avatar", enabled: true, kind: "file", value: "", files: [] },
+    ]);
+  });
+
+  it("parses --data-urlencode into bodyDrafts.urlEncoded", () => {
+    const req = parseCurl(
+      `curl --data-urlencode "q=hello world" https://api.example.com`,
+      WORKSPACE_ID,
+      null,
+    );
+    expect(req.bodyType).toBe("x-www-form-urlencoded");
+    expect(req.method).toBe("POST");
+    expect(req.bodyDrafts.urlEncoded).toEqual([
+      { id: expect.any(String), key: "q", value: "hello world", enabled: true },
+    ]);
+  });
+
+  it("converts -b/--cookie into a Cookie header when it looks like a cookie string", () => {
+    const req = parseCurl(`curl -b "session=abc123" https://api.example.com`, WORKSPACE_ID, null);
+    expect(req.headers).toEqual([
+      { id: expect.any(String), key: "Cookie", value: "session=abc123", enabled: true },
+    ]);
+  });
+
+  it("merges multiple -b/--cookie values and an existing Cookie header into one", () => {
+    const req = parseCurl(
+      `curl -H "Cookie: a=1" -b "b=2" https://api.example.com`,
+      WORKSPACE_ID,
+      null,
+    );
+    expect(req.headers).toEqual([
+      { id: expect.any(String), key: "Cookie", value: "a=1; b=2", enabled: true },
+    ]);
+  });
+
+  it("skips a -b/--cookie value with no '=' (a cookie-jar file path)", () => {
+    const req = parseCurl(`curl -b cookies.txt https://api.example.com`, WORKSPACE_ID, null);
+    expect(req.headers).toEqual([]);
+  });
+
+  it("merges -b/--cookie into a lowercase existing 'cookie' header (case-insensitive)", () => {
+    const req = parseCurl(
+      `curl -H "cookie: a=1" -b "b=2" https://api.example.com`,
+      WORKSPACE_ID,
+      null,
+    );
+    expect(req.headers).toEqual([
+      { id: expect.any(String), key: "cookie", value: "a=1; b=2", enabled: true },
+    ]);
+  });
+
+  it("strips an explicit multipart Content-Type header when -F is used (stale boundary)", () => {
+    const req = parseCurl(
+      `curl -H "Content-Type: multipart/form-data; boundary=WebKitFormBoundaryXXXX" -F "title=Reqlo" https://api.example.com`,
+      WORKSPACE_ID,
+      null,
+    );
+    expect(req.bodyType).toBe("form-data");
+    expect(req.headers).toEqual([]);
+    expect(req.bodyDrafts.formData.map((r) => [r.key, r.value])).toEqual([["title", "Reqlo"]]);
+  });
+
+  it("parses -A/--user-agent and -e/--referer into headers", () => {
+    const req = parseCurl(
+      `curl -A "MyAgent/1.0" -e "https://ref.example.com" https://api.example.com`,
+      WORKSPACE_ID,
+      null,
+    );
+    expect(req.headers).toEqual([
+      { id: expect.any(String), key: "User-Agent", value: "MyAgent/1.0", enabled: true },
+      { id: expect.any(String), key: "Referer", value: "https://ref.example.com", enabled: true },
+    ]);
+  });
+
+  it("moves -d data into the URL query string and keeps GET when -G/--get is present", () => {
+    const req = parseCurl(`curl -G -d "q=test" https://api.example.com/search`, WORKSPACE_ID, null);
+    expect(req.method).toBe("GET");
+    expect(req.url).toBe("https://api.example.com/search?q=test");
+    expect(req.bodyType).toBe("none");
+    expect(req.body).toBe("");
+  });
+
+  it("honors --url as an alternative to a bare positional URL", () => {
+    const req = parseCurl(`curl --url https://api.example.com/x -X POST`, WORKSPACE_ID, null);
+    expect(req.url).toBe("https://api.example.com/x");
+    expect(req.method).toBe("POST");
+  });
 });

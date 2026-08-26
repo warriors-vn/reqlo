@@ -21,11 +21,14 @@ import {
   Circle,
   X,
   Play,
+  Upload,
+  Terminal,
 } from "lucide-react";
 import { useStore } from "@/stores/useStore";
 import { useIsDarkMode } from "@/hooks/useIsDarkMode";
 import { applyTheme, setStoredTheme } from "@/lib/theme";
 import { getRecent } from "@/core/commands/recent";
+import { runCommand } from "@/hooks/useCommandSystem";
 import { MethodBadge } from "./MethodBadge";
 import { LazyConfirmDeleteDialog as ConfirmDeleteDialog } from "./LazyConfirmDeleteDialog";
 import { cn } from "@/lib/utils";
@@ -226,6 +229,31 @@ export function Sidebar() {
         </div>
         <div className="flex items-center gap-1">
           <ThemeSwitch />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
+                title="Import"
+              >
+                <Upload className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => runCommand("import.curl")}>
+                <Terminal className="h-3.5 w-3.5" /> Import cURL
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => runCommand("import.collection")}>
+                <Upload className="h-3.5 w-3.5" /> Import Collection
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => runCommand("import.postman")}>
+                <Upload className="h-3.5 w-3.5" /> Import Postman Collection
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => runCommand("import.openapi")}>
+                <Upload className="h-3.5 w-3.5" /> Import OpenAPI Spec
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             onClick={() => createRequest(activeCollectionId, activeFolderId)}
             className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"

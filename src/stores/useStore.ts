@@ -953,6 +953,16 @@ export const useStore = create<State>((set, get) => ({
     await db.requests.add(req);
     set((s) => ({ requests: [...s.requests, normalizeApiRequest(req)] }));
     get().openRequest(req.id);
+
+    const unattachedFiles = req.bodyDrafts.formData.filter(
+      (row) => row.kind === "file" && row.files.length === 0,
+    ).length;
+    if (unattachedFiles > 0) {
+      toast.info(
+        `${unattachedFiles} file field${unattachedFiles === 1 ? "" : "s"} need${unattachedFiles === 1 ? "s" : ""} to be reattached — curl file paths aren't accessible from the browser.`,
+      );
+    }
+
     return req;
   },
 

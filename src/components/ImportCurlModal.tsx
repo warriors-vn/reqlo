@@ -56,14 +56,29 @@ export function ImportCurlModal() {
               <MethodBadge method={preview.method} className="w-12 text-right" />
               <span className="truncate font-mono">{preview.url}</span>
             </div>
-            {(preview.headers.length > 0 || preview.body) && (
+            {(preview.headers.length > 0 ||
+              preview.body ||
+              preview.bodyType === "form-data" ||
+              preview.bodyType === "x-www-form-urlencoded") && (
               <div className="mt-2 space-y-1 text-2xs text-muted-foreground">
                 {preview.headers.length > 0 && (
                   <div>
                     {preview.headers.length} header{preview.headers.length === 1 ? "" : "s"}
                   </div>
                 )}
-                {preview.body && (
+                {preview.bodyType === "form-data" && (
+                  <div>
+                    {preview.bodyDrafts.formData.length} form field
+                    {preview.bodyDrafts.formData.length === 1 ? "" : "s"}
+                  </div>
+                )}
+                {preview.bodyType === "x-www-form-urlencoded" && (
+                  <div>
+                    {preview.bodyDrafts.urlEncoded.length} url-encoded field
+                    {preview.bodyDrafts.urlEncoded.length === 1 ? "" : "s"}
+                  </div>
+                )}
+                {preview.body && preview.bodyType !== "x-www-form-urlencoded" && (
                   <div>
                     Body: {preview.body.length} bytes ({preview.bodyType})
                   </div>
