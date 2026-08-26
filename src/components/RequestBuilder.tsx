@@ -8,6 +8,7 @@ import { RequestAuthEditor } from "@/components/RequestAuthEditor";
 import { RequestExtractEditor } from "@/components/RequestExtractEditor";
 import { RequestAssertionEditor } from "@/components/RequestAssertionEditor";
 import { RequestMockEditor } from "@/components/RequestMockEditor";
+import { RequestScriptEditor } from "@/components/RequestScriptEditor";
 import { evaluateAssertions } from "@/services/assertions";
 import { hasBodyContent } from "@/features/request-body/utils/body";
 import { Send, Loader2, Plus, X, ChevronDown } from "lucide-react";
@@ -37,7 +38,7 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
   const updateRequest = useStore((s) => s.updateRequest);
   const renameRequest = useStore((s) => s.renameRequest);
   const [tab, setTab] = useState<
-    "params" | "headers" | "body" | "auth" | "extract" | "tests" | "mock"
+    "params" | "headers" | "body" | "auth" | "script" | "extract" | "tests" | "mock"
   >("params");
   const [nameEdit, setNameEdit] = useState(false);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
@@ -68,6 +69,11 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
       id: "auth" as const,
       label: "Auth",
       count: request.auth.type !== "none" ? request.auth.type.toUpperCase() : undefined,
+    },
+    {
+      id: "script" as const,
+      label: "Script",
+      count: request.preRequestScript.enabled ? ("ON" as const) : undefined,
     },
     {
       id: "extract" as const,
@@ -235,6 +241,9 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
             </TabsContent>
             <TabsContent value="auth" className="mt-0">
               <RequestAuthEditor request={request} />
+            </TabsContent>
+            <TabsContent value="script" className="mt-0">
+              <RequestScriptEditor request={request} />
             </TabsContent>
             <TabsContent value="extract" className="mt-0">
               <RequestExtractEditor request={request} result={result} />

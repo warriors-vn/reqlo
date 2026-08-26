@@ -18,4 +18,15 @@ export default defineConfig({
   tanstackStart: {
     server: { entry: "server" },
   },
+  vite: {
+    optimizeDeps: {
+      // esbuild's dev-server pre-bundler rewrites these into .vite/deps/ cache
+      // files, which breaks the Emscripten loader's import.meta.url-relative
+      // fetch of its own .wasm binary ("both async and sync fetching of the
+      // wasm failed"). Excluding them serves the real ES modules from
+      // node_modules directly, where that relative path resolves correctly.
+      // Vite's production build (Rollup) doesn't have this problem.
+      exclude: ["quickjs-emscripten-core", "@jitl/quickjs-wasmfile-release-sync"],
+    },
+  },
 });

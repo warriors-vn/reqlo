@@ -99,6 +99,14 @@ export function Workspace() {
     setResults((s) => ({ ...s, [activeRequest.id]: outcome.result }));
     setLoading((s) => ({ ...s, [activeRequest.id]: false }));
 
+    if (outcome.result.scriptError) {
+      toast.warning("Pre-request script failed", { description: outcome.result.scriptError });
+    } else if (outcome.scriptEnvironmentDropped) {
+      toast.warning("Couldn't save the script's environment variable(s)", {
+        description: "No active environment is selected.",
+      });
+    }
+
     if (outcome.noActiveEnvironment) {
       toast.warning("Couldn't save extracted variables", {
         description: "No active environment is selected.",

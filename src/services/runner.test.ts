@@ -212,6 +212,78 @@ describe("runSingleRequest", () => {
     );
   });
 
+  it("runs a pre-request script whose environment write interpolates into this same request's headers, and persists it", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const deps = makeDeps();
+    const request = makeRequest({
+      headers: [{ id: "h1", key: "X-Nonce", value: "{{nonce}}", enabled: true }],
+      preRequestScript: {
+        enabled: true,
+        source: `return { environment: { nonce: "computed-nonce" }, headers: { "X-Signature": request.method } };`,
+      },
+    });
+
+    const outcome = await runSingleRequest(request, makeEnv(), deps);
+
+    expect(outcome.result.scriptError).toBeUndefined();
+    const [, calledInit] = fetchMock.mock.calls[0];
+    const sentHeaders = calledInit?.headers as Record<string, string>;
+    expect(sentHeaders["X-Nonce"]).toBe("computed-nonce");
+    expect(sentHeaders["X-Signature"]).toBe("GET");
+    expect(deps.updateEnvironment).toHaveBeenCalledWith("env-1", {
+      variables: [{ id: expect.any(String), key: "nonce", value: "computed-nonce", enabled: true }],
+    });
+  });
+
+  it("flags scriptEnvironmentDropped when a script sets a variable but there's no active environment", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({})),
+    );
+    const deps = makeDeps();
+    const request = makeRequest({
+      preRequestScript: { enabled: true, source: `return { environment: { nonce: "x" } };` },
+    });
+
+    const outcome = await runSingleRequest(request, null, deps);
+
+    expect(outcome.scriptEnvironmentDropped).toBe(true);
+    expect(deps.updateEnvironment).not.toHaveBeenCalled();
+  });
+
+  it("does not flag scriptEnvironmentDropped when the script only sets headers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({})),
+    );
+    const deps = makeDeps();
+    const request = makeRequest({
+      preRequestScript: { enabled: true, source: `return { headers: { "X-Signature": "x" } };` },
+    });
+
+    const outcome = await runSingleRequest(request, null, deps);
+
+    expect(outcome.scriptEnvironmentDropped).toBe(false);
+  });
+
+  it("surfaces a pre-request script error without blocking the request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({})),
+    );
+    const deps = makeDeps();
+    const request = makeRequest({
+      preRequestScript: { enabled: true, source: `throw new Error("bad script");` },
+    });
+
+    const outcome = await runSingleRequest(request, makeEnv(), deps);
+
+    expect(outcome.result.scriptError).toContain("bad script");
+    expect(outcome.result.status).toBe(200);
+    expect(deps.updateEnvironment).not.toHaveBeenCalled();
+  });
+
   it("reports a failed assertion in the outcome without throwing", async () => {
     vi.stubGlobal(
       "fetch",

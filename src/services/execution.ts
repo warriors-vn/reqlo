@@ -15,6 +15,10 @@ export interface ExecutionResult {
   error?: string;
   /** True when this result came from a saved mock instead of a real network call. */
   mocked?: boolean;
+  /** Environment variables a pre-request script set, for the caller to persist. */
+  scriptEnvironmentPatch?: Record<string, string>;
+  /** Set when the pre-request script threw, timed out, or returned something invalid. */
+  scriptError?: string;
 }
 
 export function formatBytes(n: number) {
