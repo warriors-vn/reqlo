@@ -27,6 +27,20 @@ export default defineConfig({
       // node_modules directly, where that relative path resolves correctly.
       // Vite's production build (Rollup) doesn't have this problem.
       exclude: ["quickjs-emscripten-core", "@jitl/quickjs-wasmfile-release-sync"],
+      // Opposite problem, opposite fix: monaco-graphql's language worker
+      // pulls in a few legacy CJS-only packages (via graphql-language-service)
+      // that ship no ESM build. Inside a Worker's isolated module graph they
+      // don't get esbuild's usual CJS→ESM interop shimming, which breaks with
+      // e.g. "The requested module 'nullthrows' does not provide an export
+      // named 'default'". Forcing them through esbuild's pre-bundler (which
+      // does apply that interop) fixes it. Vite's production build (Rollup)
+      // doesn't have this problem either.
+      include: [
+        "nullthrows",
+        "debounce-promise",
+        "vscode-languageserver-types",
+        "picomatch-browser",
+      ],
     },
   },
 });

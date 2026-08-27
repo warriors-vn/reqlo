@@ -630,7 +630,7 @@ export function Sidebar() {
         title="Delete request"
         description={
           pendingDeleteRequestId
-            ? `"${requests.find((request) => request.id === pendingDeleteRequestId)?.name ?? "This request"}" will be permanently deleted. This can't be undone.`
+            ? `"${requests.find((request) => request.id === pendingDeleteRequestId)?.name ?? "This request"}" will be deleted. You can undo this from the toast for a few seconds afterward.`
             : ""
         }
         onConfirm={() => {

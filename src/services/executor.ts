@@ -1,12 +1,9 @@
+import { type ApiRequest, type Environment, type MockConfig } from "@/services/db";
 import {
-  mergeEnvironmentVariables,
-  type ApiRequest,
-  type Environment,
-  type MockConfig,
-} from "@/services/db";
-import { buildResolvedRequestArtifacts } from "@/features/code-snippets/utils/request-resolver";
+  applyPreRequestScript,
+  buildResolvedRequestArtifacts,
+} from "@/features/code-snippets/utils/request-resolver";
 import type { ExecutionResult, ResponseKind } from "@/services/execution";
-import { runPreRequestScript } from "@/services/scripting";
 
 export async function executeRequest(
   req: ApiRequest,
@@ -19,44 +16,23 @@ export async function executeRequest(
   const started = performance.now();
   let scriptEnvironmentPatch: Record<string, string> | undefined;
   let scriptError: string | undefined;
-  let scriptHeaderPatch: Record<string, string> | undefined;
   try {
     // Resolved once up front — reused as-is unless a script actually patches
     // the environment, in which case it's the only case that needs a second,
     // re-interpolated resolve (avoids doubling body/FormData serialization
     // on every send just to give the script a preview).
-    let resolved = buildResolvedRequestArtifacts(req, environment);
-
-    if (req.preRequestScript.enabled && req.preRequestScript.source.trim()) {
-      const scriptResult = await runPreRequestScript(req.preRequestScript.source, {
-        method: req.method,
-        url: resolved.url,
-        headers: resolved.resolvedHeaders,
-        body:
-          typeof resolved.serializedBody.body === "string" ? resolved.serializedBody.body : null,
-        environment: Object.fromEntries(resolved.envMap),
-      });
-
-      if (scriptResult.error) {
-        scriptError = scriptResult.error;
-      } else {
-        scriptHeaderPatch = scriptResult.headers;
-        if (scriptResult.environment && Object.keys(scriptResult.environment).length) {
-          scriptEnvironmentPatch = scriptResult.environment;
-          const updates = Object.entries(scriptResult.environment).map(([key, value]) => ({
-            key,
-            value,
-          }));
-          const patchedEnvironment = environment
-            ? {
-                ...environment,
-                variables: mergeEnvironmentVariables(environment.variables, updates),
-              }
-            : environment;
-          resolved = buildResolvedRequestArtifacts(req, patchedEnvironment);
-        }
-      }
-    }
+    const initialResolve = buildResolvedRequestArtifacts(req, environment);
+    const scriptOutcome = await applyPreRequestScript(req, environment, initialResolve, {
+      method: req.method,
+      headers: initialResolve.resolvedHeaders,
+      body:
+        typeof initialResolve.serializedBody.body === "string"
+          ? initialResolve.serializedBody.body
+          : null,
+    });
+    const { resolved, scriptHeaderPatch } = scriptOutcome;
+    scriptEnvironmentPatch = scriptOutcome.scriptEnvironmentPatch;
+    scriptError = scriptOutcome.scriptError;
 
     const { url, resolvedHeaders: headers, serializedBody } = resolved;
     if (scriptHeaderPatch) Object.assign(headers, scriptHeaderPatch);

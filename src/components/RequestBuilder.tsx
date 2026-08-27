@@ -9,6 +9,7 @@ import { RequestExtractEditor } from "@/components/RequestExtractEditor";
 import { RequestAssertionEditor } from "@/components/RequestAssertionEditor";
 import { RequestMockEditor } from "@/components/RequestMockEditor";
 import { RequestScriptEditor } from "@/components/RequestScriptEditor";
+import { TemplateInput } from "@/components/TemplateInput";
 import { evaluateAssertions } from "@/services/assertions";
 import { hasBodyContent } from "@/features/request-body/utils/body";
 import { Send, Loader2, Plus, X, ChevronDown } from "lucide-react";
@@ -145,10 +146,10 @@ export function RequestBuilder({ request, onSend, sending, result = null }: Prop
             />
           </div>
           <div className="w-px bg-border" />
-          <input
+          <TemplateInput
             type="text"
             value={request.url}
-            onChange={(e) => updateRequest(request.id, { url: e.target.value })}
+            onChange={(url) => updateRequest(request.id, { url })}
             placeholder="https://api.example.com/endpoint"
             aria-label="Request URL"
             spellCheck={false}
@@ -294,15 +295,15 @@ function KVEditor({
             onChange={(e) => update(item.id, { enabled: e.target.checked })}
             className="h-3 w-3 accent-[var(--primary)]"
           />
-          <input
+          <TemplateInput
             value={item.key}
-            onChange={(e) => update(item.id, { key: e.target.value })}
+            onChange={(key) => update(item.id, { key })}
             placeholder={placeholder[0]}
             className="h-7 flex-1 rounded-md border border-transparent bg-transparent px-2 font-mono text-xs outline-none focus:border-border focus:bg-background"
           />
-          <input
+          <TemplateInput
             value={item.value}
-            onChange={(e) => update(item.id, { value: e.target.value })}
+            onChange={(value) => update(item.id, { value })}
             placeholder={placeholder[1]}
             className="h-7 flex-[2] rounded-md border border-transparent bg-transparent px-2 font-mono text-xs outline-none focus:border-border focus:bg-background"
           />

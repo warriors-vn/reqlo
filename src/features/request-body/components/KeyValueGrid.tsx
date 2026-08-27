@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CopyPlus, Eye, EyeOff, GripVertical, Lock, LockOpen, Plus, Trash2 } from "lucide-react";
 import { createEmptyKV, type KV } from "@/services/db";
+import { TemplateInput } from "@/components/TemplateInput";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -11,6 +12,14 @@ interface Props {
   valueLabel?: string;
   /** Adds a per-row "mark as secret" toggle that masks the value input by default. */
   supportsSecret?: boolean;
+  /**
+   * Enables {{variable}} autocomplete on the key/value inputs. Off for the
+   * environment-variable editor itself: resolveTemplate() only does one
+   * substitution pass, so a variable's value referencing another variable
+   * would never actually get resolved — suggesting one there would imply
+   * nesting that doesn't work.
+   */
+  templatable?: boolean;
 }
 
 export function KeyValueGrid({
@@ -19,6 +28,7 @@ export function KeyValueGrid({
   keyLabel = "Key",
   valueLabel = "Value",
   supportsSecret = false,
+  templatable = true,
 }: Props) {
   const dragRowId = useRef<string | null>(null);
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
@@ -109,34 +119,67 @@ export function KeyValueGrid({
                 />
                 <span>{row.enabled ? "Enabled" : "Off"}</span>
               </label>
-              <input
-                value={row.key}
-                onChange={(event) => updateRow(row.id, { key: event.target.value })}
-                placeholder={keyLabel}
-                className={cn(
-                  "h-10 rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",
-                  !row.enabled && "opacity-55",
-                )}
-              />
-              <div className="relative">
-                <input
-                  type={row.secret && !revealedIds.has(row.id) ? "password" : "text"}
-                  value={row.value}
-                  onChange={(event) => updateRow(row.id, { value: event.target.value })}
-                  placeholder={valueLabel}
-                  autoComplete="off"
+              {templatable ? (
+                <TemplateInput
+                  value={row.key}
+                  onChange={(v) => updateRow(row.id, { key: v })}
+                  placeholder={keyLabel}
                   className={cn(
-                    "h-10 w-full rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",
-                    row.secret && "pr-9",
+                    "h-10 rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",
                     !row.enabled && "opacity-55",
                   )}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      addRow();
-                    }
-                  }}
                 />
+              ) : (
+                <input
+                  value={row.key}
+                  onChange={(event) => updateRow(row.id, { key: event.target.value })}
+                  placeholder={keyLabel}
+                  className={cn(
+                    "h-10 rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",
+                    !row.enabled && "opacity-55",
+                  )}
+                />
+              )}
+              <div className="relative">
+                {templatable ? (
+                  <TemplateInput
+                    type={row.secret && !revealedIds.has(row.id) ? "password" : "text"}
+                    value={row.value}
+                    onChange={(v) => updateRow(row.id, { value: v })}
+                    placeholder={valueLabel}
+                    autoComplete="off"
+                    className={cn(
+                      "h-10 w-full rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",
+                      row.secret && "pr-9",
+                      !row.enabled && "opacity-55",
+                    )}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        addRow();
+                      }
+                    }}
+                  />
+                ) : (
+                  <input
+                    type={row.secret && !revealedIds.has(row.id) ? "password" : "text"}
+                    value={row.value}
+                    onChange={(event) => updateRow(row.id, { value: event.target.value })}
+                    placeholder={valueLabel}
+                    autoComplete="off"
+                    className={cn(
+                      "h-10 w-full rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",
+                      row.secret && "pr-9",
+                      !row.enabled && "opacity-55",
+                    )}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        addRow();
+                      }
+                    }}
+                  />
+                )}
                 {row.secret && (
                   <button
                     type="button"

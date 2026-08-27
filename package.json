@@ -55,10 +55,12 @@
     "dexie": "^4.4.2",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.38.0",
+    "graphql": "^17.0.2",
     "input-otp": "^1.4.2",
     "js-yaml": "^5.3.0",
     "lucide-react": "^0.575.0",
     "monaco-editor": "^0.53.0",
+    "monaco-graphql": "^1.8.0",
     "quickjs-emscripten-core": "^0.32.0",
     "react": "^19.2.0",
     "react-day-picker": "^9.14.0",
@@ -74,6 +76,11 @@
     "vite-tsconfig-paths": "^6.0.2",
     "zod": "^3.24.2",
     "zustand": "^5.0.13"
+  },
+  "overrides": {
+    "monaco-graphql": {
+      "monaco-editor": "$monaco-editor"
+    }
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

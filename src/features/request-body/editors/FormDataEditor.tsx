@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CopyPlus, FileUp, GripVertical, Plus, Rows3, TextCursorInput, Trash2 } from "lucide-react";
 import { createEmptyFormDataRow, type FormDataRow } from "@/services/db";
+import { TemplateInput } from "@/components/TemplateInput";
 import { cn } from "@/lib/utils";
 import { filesToStoredBlobs, readableFileSize } from "@/features/request-body/utils/body";
 
@@ -166,9 +167,9 @@ function FormDataEditorRow({
           {row.kind}
         </button>
       </div>
-      <input
+      <TemplateInput
         value={row.key}
-        onChange={(event) => onChange({ key: event.target.value })}
+        onChange={(key) => onChange({ key })}
         placeholder="field"
         className={cn(
           "h-10 rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",
@@ -177,9 +178,9 @@ function FormDataEditorRow({
       />
       <div>
         {row.kind === "text" ? (
-          <input
+          <TemplateInput
             value={row.value}
-            onChange={(event) => onChange({ value: event.target.value })}
+            onChange={(value) => onChange({ value })}
             placeholder="value"
             className={cn(
               "h-10 w-full rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",

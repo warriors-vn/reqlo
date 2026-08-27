@@ -329,6 +329,7 @@ export function EnvironmentSwitcher() {
                   keyLabel="Variable"
                   valueLabel="Value"
                   supportsSecret
+                  templatable={false}
                 />
               </div>
 

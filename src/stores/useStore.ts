@@ -22,6 +22,8 @@ import {
   requestPersistentStorage,
 } from "@/services/db";
 import { parseCurl } from "@/services/curl";
+import { fetchIntrospectionSchema } from "@/services/graphql-introspection";
+import type { IntrospectionQuery } from "graphql";
 import { looksLikePostmanCollection, parsePostmanCollection } from "@/services/postman";
 import { looksLikeOpenApiDocument, parseOpenApiDocument } from "@/services/openapi";
 import type { RunTarget } from "@/services/runner";
@@ -65,6 +67,15 @@ export type OverlayKey =
   | "shortcuts"
   | "runner";
 
+// Session-only — never persisted to IndexedDB. A fetched schema is
+// derived/disposable data: refetching is cheap, and it would need its own DB
+// migration for no real benefit.
+export type GraphQLSchemaState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; introspection: IntrospectionQuery; fetchedAt: number }
+  | { status: "error"; message: string };
+
 interface State {
   ready: boolean;
   workspace: Workspace | null;
@@ -74,6 +85,7 @@ interface State {
   history: HistoryEntry[];
   environments: Environment[];
   activeEnvId: string | null;
+  graphqlSchemas: Record<string, GraphQLSchemaState>;
 
   tabs: Tab[];
   activeTabId: string | null;
@@ -153,6 +165,9 @@ interface State {
   deleteEnvironment: (id: string) => Promise<void>;
   setActiveEnv: (id: string | null) => void;
 
+  // graphql schema introspection (session-only, keyed by request id)
+  fetchGraphQLSchema: (requestId: string) => Promise<void>;
+
   // history
   addHistory: (entry: HistoryEntry) => Promise<void>;
   restoreHistoryEntry: (
@@ -186,6 +201,15 @@ const DEFAULT_SIDEBAR_TREE: SidebarTreeState = {
   unfiled: true,
 };
 
+// Undo-for-delete recovery buffer for deleteRequest — deliberately not part of
+// Zustand State. It's a short-lived (few-second) in-memory snapshot, not app
+// state: nothing outside deleteRequest's own closure reads it, and it must
+// never survive a reload (see plan's "no persistence across reload" scope
+// cut) the way real State does via persistSession.
+const UNDO_GRACE_MS = 6000;
+const recentlyDeletedRequests = new Map<string, ApiRequest>();
+const pendingRequestPrunes = new Map<string, ReturnType<typeof setTimeout>>();
+
 export const useStore = create<State>((set, get) => ({
   ready: false,
   workspace: null,
@@ -195,6 +219,7 @@ export const useStore = create<State>((set, get) => ({
   history: [],
   environments: [],
   activeEnvId: null,
+  graphqlSchemas: {},
   tabs: [],
   activeTabId: null,
   overlays: {
@@ -392,6 +417,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   deleteRequest: async (id) => {
+    const deleted = get().requests.find((r) => r.id === id);
     await reportDbWriteFailure(db.requests.delete(id));
     set((s) => {
       const nextTabs = s.tabs.filter((t) => t.requestId !== id);
@@ -404,9 +430,53 @@ export const useStore = create<State>((set, get) => ({
           s.sidebarSelection?.type === "request" && s.sidebarSelection.id === id
             ? null
             : s.sidebarSelection,
+        graphqlSchemas: omitKeys(s.graphqlSchemas, [id]),
       };
     });
     persistSession(get);
+
+    if (!deleted) return;
+
+    // Undo window: the delete above already happened (no new data-loss surface
+    // on reload/crash — behavior is identical to before this feature existed).
+    // "Undo" re-inserts this exact in-memory snapshot rather than deferring the
+    // real delete, so there's never a "pending delete that never committed"
+    // state to reconcile with init()'s hydration.
+    const restore = async () => {
+      if (!recentlyDeletedRequests.has(id)) return;
+      // Only clear the recovery buffer once the write actually succeeds — if
+      // db.requests.add throws (quota, restrictive private-mode storage), the
+      // snapshot and its prune timer stay alive so re-clicking "Undo" before
+      // the grace window ends can still retry, instead of the request being
+      // silently lost forever on a single failed write.
+      try {
+        await reportDbWriteFailure(db.requests.add(deleted));
+      } catch {
+        return;
+      }
+      recentlyDeletedRequests.delete(id);
+      const timeoutId = pendingRequestPrunes.get(id);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        pendingRequestPrunes.delete(id);
+      }
+      set((s) => ({ requests: [...s.requests, deleted] }));
+      toast.success(`"${deleted.name || "Untitled request"}" restored`);
+    };
+
+    recentlyDeletedRequests.set(id, deleted);
+    pendingRequestPrunes.set(
+      id,
+      setTimeout(() => {
+        recentlyDeletedRequests.delete(id);
+        pendingRequestPrunes.delete(id);
+      }, UNDO_GRACE_MS),
+    );
+
+    toast(`"${deleted.name || "Untitled request"}" deleted`, {
+      duration: UNDO_GRACE_MS,
+      action: { label: "Undo", onClick: () => void restore() },
+    });
   },
 
   renameRequest: async (id, name) => {
@@ -643,6 +713,10 @@ export const useStore = create<State>((set, get) => ({
         s.sidebarSelection?.type === "collection" && s.sidebarSelection.id === id
           ? null
           : s.sidebarSelection,
+      graphqlSchemas: omitKeys(
+        s.graphqlSchemas,
+        reqs.map((r) => r.id),
+      ),
     }));
     persistSession(get);
   },
@@ -697,6 +771,7 @@ export const useStore = create<State>((set, get) => ({
         s.sidebarSelection?.type === "collection" && doomedFolderIds.has(s.sidebarSelection.id)
           ? null
           : s.sidebarSelection,
+      graphqlSchemas: omitKeys(s.graphqlSchemas, doomedRequestIds),
     }));
     persistSession(get);
   },
@@ -817,6 +892,32 @@ export const useStore = create<State>((set, get) => ({
     if (id && !get().environments.some((environment) => environment.id === id)) return;
     set({ activeEnvId: id });
     persistSession(get);
+  },
+
+  fetchGraphQLSchema: async (requestId) => {
+    const request = get().requests.find((r) => r.id === requestId);
+    if (!request) return;
+    set((s) => ({
+      graphqlSchemas: { ...s.graphqlSchemas, [requestId]: { status: "loading" } },
+    }));
+
+    const environment = get().environments.find((env) => env.id === get().activeEnvId) ?? null;
+    const result = await fetchIntrospectionSchema(request, environment);
+
+    // The request may have been deleted while the fetch was in flight —
+    // deleteRequest already pruned graphqlSchemas[requestId] for that case,
+    // so writing into it here would silently reintroduce an orphaned entry
+    // for an id nothing will ever prune again.
+    if (!get().requests.some((r) => r.id === requestId)) return;
+
+    set((s) => ({
+      graphqlSchemas: {
+        ...s.graphqlSchemas,
+        [requestId]: result.ok
+          ? { status: "ready", introspection: result.introspection, fetchedAt: Date.now() }
+          : { status: "error", message: result.error },
+      },
+    }));
   },
 
   addHistory: async (entry) => {
@@ -1456,6 +1557,12 @@ function getNextFolderPosition(
   );
   if (!siblings.length) return 0;
   return Math.max(...siblings.map((folder) => folder.position ?? 0)) + 1;
+}
+
+function omitKeys<T>(record: Record<string, T>, ids: readonly string[]): Record<string, T> {
+  if (!ids.length) return record;
+  const doomed = new Set(ids);
+  return Object.fromEntries(Object.entries(record).filter(([key]) => !doomed.has(key)));
 }
 
 function collectDescendantFolderIds(folders: Folder[], rootId: string): string[] {
