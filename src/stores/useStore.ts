@@ -407,6 +407,7 @@ export const useStore = create<State>((set, get) => ({
       assertions: [],
       mock: createDefaultMock(),
       preRequestScript: createDefaultPreRequestScript(),
+      timeoutMs: 0,
       createdAt: now,
       updatedAt: now,
     };

@@ -177,6 +177,8 @@ export interface ApiRequest {
   assertions: AssertionRule[];
   mock: MockConfig;
   preRequestScript: PreRequestScriptConfig;
+  /** Milliseconds before Send auto-aborts an in-flight request. 0 = no timeout. */
+  timeoutMs: number;
   favorite?: boolean;
   createdAt: number;
   updatedAt: number;
@@ -411,6 +413,28 @@ class ReqloDB extends Dexie {
             }
           });
       });
+    this.version(10)
+      .stores({
+        workspaces: "id, updatedAt",
+        collections: "id, workspaceId, position",
+        folders:
+          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
+        requests:
+          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
+        history:
+          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
+        environments: "id, workspaceId",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table<ApiRequest, string>("requests")
+          .toCollection()
+          .modify((request) => {
+            if (request.timeoutMs === undefined) {
+              request.timeoutMs = 0;
+            }
+          });
+      });
   }
 }
 
@@ -592,6 +616,7 @@ export function normalizeApiRequest(
     assertions: request.assertions ?? [],
     mock: request.mock ?? createDefaultMock(),
     preRequestScript: request.preRequestScript ?? createDefaultPreRequestScript(),
+    timeoutMs: request.timeoutMs ?? 0,
     favorite: request.favorite ?? false,
   } as ApiRequest;
 }
@@ -721,6 +746,7 @@ export async function ensureSeed(): Promise<Workspace> {
       assertions: [],
       mock: createDefaultMock(),
       preRequestScript: createDefaultPreRequestScript(),
+      timeoutMs: 0,
       createdAt: now,
       updatedAt: now,
     },
@@ -750,6 +776,7 @@ export async function ensureSeed(): Promise<Workspace> {
       assertions: [],
       mock: createDefaultMock(),
       preRequestScript: createDefaultPreRequestScript(),
+      timeoutMs: 0,
       createdAt: now,
       updatedAt: now,
     },
@@ -772,6 +799,7 @@ export async function ensureSeed(): Promise<Workspace> {
       assertions: [],
       mock: createDefaultMock(),
       preRequestScript: createDefaultPreRequestScript(),
+      timeoutMs: 0,
       createdAt: now,
       updatedAt: now,
     },

@@ -1,4 +1,4 @@
-import { executeRequest } from "@/services/executor";
+import { executeRequest, type ExecuteRequestOptions } from "@/services/executor";
 import {
   createRequestSnapshot,
   mergeEnvironmentVariables,
@@ -48,8 +48,9 @@ export async function runSingleRequest(
   request: ApiRequest,
   environment: Environment | null,
   deps: RunSingleRequestDeps,
+  options?: ExecuteRequestOptions,
 ): Promise<RunSingleRequestOutcome> {
-  const result = await executeRequest(request, environment);
+  const result = await executeRequest(request, environment, options);
 
   const scriptUpdates = Object.entries(result.scriptEnvironmentPatch ?? {}).map(([key, value]) => ({
     key,

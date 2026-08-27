@@ -40,6 +40,7 @@ export function Workspace() {
   } = useStore();
   const [results, setResults] = useState<Record<string, ExecutionResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const controllersRef = useRef<Record<string, AbortController>>({});
   const lastPing = useRef(0);
   const isMobile = useMediaQuery("(max-width: 767px)");
   const forcedMobileCollapse = useRef(false);
@@ -90,14 +91,19 @@ export function Workspace() {
 
   const send = async () => {
     if (!activeRequest || !workspace) return;
-    setLoading((s) => ({ ...s, [activeRequest.id]: true }));
-    const outcome = await runSingleRequest(activeRequest, activeEnvironment, {
-      workspaceId: workspace.id,
-      addHistory,
-      updateEnvironment,
-    });
-    setResults((s) => ({ ...s, [activeRequest.id]: outcome.result }));
-    setLoading((s) => ({ ...s, [activeRequest.id]: false }));
+    const requestId = activeRequest.id;
+    const controller = new AbortController();
+    controllersRef.current[requestId] = controller;
+    setLoading((s) => ({ ...s, [requestId]: true }));
+    const outcome = await runSingleRequest(
+      activeRequest,
+      activeEnvironment,
+      { workspaceId: workspace.id, addHistory, updateEnvironment },
+      { signal: controller.signal },
+    );
+    delete controllersRef.current[requestId];
+    setResults((s) => ({ ...s, [requestId]: outcome.result }));
+    setLoading((s) => ({ ...s, [requestId]: false }));
 
     if (outcome.result.scriptError) {
       toast.warning("Pre-request script failed", { description: outcome.result.scriptError });
@@ -130,6 +136,11 @@ export function Workspace() {
         },
       );
     }
+  };
+
+  const cancel = () => {
+    if (!activeRequest) return;
+    controllersRef.current[activeRequest.id]?.abort();
   };
 
   // The "request.send" command bumps sendPing — execute here so we own response state.
@@ -175,6 +186,7 @@ export function Workspace() {
                 <RequestBuilder
                   request={activeRequest}
                   onSend={send}
+                  onCancel={cancel}
                   sending={isLoading}
                   result={result}
                 />

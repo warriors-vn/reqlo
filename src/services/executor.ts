@@ -5,9 +5,16 @@ import {
 } from "@/features/code-snippets/utils/request-resolver";
 import type { ExecutionResult, ResponseKind } from "@/services/execution";
 
+export interface ExecuteRequestOptions {
+  /** External cancellation source (e.g. a Cancel button) — independent of
+   * the internal timeout-driven abort below; whichever fires first wins. */
+  signal?: AbortSignal;
+}
+
 export async function executeRequest(
   req: ApiRequest,
   environment?: Environment | null,
+  options?: ExecuteRequestOptions,
 ): Promise<ExecutionResult> {
   if (req.mock.enabled) {
     return buildMockResult(req.mock);
@@ -16,6 +23,24 @@ export async function executeRequest(
   const started = performance.now();
   let scriptEnvironmentPatch: Record<string, string> | undefined;
   let scriptError: string | undefined;
+  const controller = new AbortController();
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  if (req.timeoutMs > 0) {
+    timeoutHandle = setTimeout(() => {
+      controller.abort(
+        new DOMException(`Request timed out after ${req.timeoutMs}ms.`, "TimeoutError"),
+      );
+    }, req.timeoutMs);
+  }
+  if (options?.signal) {
+    const cancel = () => controller.abort(new DOMException("Request cancelled.", "AbortError"));
+    // An already-aborted signal never fires a future "abort" event — check
+    // the current state directly too, or a cancel that raced ahead of this
+    // call (unlikely today given callers create a fresh controller per send,
+    // but not guaranteed) would silently never propagate.
+    if (options.signal.aborted) cancel();
+    else options.signal.addEventListener("abort", cancel, { once: true });
+  }
   try {
     // Resolved once up front — reused as-is unless a script actually patches
     // the environment, in which case it's the only case that needs a second,
@@ -47,7 +72,7 @@ export async function executeRequest(
       init.body = serializedBody.body;
     }
 
-    const res = await fetch(url, init);
+    const res = await fetch(url, { ...init, signal: controller.signal });
     const respHeaders: Record<string, string> = {};
     res.headers.forEach((v, k) => {
       respHeaders[k] = v;
@@ -73,6 +98,8 @@ export async function executeRequest(
       scriptError,
     };
   } catch (e: unknown) {
+    const isAbort =
+      e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError");
     const msg = e instanceof Error ? e.message : String(e);
     return {
       status: null,
@@ -86,10 +113,12 @@ export async function executeRequest(
       responseKind: "empty",
       blob: null,
       fileName: null,
-      error: `Request failed: ${msg}. Check the URL, CORS, or network connection.`,
+      error: isAbort ? msg : `Request failed: ${msg}. Check the URL, CORS, or network connection.`,
       scriptEnvironmentPatch,
       scriptError,
     };
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
   }
 }
 
