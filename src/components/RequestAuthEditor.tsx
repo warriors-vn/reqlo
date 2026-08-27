@@ -18,6 +18,7 @@ import {
 } from "@/services/db";
 import { cn } from "@/lib/utils";
 import { maskPreview } from "@/lib/mask";
+import { TemplateInput } from "@/components/TemplateInput";
 
 interface Props {
   request: ApiRequest;
@@ -132,19 +133,19 @@ export function RequestAuthEditor({ request }: Props) {
       {request.auth.type === "basic" && (
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Username">
-            <input
+            <TemplateInput
               value={request.auth.username ?? ""}
-              onChange={(event) => setAuth({ username: event.target.value })}
+              onChange={(username) => setAuth({ username })}
               placeholder="demo"
               autoComplete="off"
               className="h-10 w-full rounded-xl border border-border/80 bg-background/80 px-3 text-sm outline-none transition focus:border-foreground/15"
             />
           </Field>
           <Field label="Password">
-            <input
+            <TemplateInput
               type="password"
               value={request.auth.password ?? ""}
-              onChange={(event) => setAuth({ password: event.target.value })}
+              onChange={(password) => setAuth({ password })}
               placeholder="••••••••"
               autoComplete="off"
               className="h-10 w-full rounded-xl border border-border/80 bg-background/80 px-3 text-sm outline-none transition focus:border-foreground/15"
@@ -155,10 +156,10 @@ export function RequestAuthEditor({ request }: Props) {
 
       {request.auth.type === "bearer" && (
         <Field label="Token" hint="Supports environment variables like {{API_TOKEN}}">
-          <input
+          <TemplateInput
             type="password"
             value={request.auth.token ?? ""}
-            onChange={(event) => setAuth({ token: event.target.value })}
+            onChange={(token) => setAuth({ token })}
             placeholder="Bearer token"
             autoComplete="off"
             className="h-10 w-full rounded-xl border border-border/80 bg-background/80 px-3 font-mono text-sm outline-none transition focus:border-foreground/15"
@@ -179,19 +180,19 @@ export function RequestAuthEditor({ request }: Props) {
             </select>
           </Field>
           <Field label="Key">
-            <input
+            <TemplateInput
               value={request.auth.key ?? ""}
-              onChange={(event) => setAuth({ key: event.target.value })}
+              onChange={(key) => setAuth({ key })}
               placeholder="X-API-Key"
               autoComplete="off"
               className="h-10 w-full rounded-xl border border-border/80 bg-background/80 px-3 font-mono text-sm outline-none transition focus:border-foreground/15"
             />
           </Field>
           <Field label="Value" hint="Resolved before sending and snippet generation">
-            <input
+            <TemplateInput
               type="password"
               value={request.auth.value ?? ""}
-              onChange={(event) => setAuth({ value: event.target.value })}
+              onChange={(value) => setAuth({ value })}
               placeholder="{{API_KEY}}"
               autoComplete="off"
               className="h-10 w-full rounded-xl border border-border/80 bg-background/80 px-3 font-mono text-sm outline-none transition focus:border-foreground/15"
@@ -239,9 +240,9 @@ export function RequestAuthEditor({ request }: Props) {
 
           {oauth2.grantType === "authorization_code" && (
             <Field label="Auth URL">
-              <input
+              <TemplateInput
                 value={oauth2.authUrl ?? ""}
-                onChange={(event) => setOAuth2({ authUrl: event.target.value })}
+                onChange={(authUrl) => setOAuth2({ authUrl })}
                 placeholder="https://provider.example.com/oauth/authorize"
                 autoComplete="off"
                 className="h-10 w-full rounded-xl border border-border/80 bg-background/80 px-3 font-mono text-sm outline-none transition focus:border-foreground/15"
@@ -250,9 +251,9 @@ export function RequestAuthEditor({ request }: Props) {
           )}
 
           <Field label="Token URL">
-            <input
+            <TemplateInput
               value={oauth2.tokenUrl}
-              onChange={(event) => setOAuth2({ tokenUrl: event.target.value })}
+              onChange={(tokenUrl) => setOAuth2({ tokenUrl })}
               placeholder="https://provider.example.com/oauth/token"
               autoComplete="off"
               className="h-10 w-full rounded-xl border border-border/80 bg-background/80 px-3 font-mono text-sm outline-none transition focus:border-foreground/15"
@@ -261,19 +262,19 @@ export function RequestAuthEditor({ request }: Props) {
 
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Client ID">
-              <input
+              <TemplateInput
                 value={oauth2.clientId}
-                onChange={(event) => setOAuth2({ clientId: event.target.value })}
+                onChange={(clientId) => setOAuth2({ clientId })}
                 placeholder="{{CLIENT_ID}}"
                 autoComplete="off"
                 className="h-10 w-full rounded-xl border border-border/80 bg-background/80 px-3 font-mono text-sm outline-none transition focus:border-foreground/15"
               />
             </Field>
             <Field label="Client Secret" hint="Optional for public clients">
-              <input
+              <TemplateInput
                 type="password"
                 value={oauth2.clientSecret ?? ""}
-                onChange={(event) => setOAuth2({ clientSecret: event.target.value })}
+                onChange={(clientSecret) => setOAuth2({ clientSecret })}
                 placeholder="{{CLIENT_SECRET}}"
                 autoComplete="off"
                 className="h-10 w-full rounded-xl border border-border/80 bg-background/80 px-3 font-mono text-sm outline-none transition focus:border-foreground/15"
@@ -282,9 +283,9 @@ export function RequestAuthEditor({ request }: Props) {
           </div>
 
           <Field label="Scope" hint="Space-separated, optional">
-            <input
+            <TemplateInput
               value={oauth2.scope ?? ""}
-              onChange={(event) => setOAuth2({ scope: event.target.value })}
+              onChange={(scope) => setOAuth2({ scope })}
               placeholder="read write"
               autoComplete="off"
               className="h-10 w-full rounded-xl border border-border/80 bg-background/80 px-3 font-mono text-sm outline-none transition focus:border-foreground/15"

@@ -1,6 +1,12 @@
 import { serializeRequestBody } from "@/features/request-body/utils/body";
 import type { SerializedRequestBody } from "@/features/request-body/types";
-import type { ApiRequest, Environment, KV, RequestBodyDrafts } from "@/services/db";
+import {
+  mergeEnvironmentVariables,
+  type ApiRequest,
+  type Environment,
+  type KV,
+  type RequestBodyDrafts,
+} from "@/services/db";
 
 export interface ResolvedRequestArtifacts {
   envMap: Map<string, string>;
@@ -161,5 +167,66 @@ export function buildResolvedRequestArtifacts(
     resolvedHeaders: headers,
     resolvedRequest,
     serializedBody,
+  };
+}
+
+export interface PreRequestScriptOutcome {
+  resolved: ResolvedRequestArtifacts;
+  scriptHeaderPatch?: Record<string, string>;
+  scriptEnvironmentPatch?: Record<string, string>;
+  scriptError?: string;
+}
+
+/**
+ * Runs a request's pre-request script (if enabled) and, on success, re-resolves
+ * with any environment patch it returned — the same two-pass shape executor.ts
+ * and graphql-introspection.ts both need, factored out so a fix to one (e.g.
+ * surfacing scriptError) can't silently drift out of sync with the other.
+ * `context` carries the caller's own method/headers/body since executor.ts
+ * sends the request's real serialized body while graphql-introspection.ts
+ * sends its own fixed introspection query — only the resolution/re-resolution
+ * logic is shared, not the request shape itself.
+ */
+export async function applyPreRequestScript(
+  request: ApiRequest,
+  environment: Environment | null | undefined,
+  resolved: ResolvedRequestArtifacts,
+  context: { method: string; headers: Record<string, string>; body: string | null },
+): Promise<PreRequestScriptOutcome> {
+  if (!request.preRequestScript.enabled || !request.preRequestScript.source.trim()) {
+    return { resolved };
+  }
+
+  const { runPreRequestScript } = await import("@/services/scripting");
+  const scriptResult = await runPreRequestScript(request.preRequestScript.source, {
+    method: context.method,
+    url: resolved.url,
+    headers: context.headers,
+    body: context.body,
+    environment: Object.fromEntries(resolved.envMap),
+  });
+
+  if (scriptResult.error) {
+    return { resolved, scriptError: scriptResult.error };
+  }
+
+  let nextResolved = resolved;
+  let scriptEnvironmentPatch: Record<string, string> | undefined;
+  if (scriptResult.environment && Object.keys(scriptResult.environment).length) {
+    scriptEnvironmentPatch = scriptResult.environment;
+    const updates = Object.entries(scriptResult.environment).map(([key, value]) => ({
+      key,
+      value,
+    }));
+    const patchedEnvironment = environment
+      ? { ...environment, variables: mergeEnvironmentVariables(environment.variables, updates) }
+      : environment;
+    nextResolved = buildResolvedRequestArtifacts(request, patchedEnvironment);
+  }
+
+  return {
+    resolved: nextResolved,
+    scriptHeaderPatch: scriptResult.headers,
+    scriptEnvironmentPatch,
   };
 }

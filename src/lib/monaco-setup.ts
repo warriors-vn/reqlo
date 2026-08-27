@@ -13,10 +13,11 @@ declare global {
 // package already bundled with the app instead, so it ships in our own chunks
 // and works with the wifi off.
 //
-// Only the editor's own worker plus the JSON language worker are registered —
-// this app never edits CSS/HTML/TypeScript, so pulling in those (and
-// TypeScript's language service in particular, one of the largest pieces of
-// Monaco) would be dead weight the "lightweight" pitch can't afford.
+// Only the editor's own worker, the JSON language worker, and (opt-in, see
+// graphql-mode.ts) the GraphQL language worker are registered — this app
+// never edits CSS/HTML/TypeScript, so pulling in those (and TypeScript's
+// language service in particular, one of the largest pieces of Monaco) would
+// be dead weight the "lightweight" pitch can't afford.
 //
 // Workers are constructed via `new URL(..., import.meta.url)` rather than
 // Vite's `?worker` import suffix — that suffix is picked up by a project-wide
@@ -29,7 +30,9 @@ self.MonacoEnvironment = {
     const url =
       label === "json"
         ? new URL("monaco-editor/esm/vs/language/json/json.worker.js", import.meta.url)
-        : new URL("monaco-editor/esm/vs/editor/editor.worker.js", import.meta.url);
+        : label === "graphql"
+          ? new URL("monaco-graphql/esm/graphql.worker.js", import.meta.url)
+          : new URL("monaco-editor/esm/vs/editor/editor.worker.js", import.meta.url);
     return new Worker(url, { type: "module" });
   },
 };

@@ -172,6 +172,7 @@ export function AdvancedBodyEditor({ request }: Props) {
 
           {request.bodyType === "graphql" && (
             <GraphQLEditor
+              request={request}
               value={request.bodyDrafts.graphql}
               onChange={(graphql) => commitDrafts({ ...request.bodyDrafts, graphql }, "graphql")}
               validationDetail={validation?.detail}
