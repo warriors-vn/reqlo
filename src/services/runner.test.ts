@@ -284,6 +284,63 @@ describe("runSingleRequest", () => {
     expect(deps.updateEnvironment).not.toHaveBeenCalled();
   });
 
+  it("auto-aborts a hung request once timeoutMs elapses, instead of hanging forever", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            // A real fetch() rejects once its signal aborts — a bare never-resolving
+            // Promise wouldn't, so this stub has to actually honor it to be a valid stand-in.
+            init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+          }),
+      ),
+    );
+    const deps = makeDeps();
+    const request = makeRequest({ timeoutMs: 50 });
+
+    const outcome = await runSingleRequest(request, makeEnv(), deps);
+
+    expect(outcome.result.ok).toBe(false);
+    expect(outcome.result.status).toBeNull();
+    expect(outcome.result.error).toBe("Request timed out after 50ms.");
+  });
+
+  it("does not touch the fetch call at all when timeoutMs is 0 (the default)", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const request = makeRequest({ timeoutMs: 0 });
+
+    await runSingleRequest(request, makeEnv(), makeDeps());
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init?.signal as AbortSignal).aborted).toBe(false);
+  });
+
+  it("aborts immediately and reports cancellation when an external signal is already aborted", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            if (init?.signal?.aborted) reject(init.signal.reason);
+            else init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+          }),
+      ),
+    );
+    const deps = makeDeps();
+    const request = makeRequest();
+    const controller = new AbortController();
+    controller.abort();
+
+    const outcome = await runSingleRequest(request, makeEnv(), deps, {
+      signal: controller.signal,
+    });
+
+    expect(outcome.result.ok).toBe(false);
+    expect(outcome.result.error).toBe("Request cancelled.");
+  });
+
   it("reports a failed assertion in the outcome without throwing", async () => {
     vi.stubGlobal(
       "fetch",

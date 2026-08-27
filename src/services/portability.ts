@@ -199,6 +199,7 @@ async function sanitizeHistoryForExport(history: HistoryEntry): Promise<HistoryE
     assertions: [],
     mock: createDefaultMock(),
     preRequestScript: createDefaultPreRequestScript(),
+    timeoutMs: 0,
     favorite: false,
     createdAt: history.executedAt,
     updatedAt: history.executedAt,
