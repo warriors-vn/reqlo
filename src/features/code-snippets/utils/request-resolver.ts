@@ -25,6 +25,31 @@ export function createEnvironmentMap(environment?: Environment | null) {
   );
 }
 
+/**
+ * Merges workspace-level globals into an environment's variable list before
+ * it's handed to createEnvironmentMap/buildResolvedRequestArtifacts/etc. —
+ * every resolution function downstream stays a plain Environment | null
+ * consumer with no idea globals exist. Environment-specific variables win
+ * over a global with the same key: they're listed after the globals here,
+ * and createEnvironmentMap's `new Map(...)` gives later duplicates
+ * precedence. Globals still apply with no environment selected at all
+ * (the whole point of "always-active"), by synthesizing a minimal
+ * Environment wrapping just the globals.
+ */
+export function mergeGlobalsIntoEnvironment(
+  environment: Environment | null,
+  globals: KV[],
+): Environment | null {
+  if (!globals.length) return environment;
+  return {
+    id: environment?.id ?? "__globals__",
+    workspaceId: environment?.workspaceId ?? "",
+    name: environment?.name ?? "Globals",
+    createdAt: environment?.createdAt ?? 0,
+    variables: [...globals, ...(environment?.variables ?? [])],
+  };
+}
+
 export function resolveTemplate(input: string, envMap: Map<string, string>) {
   return input.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_, key: string) => envMap.get(key) ?? "");
 }

@@ -2,7 +2,10 @@ import { useMemo, useState } from "react";
 import { Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useStore } from "@/stores/useStore";
-import { buildResolvedRequestArtifacts } from "@/features/code-snippets/utils/request-resolver";
+import {
+  buildResolvedRequestArtifacts,
+  mergeGlobalsIntoEnvironment,
+} from "@/features/code-snippets/utils/request-resolver";
 import { copyTextToClipboard } from "@/features/code-snippets/utils/clipboard";
 import {
   beginAuthorizationCodeFlow,
@@ -36,7 +39,9 @@ export function RequestAuthEditor({ request }: Props) {
   const updateRequest = useStore((state) => state.updateRequest);
   const environments = useStore((state) => state.environments);
   const activeEnvId = useStore((state) => state.activeEnvId);
-  const environment = environments.find((item) => item.id === activeEnvId) ?? null;
+  const globals = useStore((state) => state.workspace?.globals);
+  const rawEnvironment = environments.find((item) => item.id === activeEnvId) ?? null;
+  const environment = mergeGlobalsIntoEnvironment(rawEnvironment, globals ?? []);
 
   const setAuth = (patch: Partial<RequestAuth>) => {
     void updateRequest(request.id, { auth: { ...request.auth, ...patch } });

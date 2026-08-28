@@ -82,7 +82,7 @@ export async function exportWorkspace(workspace: Workspace): Promise<WorkspaceEx
     schema: "reqlo.workspace",
     version: SCHEMA_VERSION,
     exportedAt: Date.now(),
-    workspace,
+    workspace: sanitizeWorkspaceForExport(workspace),
     collections,
     folders,
     requests: await Promise.all(requests.map(sanitizeRequestForExport)),
@@ -148,6 +148,15 @@ export function sanitizeEnvironmentForExport(environment: Environment): Environm
   return {
     ...environment,
     variables: environment.variables.map((variable) =>
+      variable.secret ? { ...variable, value: "" } : variable,
+    ),
+  };
+}
+
+export function sanitizeWorkspaceForExport(workspace: Workspace): Workspace {
+  return {
+    ...workspace,
+    globals: workspace.globals.map((variable) =>
       variable.secret ? { ...variable, value: "" } : variable,
     ),
   };

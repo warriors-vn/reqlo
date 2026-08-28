@@ -27,6 +27,7 @@ import { applyTheme, getStoredTheme, resolveTheme, setStoredTheme } from "@/lib/
 import { useCodeSnippetPanelStore } from "@/features/code-snippets/stores/useCodeSnippetPanelStore";
 import { generateSnippetFromRequest } from "@/features/code-snippets/utils/generate-snippet";
 import { copyTextToClipboard } from "@/features/code-snippets/utils/clipboard";
+import { mergeGlobalsIntoEnvironment } from "@/features/code-snippets/utils/request-resolver";
 import { toast } from "sonner";
 
 /** Prompt helper. Returns null if user cancels or input is empty. */
@@ -382,7 +383,12 @@ export function registerBuiltInCommands(): () => void {
         const request = s().getActiveRequest();
         if (!request) return;
         const state = s();
-        const environment = state.environments.find((env) => env.id === state.activeEnvId) ?? null;
+        const rawEnvironment =
+          state.environments.find((env) => env.id === state.activeEnvId) ?? null;
+        const environment = mergeGlobalsIntoEnvironment(
+          rawEnvironment,
+          state.workspace?.globals ?? [],
+        );
         const language = useCodeSnippetPanelStore.getState().selectedLanguage;
         const snippet = generateSnippetFromRequest(language, request, environment);
         await copyTextToClipboard(snippet);

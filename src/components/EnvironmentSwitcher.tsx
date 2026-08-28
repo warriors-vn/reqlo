@@ -2,11 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, CopyPlus, Globe, Plus, Trash2 } from "lucide-react";
 import { Overlay } from "./Overlay";
 import { KeyValueGrid } from "@/features/request-body/components/KeyValueGrid";
-import { buildResolvedRequestArtifacts } from "@/features/code-snippets/utils/request-resolver";
+import {
+  buildResolvedRequestArtifacts,
+  mergeGlobalsIntoEnvironment,
+} from "@/features/code-snippets/utils/request-resolver";
 import { cn } from "@/lib/utils";
 import { maskPreview } from "@/lib/mask";
 import type { ApiRequest, KV } from "@/services/db";
 import { useStore } from "@/stores/useStore";
+
+const EMPTY_GLOBALS: KV[] = [];
 
 export function EnvironmentSwitcher() {
   const open = useStore((state) => state.overlays["env-switcher"]);
@@ -18,9 +23,13 @@ export function EnvironmentSwitcher() {
   const updateEnvironment = useStore((state) => state.updateEnvironment);
   const duplicateEnvironment = useStore((state) => state.duplicateEnvironment);
   const deleteEnvironment = useStore((state) => state.deleteEnvironment);
+  const rawGlobals = useStore((state) => state.workspace?.globals);
+  const globals = rawGlobals ?? EMPTY_GLOBALS;
+  const updateWorkspaceGlobals = useStore((state) => state.updateWorkspaceGlobals);
   const activeRequest = useStore((state) => state.getActiveRequest());
 
   const [selectedEnvId, setSelectedEnvId] = useState<string | null>(null);
+  const [viewingGlobals, setViewingGlobals] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [newName, setNewName] = useState("");
   const [deleteArmId, setDeleteArmId] = useState<string | null>(null);
@@ -30,12 +39,20 @@ export function EnvironmentSwitcher() {
     [environments, selectedEnvId],
   );
 
+  // What preview/resolution should show: the selected environment (or none,
+  // while viewing Globals) with globals layered in — same precedence a real
+  // Send would use, so this panel never lies about how templates resolve.
+  const effectiveEnvironment = useMemo(
+    () => mergeGlobalsIntoEnvironment(viewingGlobals ? null : selectedEnvironment, globals),
+    [viewingGlobals, selectedEnvironment, globals],
+  );
+
   const preview = useMemo(
     () =>
-      activeRequest && selectedEnvironment
-        ? buildResolvedRequestArtifacts(activeRequest, selectedEnvironment)
+      activeRequest && effectiveEnvironment
+        ? buildResolvedRequestArtifacts(activeRequest, effectiveEnvironment)
         : null,
-    [activeRequest, selectedEnvironment],
+    [activeRequest, effectiveEnvironment],
   );
   const templateTokens = useMemo(() => extractTemplateTokens(activeRequest), [activeRequest]);
 
@@ -45,6 +62,7 @@ export function EnvironmentSwitcher() {
       return;
     }
 
+    setViewingGlobals(false);
     setSelectedEnvId((current) => {
       if (current && environments.some((environment) => environment.id === current)) return current;
       return activeEnvId ?? environments[0]?.id ?? null;
@@ -106,7 +124,7 @@ export function EnvironmentSwitcher() {
       ? formatResolvedAuth(activeRequest, preview.resolvedHeaders, preview.resolvedQueryParams)
       : null;
   const redactedResolvedUrl = preview
-    ? redactSecretValues(preview.url, selectedEnvironment?.variables ?? [])
+    ? redactSecretValues(preview.url, effectiveEnvironment?.variables ?? [])
     : "";
 
   return (
@@ -132,8 +150,39 @@ export function EnvironmentSwitcher() {
           </div>
 
           <div className="space-y-2">
+            {(() => {
+              const globalsEnabledCount = globals.filter(
+                (item) => item.enabled && item.key.trim(),
+              ).length;
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewingGlobals(true);
+                    setSelectedEnvId(null);
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-2xl border p-2 text-left transition",
+                    viewingGlobals
+                      ? "border-primary/25 bg-primary/8 shadow-[0_10px_24px_rgba(99,102,241,0.08)]"
+                      : "border-border/70 bg-background/60 hover:border-foreground/10 hover:bg-accent/20",
+                  )}
+                >
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                    <Globe className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0 flex-1 rounded-xl px-1 py-1">
+                    <div className="truncate text-sm font-medium tracking-tight">Globals</div>
+                    <div className="mt-1 text-2xs text-muted-foreground">
+                      {globalsEnabledCount} enabled variable{globalsEnabledCount === 1 ? "" : "s"} ·
+                      always active
+                    </div>
+                  </div>
+                </button>
+              );
+            })()}
             {environments.map((environment) => {
-              const selected = environment.id === selectedEnvId;
+              const selected = !viewingGlobals && environment.id === selectedEnvId;
               const active = environment.id === activeEnvId;
               const enabledCount = environment.variables.filter(
                 (item) => item.enabled && item.key.trim(),
@@ -151,7 +200,10 @@ export function EnvironmentSwitcher() {
                 >
                   <button
                     type="button"
-                    onClick={() => setSelectedEnvId(environment.id)}
+                    onClick={() => {
+                      setViewingGlobals(false);
+                      setSelectedEnvId(environment.id);
+                    }}
                     className="min-w-0 flex-1 rounded-xl px-2 py-2 text-left"
                   >
                     <div className="truncate text-sm font-medium tracking-tight">
@@ -217,7 +269,47 @@ export function EnvironmentSwitcher() {
         </aside>
 
         <section className="space-y-4">
-          {selectedEnvironment ? (
+          {viewingGlobals ? (
+            <>
+              <div className="rounded-[28px] border border-border/80 bg-background/70 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.05)]">
+                <div className="flex items-center gap-2">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+                    <Globe className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold tracking-tight">Globals</div>
+                    <p className="text-2xs leading-5 text-muted-foreground">
+                      Always merged into template resolution, regardless of which environment is
+                      active. An environment variable with the same key takes precedence.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-border/80 bg-background/70 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.05)]">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-semibold tracking-tight">Variables</div>
+                    <div className="text-2xs text-muted-foreground">
+                      Available to every environment via template expressions like{" "}
+                      {"{{API_VERSION}}"}.
+                    </div>
+                  </div>
+                  <span className="rounded-full bg-muted px-2.5 py-1 text-3xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    {`${globals.filter((item) => item.enabled && item.key.trim()).length} active`}
+                  </span>
+                </div>
+                <KeyValueGrid
+                  rows={globals}
+                  onChange={(next) => void updateWorkspaceGlobals(next)}
+                  keyLabel="Variable"
+                  valueLabel="Value"
+                  supportsSecret
+                  templatable={false}
+                />
+              </div>
+            </>
+          ) : selectedEnvironment ? (
             <>
               <div className="rounded-[28px] border border-border/80 bg-background/70 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.05)]">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -332,90 +424,6 @@ export function EnvironmentSwitcher() {
                   templatable={false}
                 />
               </div>
-
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="rounded-[28px] border border-border/80 bg-background/70 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.05)]">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-semibold tracking-tight">
-                        Active request preview
-                      </div>
-                      <div className="text-2xs text-muted-foreground">
-                        See how the selected environment resolves the current request.
-                      </div>
-                    </div>
-                    <span className="rounded-full bg-background px-2.5 py-1 text-3xs font-medium text-muted-foreground">
-                      {activeRequest
-                        ? activeRequest.name || "Untitled request"
-                        : "No request selected"}
-                    </span>
-                  </div>
-
-                  {activeRequest && preview ? (
-                    <div className="mt-4 space-y-3">
-                      <PreviewRow label="Resolved URL" value={redactedResolvedUrl || "—"} />
-                      <PreviewRow
-                        label="Auth"
-                        value={activeAuthPreview ?? "No auth data injected for this request"}
-                      />
-                      <PreviewRow
-                        label="Headers"
-                        value={`${Object.keys(preview.resolvedHeaders).length} resolved header${Object.keys(preview.resolvedHeaders).length === 1 ? "" : "s"}`}
-                      />
-                      <PreviewRow
-                        label="Query"
-                        value={`${preview.resolvedQueryParams.length} query param${preview.resolvedQueryParams.length === 1 ? "" : "s"}`}
-                      />
-                    </div>
-                  ) : (
-                    <div className="mt-4 rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-8 text-sm text-muted-foreground">
-                      Open a request tab to preview how environment variables affect the final URL,
-                      auth, headers, and query params.
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-[28px] border border-border/80 bg-background/70 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.05)]">
-                  <div>
-                    <div className="text-sm font-semibold tracking-tight">
-                      Detected template keys
-                    </div>
-                    <div className="text-2xs text-muted-foreground">
-                      Tokens referenced by the active request.
-                    </div>
-                  </div>
-
-                  {templateTokens.length > 0 && preview ? (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {templateTokens.map((token) => {
-                        const resolved = preview.envMap.has(token);
-                        return (
-                          <span
-                            key={token}
-                            className={cn(
-                              "rounded-full border px-2.5 py-1 text-3xs font-medium uppercase tracking-[0.14em]",
-                              resolved
-                                ? "border-primary/20 bg-primary/10 text-primary"
-                                : "border-border bg-muted/40 text-muted-foreground",
-                            )}
-                          >
-                            {token}
-                            <span className="ml-1 normal-case tracking-normal">
-                              {resolved ? "resolved" : "missing"}
-                            </span>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="mt-4 rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-8 text-sm text-muted-foreground">
-                      {activeRequest
-                        ? "The active request does not reference any {{TEMPLATE_KEYS}} yet."
-                        : "No active request selected."}
-                    </div>
-                  )}
-                </div>
-              </div>
             </>
           ) : (
             <div className="rounded-[28px] border border-dashed border-border bg-background/55 px-6 py-14 text-center">
@@ -423,6 +431,92 @@ export function EnvironmentSwitcher() {
               <p className="mt-2 text-sm text-muted-foreground">
                 Create an environment on the left to start managing variables and switching context.
               </p>
+            </div>
+          )}
+
+          {(viewingGlobals || selectedEnvironment) && (
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="rounded-[28px] border border-border/80 bg-background/70 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.05)]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-semibold tracking-tight">
+                      Active request preview
+                    </div>
+                    <div className="text-2xs text-muted-foreground">
+                      {viewingGlobals
+                        ? "See how globals alone resolve the current request."
+                        : "See how the selected environment (plus globals) resolves the current request."}
+                    </div>
+                  </div>
+                  <span className="rounded-full bg-background px-2.5 py-1 text-3xs font-medium text-muted-foreground">
+                    {activeRequest
+                      ? activeRequest.name || "Untitled request"
+                      : "No request selected"}
+                  </span>
+                </div>
+
+                {activeRequest && preview ? (
+                  <div className="mt-4 space-y-3">
+                    <PreviewRow label="Resolved URL" value={redactedResolvedUrl || "—"} />
+                    <PreviewRow
+                      label="Auth"
+                      value={activeAuthPreview ?? "No auth data injected for this request"}
+                    />
+                    <PreviewRow
+                      label="Headers"
+                      value={`${Object.keys(preview.resolvedHeaders).length} resolved header${Object.keys(preview.resolvedHeaders).length === 1 ? "" : "s"}`}
+                    />
+                    <PreviewRow
+                      label="Query"
+                      value={`${preview.resolvedQueryParams.length} query param${preview.resolvedQueryParams.length === 1 ? "" : "s"}`}
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-8 text-sm text-muted-foreground">
+                    Open a request tab to preview how environment variables affect the final URL,
+                    auth, headers, and query params.
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-[28px] border border-border/80 bg-background/70 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.05)]">
+                <div>
+                  <div className="text-sm font-semibold tracking-tight">Detected template keys</div>
+                  <div className="text-2xs text-muted-foreground">
+                    Tokens referenced by the active request.
+                  </div>
+                </div>
+
+                {templateTokens.length > 0 && preview ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {templateTokens.map((token) => {
+                      const resolved = preview.envMap.has(token);
+                      return (
+                        <span
+                          key={token}
+                          className={cn(
+                            "rounded-full border px-2.5 py-1 text-3xs font-medium uppercase tracking-[0.14em]",
+                            resolved
+                              ? "border-primary/20 bg-primary/10 text-primary"
+                              : "border-border bg-muted/40 text-muted-foreground",
+                          )}
+                        >
+                          {token}
+                          <span className="ml-1 normal-case tracking-normal">
+                            {resolved ? "resolved" : "missing"}
+                          </span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-8 text-sm text-muted-foreground">
+                    {activeRequest
+                      ? "The active request does not reference any {{TEMPLATE_KEYS}} yet."
+                      : "No active request selected."}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </section>

@@ -136,6 +136,8 @@ export interface MockConfig {
 export interface Workspace {
   id: string;
   name: string;
+  /** Always merged into template resolution, regardless of the active environment. */
+  globals: KV[];
   createdAt: number;
   updatedAt: number;
 }
@@ -435,6 +437,28 @@ class ReqloDB extends Dexie {
             }
           });
       });
+    this.version(11)
+      .stores({
+        workspaces: "id, updatedAt",
+        collections: "id, workspaceId, position",
+        folders:
+          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
+        requests:
+          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
+        history:
+          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
+        environments: "id, workspaceId",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table<Workspace, string>("workspaces")
+          .toCollection()
+          .modify((workspace) => {
+            if (workspace.globals === undefined) {
+              workspace.globals = [];
+            }
+          });
+      });
   }
 }
 
@@ -714,7 +738,13 @@ export async function ensureSeed(): Promise<Workspace> {
   if (existing.length) return existing[0];
 
   const now = Date.now();
-  const ws: Workspace = { id: uid(), name: "Personal", createdAt: now, updatedAt: now };
+  const ws: Workspace = {
+    id: uid(),
+    name: "Personal",
+    globals: [],
+    createdAt: now,
+    updatedAt: now,
+  };
   await db.workspaces.add(ws);
 
   const col: Collection = {

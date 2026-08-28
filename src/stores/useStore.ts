@@ -11,6 +11,7 @@ import {
   type Workspace,
   type HttpMethod,
   type Environment,
+  type KV,
   createDefaultAuth,
   createDefaultBodyDrafts,
   createDefaultMock,
@@ -23,6 +24,7 @@ import {
 } from "@/services/db";
 import { parseCurl } from "@/services/curl";
 import { fetchIntrospectionSchema } from "@/services/graphql-introspection";
+import { mergeGlobalsIntoEnvironment } from "@/features/code-snippets/utils/request-resolver";
 import type { IntrospectionQuery } from "graphql";
 import { looksLikePostmanCollection, parsePostmanCollection } from "@/services/postman";
 import { looksLikeOpenApiDocument, parseOpenApiDocument } from "@/services/openapi";
@@ -164,6 +166,7 @@ interface State {
   duplicateEnvironment: (id: string) => Promise<Environment | null>;
   deleteEnvironment: (id: string) => Promise<void>;
   setActiveEnv: (id: string | null) => void;
+  updateWorkspaceGlobals: (globals: KV[]) => Promise<void>;
 
   // graphql schema introspection (session-only, keyed by request id)
   fetchGraphQLSchema: (requestId: string) => Promise<void>;
@@ -895,6 +898,14 @@ export const useStore = create<State>((set, get) => ({
     persistSession(get);
   },
 
+  updateWorkspaceGlobals: async (globals) => {
+    const workspace = get().workspace;
+    if (!workspace) return;
+    const cleaned = globals.map((item) => ({ ...item }));
+    await reportDbWriteFailure(db.workspaces.update(workspace.id, { globals: cleaned }));
+    set({ workspace: { ...workspace, globals: cleaned } });
+  },
+
   fetchGraphQLSchema: async (requestId) => {
     const request = get().requests.find((r) => r.id === requestId);
     if (!request) return;
@@ -902,7 +913,8 @@ export const useStore = create<State>((set, get) => ({
       graphqlSchemas: { ...s.graphqlSchemas, [requestId]: { status: "loading" } },
     }));
 
-    const environment = get().environments.find((env) => env.id === get().activeEnvId) ?? null;
+    const rawEnvironment = get().environments.find((env) => env.id === get().activeEnvId) ?? null;
+    const environment = mergeGlobalsIntoEnvironment(rawEnvironment, get().workspace?.globals ?? []);
     const result = await fetchIntrospectionSchema(request, environment);
 
     // The request may have been deleted while the fetch was in flight —
@@ -1254,6 +1266,7 @@ export const useStore = create<State>((set, get) => ({
     const workspace: Workspace = {
       ...parsed.workspace,
       id: workspaceId,
+      globals: parsed.workspace.globals ?? [],
       createdAt: parsed.workspace.createdAt ?? now,
       updatedAt: now,
     };
@@ -1417,10 +1430,11 @@ export const useStore = create<State>((set, get) => ({
     const data = await buildWorkspaceExport(ws);
     downloadJSON(data, `${slugify(ws.name)}-workspace.reqlo.json`);
 
-    const secretCount = get().environments.reduce(
-      (sum, env) => sum + env.variables.filter((v) => v.secret).length,
-      0,
-    );
+    const secretCount =
+      get().environments.reduce(
+        (sum, env) => sum + env.variables.filter((v) => v.secret).length,
+        0,
+      ) + ws.globals.filter((v) => v.secret).length;
     if (secretCount > 0) {
       toast.info(
         `${secretCount} secret value${secretCount > 1 ? "s were" : " was"} left out of this export`,
