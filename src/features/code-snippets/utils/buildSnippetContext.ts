@@ -39,7 +39,7 @@ export function buildSnippetContext(
       case "form-data": {
         const entries: SnippetMultipartEntry[] = resolvedRequest.bodyDrafts.formData
           .filter((row) => row.enabled && row.key.trim())
-          .flatMap((row) => {
+          .flatMap((row): SnippetMultipartEntry[] => {
             if (row.kind === "file") {
               return row.files.map((file) => ({
                 key: row.key,
