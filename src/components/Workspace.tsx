@@ -18,6 +18,7 @@ import { runSingleRequest } from "@/services/runner";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCommandSystem } from "@/hooks/useCommandSystem";
 import { CodeSnippetPanel } from "@/features/code-snippets/components/CodeSnippetPanel";
+import { mergeGlobalsIntoEnvironment } from "@/features/code-snippets/utils/request-resolver";
 import type { ExecutionResult } from "@/services/execution";
 import { toast } from "sonner";
 
@@ -85,7 +86,11 @@ export function Workspace() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const activeRequest = activeTab ? requests.find((r) => r.id === activeTab.requestId) : null;
-  const activeEnvironment = environments.find((env) => env.id === activeEnvId) ?? null;
+  const rawActiveEnvironment = environments.find((env) => env.id === activeEnvId) ?? null;
+  const activeEnvironment = mergeGlobalsIntoEnvironment(
+    rawActiveEnvironment,
+    workspace?.globals ?? [],
+  );
   const result = activeRequest ? results[activeRequest.id] : null;
   const isLoading = activeRequest ? loading[activeRequest.id] : false;
 

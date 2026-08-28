@@ -18,6 +18,7 @@ import {
   exportWorkspace,
   sanitizeEnvironmentForExport,
   sanitizeRequestForExport,
+  sanitizeWorkspaceForExport,
   validateCollectionExport,
   validateWorkspaceExport,
   type CollectionExport,
@@ -77,7 +78,7 @@ describe("validateWorkspaceExport", () => {
     schema: "reqlo.workspace",
     version: 1,
     exportedAt: Date.now(),
-    workspace: { id: "w1", name: "W", createdAt: Date.now(), updatedAt: Date.now() },
+    workspace: { id: "w1", name: "W", globals: [], createdAt: Date.now(), updatedAt: Date.now() },
     collections: [],
     requests: [],
     environments: [],
@@ -256,6 +257,16 @@ describe("exportCollection / exportWorkspace round-trips", () => {
     const workspace: Workspace = {
       id: uid(),
       name: "My Workspace",
+      globals: [
+        {
+          id: "g1",
+          key: "GLOBAL_TOKEN",
+          value: "super-secret-global",
+          enabled: true,
+          secret: true,
+        },
+        { id: "g2", key: "API_VERSION", value: "v2", enabled: true },
+      ],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -335,7 +346,40 @@ describe("exportCollection / exportWorkspace round-trips", () => {
     const liveEnv = await db.environments.get(environment.id);
     expect(liveEnv?.variables.find((v) => v.key === "API_KEY")?.value).toBe("super-secret-value");
 
+    // Secret workspace globals are blanked the same way secret environment
+    // variables are; non-secret globals pass through untouched.
+    expect(result.workspace.globals.find((v) => v.key === "GLOBAL_TOKEN")?.value).toBe("");
+    expect(result.workspace.globals.find((v) => v.key === "API_VERSION")?.value).toBe("v2");
+    const liveWorkspace = await db.workspaces.get(workspace.id);
+    expect(liveWorkspace?.globals.find((v) => v.key === "GLOBAL_TOKEN")?.value).toBe(
+      "super-secret-global",
+    );
+
     // validateWorkspaceExport should accept its own output.
     expect(validateWorkspaceExport(result)).toBe(true);
+  });
+});
+
+describe("sanitizeWorkspaceForExport", () => {
+  it("blanks the value of every secret global, leaves the rest untouched", () => {
+    const workspace: Workspace = {
+      id: "ws-1",
+      name: "W",
+      globals: [
+        { id: "g1", key: "TOKEN", value: "shh", enabled: true, secret: true },
+        { id: "g2", key: "VERSION", value: "v2", enabled: true },
+      ],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const sanitized = sanitizeWorkspaceForExport(workspace);
+
+    expect(sanitized.globals).toEqual([
+      { id: "g1", key: "TOKEN", value: "", enabled: true, secret: true },
+      { id: "g2", key: "VERSION", value: "v2", enabled: true },
+    ]);
+    // Original untouched.
+    expect(workspace.globals[0].value).toBe("shh");
   });
 });

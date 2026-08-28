@@ -8,6 +8,7 @@ import {
   type RunSingleRequestOutcome,
   type RunTarget,
 } from "@/services/runner";
+import { mergeGlobalsIntoEnvironment } from "@/features/code-snippets/utils/request-resolver";
 
 interface RunRow {
   requestId: string;
@@ -65,7 +66,11 @@ export function CollectionRunnerModal() {
       const current = useStore.getState();
       const workspaceId = current.workspace?.id;
       if (!workspaceId) break;
-      const environment = current.environments.find((e) => e.id === current.activeEnvId) ?? null;
+      const rawEnvironment = current.environments.find((e) => e.id === current.activeEnvId) ?? null;
+      const environment = mergeGlobalsIntoEnvironment(
+        rawEnvironment,
+        current.workspace?.globals ?? [],
+      );
 
       const outcome = await runSingleRequest(request, environment, {
         workspaceId,
