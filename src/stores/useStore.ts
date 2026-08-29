@@ -833,7 +833,7 @@ export const useStore = create<State>((set, get) => ({
       variables: [],
       createdAt: Date.now(),
     };
-    await db.environments.add(env);
+    await reportDbWriteFailure(db.environments.add(env));
     set((s) => ({ environments: [...s.environments, env], activeEnvId: s.activeEnvId ?? env.id }));
     persistSession(get);
     return env;
@@ -854,7 +854,7 @@ export const useStore = create<State>((set, get) => ({
         environment.id === id ? { ...environment, ...payload } : environment,
       ),
     }));
-    await db.environments.update(id, payload);
+    await reportDbWriteFailure(db.environments.update(id, payload));
   },
 
   duplicateEnvironment: async (id) => {
@@ -874,14 +874,14 @@ export const useStore = create<State>((set, get) => ({
       createdAt: Date.now(),
     };
 
-    await db.environments.add(copy);
+    await reportDbWriteFailure(db.environments.add(copy));
     set((state) => ({ environments: [...state.environments, copy] }));
     persistSession(get);
     return copy;
   },
 
   deleteEnvironment: async (id) => {
-    await db.environments.delete(id);
+    await reportDbWriteFailure(db.environments.delete(id));
     set((state) => {
       const environments = state.environments.filter((environment) => environment.id !== id);
       return {
@@ -935,7 +935,7 @@ export const useStore = create<State>((set, get) => ({
 
   addHistory: async (entry) => {
     const normalized = normalizeHistoryEntry(entry);
-    await db.history.put(normalized);
+    await reportDbWriteFailure(db.history.put(normalized));
     set((s) => ({
       history: [normalized, ...s.history.filter((h) => h.id !== normalized.id)].slice(0, 2500),
     }));
@@ -1026,7 +1026,7 @@ export const useStore = create<State>((set, get) => ({
     const entry = get().history.find((item) => item.id === historyId);
     if (!entry) return;
     const favorite = !entry.favorite;
-    await db.history.update(historyId, { favorite });
+    await reportDbWriteFailure(db.history.update(historyId, { favorite }));
     set((s) => ({
       history: s.history.map((item) => (item.id === historyId ? { ...item, favorite } : item)),
     }));
@@ -1036,14 +1036,14 @@ export const useStore = create<State>((set, get) => ({
     const entry = get().history.find((item) => item.id === historyId);
     if (!entry) return;
     const pinned = !entry.pinned;
-    await db.history.update(historyId, { pinned });
+    await reportDbWriteFailure(db.history.update(historyId, { pinned }));
     set((s) => ({
       history: s.history.map((item) => (item.id === historyId ? { ...item, pinned } : item)),
     }));
   },
 
   deleteHistoryEntry: async (historyId) => {
-    await db.history.delete(historyId);
+    await reportDbWriteFailure(db.history.delete(historyId));
     set((s) => ({ history: s.history.filter((item) => item.id !== historyId) }));
   },
 
@@ -1051,7 +1051,7 @@ export const useStore = create<State>((set, get) => ({
     const workspace = get().workspace;
     if (!workspace) return;
     const ids = await db.history.where("workspaceId").equals(workspace.id).primaryKeys();
-    await db.history.bulkDelete(ids as string[]);
+    await reportDbWriteFailure(db.history.bulkDelete(ids as string[]));
     set({ history: [] });
   },
 
