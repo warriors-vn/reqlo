@@ -23,6 +23,7 @@ export interface RunSingleRequestDeps {
   workspaceId: string;
   addHistory: (entry: HistoryEntry) => Promise<void>;
   updateEnvironment: (id: string, patch: { variables: KV[] }) => Promise<void>;
+  updateRequest: (id: string, patch: Partial<ApiRequest>) => Promise<void>;
 }
 
 export interface RunSingleRequestOutcome {
@@ -51,6 +52,21 @@ export async function runSingleRequest(
   options?: ExecuteRequestOptions,
 ): Promise<RunSingleRequestOutcome> {
   const result = await executeRequest(request, environment, options);
+
+  // When a cached token got auto-refreshed, log history and persist the
+  // request against the refreshed copy — the stale/expired token isn't what
+  // was actually sent, and would confuse anyone inspecting history later.
+  let effectiveRequest = request;
+  if (result.refreshedOAuth2Token && request.auth.type === "oauth2" && request.auth.oauth2) {
+    effectiveRequest = {
+      ...request,
+      auth: {
+        ...request.auth,
+        oauth2: { ...request.auth.oauth2, cachedToken: result.refreshedOAuth2Token },
+      },
+    };
+    await deps.updateRequest(request.id, { auth: effectiveRequest.auth });
+  }
 
   const scriptUpdates = Object.entries(result.scriptEnvironmentPatch ?? {}).map(([key, value]) => ({
     key,
@@ -102,7 +118,7 @@ export async function runSingleRequest(
     environmentName: environment?.name ?? null,
     favorite: false,
     pinned: false,
-    snapshot: createRequestSnapshot(request),
+    snapshot: createRequestSnapshot(effectiveRequest),
     responseKind: result.responseKind,
     responseContentType: result.contentType,
     responseHeaders: { ...result.headers },

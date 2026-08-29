@@ -38,6 +38,7 @@ export function Workspace() {
     environments,
     activeEnvId,
     updateEnvironment,
+    updateRequest,
   } = useStore();
   const [results, setResults] = useState<Record<string, ExecutionResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
@@ -103,14 +104,18 @@ export function Workspace() {
     const outcome = await runSingleRequest(
       activeRequest,
       activeEnvironment,
-      { workspaceId: workspace.id, addHistory, updateEnvironment },
+      { workspaceId: workspace.id, addHistory, updateEnvironment, updateRequest },
       { signal: controller.signal },
     );
     delete controllersRef.current[requestId];
     setResults((s) => ({ ...s, [requestId]: outcome.result }));
     setLoading((s) => ({ ...s, [requestId]: false }));
 
-    if (outcome.result.scriptError) {
+    if (outcome.result.oauth2RefreshError) {
+      toast.error("OAuth2 token refresh failed", {
+        description: outcome.result.oauth2RefreshError,
+      });
+    } else if (outcome.result.scriptError) {
       toast.warning("Pre-request script failed", { description: outcome.result.scriptError });
     } else if (outcome.scriptEnvironmentDropped) {
       toast.warning("Couldn't save the script's environment variable(s)", {

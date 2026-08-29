@@ -78,6 +78,7 @@ async function requestToken(
   tokenUrl: string,
   body: URLSearchParams,
   environment: Environment | null | undefined,
+  signal?: AbortSignal,
 ): Promise<OAuth2CachedToken> {
   let res: Response;
   try {
@@ -85,6 +86,7 @@ async function requestToken(
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
       body: body.toString(),
+      signal,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -113,6 +115,7 @@ async function requestToken(
 export async function fetchClientCredentialsToken(
   config: OAuth2Config,
   environment: Environment | null | undefined,
+  signal?: AbortSignal,
 ): Promise<OAuth2CachedToken> {
   const resolved = resolveOAuth2Config(config, environment);
   if (!resolved.tokenUrl) throw new Error("Token URL is required.");
@@ -125,7 +128,7 @@ export async function fetchClientCredentialsToken(
   if (resolved.clientSecret) body.set("client_secret", resolved.clientSecret);
   if (resolved.scope) body.set("scope", resolved.scope);
 
-  return requestToken(resolved.tokenUrl, body, environment);
+  return requestToken(resolved.tokenUrl, body, environment, signal);
 }
 
 /**
@@ -209,6 +212,7 @@ export async function beginAuthorizationCodeFlow(
 export async function refreshOAuth2Token(
   config: OAuth2Config,
   environment: Environment | null | undefined,
+  signal?: AbortSignal,
 ): Promise<OAuth2CachedToken> {
   const refreshToken = config.cachedToken?.refreshToken;
   if (!refreshToken)
@@ -223,5 +227,9 @@ export async function refreshOAuth2Token(
   if (resolved.clientSecret) body.set("client_secret", resolved.clientSecret);
   if (resolved.scope) body.set("scope", resolved.scope);
 
-  return requestToken(resolved.tokenUrl, body, environment);
+  const token = await requestToken(resolved.tokenUrl, body, environment, signal);
+  // Many providers omit refresh_token on a refresh response, expecting the
+  // client to keep reusing the one it already has — dropping it here would
+  // strand the request on manual re-auth the next time the token expires.
+  return token.refreshToken ? token : { ...token, refreshToken };
 }
