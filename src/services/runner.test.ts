@@ -40,6 +40,7 @@ function makeDeps(workspaceId = "ws-1") {
     workspaceId,
     addHistory: vi.fn(async (_entry: HistoryEntry) => {}),
     updateEnvironment: vi.fn(async (_id: string, _patch: { variables: KV[] }) => {}),
+    updateRequest: vi.fn(async (_id: string, _patch: Partial<ApiRequest>) => {}),
   };
 }
 

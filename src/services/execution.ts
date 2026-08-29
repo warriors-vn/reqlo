@@ -1,3 +1,5 @@
+import type { OAuth2CachedToken } from "@/services/db";
+
 export type ResponseKind = "empty" | "json" | "text" | "html" | "image" | "pdf" | "binary";
 
 export interface ExecutionResult {
@@ -19,6 +21,10 @@ export interface ExecutionResult {
   scriptEnvironmentPatch?: Record<string, string>;
   /** Set when the pre-request script threw, timed out, or returned something invalid. */
   scriptError?: string;
+  /** A cached OAuth2 token auto-refreshed before sending, for the caller to persist. */
+  refreshedOAuth2Token?: OAuth2CachedToken;
+  /** Set when a cached OAuth2 token was expired and refreshing it was unavailable or failed — the request was not sent. */
+  oauth2RefreshError?: string;
 }
 
 export function formatBytes(n: number) {

@@ -76,6 +76,7 @@ export function CollectionRunnerModal() {
         workspaceId,
         addHistory: current.addHistory,
         updateEnvironment: current.updateEnvironment,
+        updateRequest: current.updateRequest,
       });
 
       setRows((prev) =>
