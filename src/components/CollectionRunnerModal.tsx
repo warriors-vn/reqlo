@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Loader2, RotateCcw, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, RotateCcw, Square, XCircle } from "lucide-react";
 import { Overlay } from "@/components/Overlay";
 import { useStore } from "@/stores/useStore";
 import {
@@ -32,12 +32,13 @@ export function CollectionRunnerModal() {
   const open = useStore((s) => s.overlays.runner);
   const close = () => useStore.getState().closeOverlay("runner");
   const runnerTarget = useStore((s) => s.runnerTarget);
+  const activeRun = useStore((s) => s.activeRun);
+  const running = !!activeRun;
   const lastToken = useRef(0);
   const [rows, setRows] = useState<RunRow[]>([]);
   const [targetLabel, setTargetLabel] = useState("");
-  const [running, setRunning] = useState(false);
 
-  const runNow = async (target: RunTarget) => {
+  const runNow = async (target: RunTarget, token: number, signal: AbortSignal) => {
     const initial = useStore.getState();
     const label =
       target.type === "collection"
@@ -54,47 +55,63 @@ export function CollectionRunnerModal() {
         status: "pending",
       })),
     );
-    setRunning(true);
 
-    for (const request of orderedRequests) {
-      setRows((prev) =>
-        prev.map((row) => (row.requestId === request.id ? { ...row, status: "running" } : row)),
-      );
+    try {
+      for (const request of orderedRequests) {
+        if (signal.aborted) break;
 
-      // Re-read fresh every iteration — an Extract rule on an earlier request in
-      // this same run may have just written the variable this one needs.
-      const current = useStore.getState();
-      const workspaceId = current.workspace?.id;
-      if (!workspaceId) break;
-      const rawEnvironment = current.environments.find((e) => e.id === current.activeEnvId) ?? null;
-      const environment = mergeGlobalsIntoEnvironment(
-        rawEnvironment,
-        current.workspace?.globals ?? [],
-      );
+        setRows((prev) =>
+          prev.map((row) => (row.requestId === request.id ? { ...row, status: "running" } : row)),
+        );
 
-      const outcome = await runSingleRequest(request, environment, {
-        workspaceId,
-        addHistory: current.addHistory,
-        updateEnvironment: current.updateEnvironment,
-        updateRequest: current.updateRequest,
-      });
+        // Re-read fresh every iteration — an Extract rule on an earlier request in
+        // this same run may have just written the variable this one needs.
+        const current = useStore.getState();
+        const workspaceId = current.workspace?.id;
+        if (!workspaceId) break;
+        const rawEnvironment =
+          current.environments.find((e) => e.id === current.activeEnvId) ?? null;
+        const environment = mergeGlobalsIntoEnvironment(
+          rawEnvironment,
+          current.workspace?.globals ?? [],
+        );
 
-      setRows((prev) =>
-        prev.map((row) =>
-          row.requestId === request.id ? { ...row, status: "done", outcome } : row,
-        ),
-      );
+        const outcome = await runSingleRequest(
+          request,
+          environment,
+          {
+            workspaceId,
+            addHistory: current.addHistory,
+            updateEnvironment: current.updateEnvironment,
+            updateRequest: current.updateRequest,
+          },
+          { signal },
+        );
+
+        setRows((prev) =>
+          prev.map((row) =>
+            row.requestId === request.id ? { ...row, status: "done", outcome } : row,
+          ),
+        );
+      }
+    } finally {
+      useStore.getState().finishRun(token);
     }
-
-    setRunning(false);
   };
 
   useEffect(() => {
-    if (runnerTarget && runnerTarget.token !== lastToken.current) {
-      lastToken.current = runnerTarget.token;
-      void runNow(runnerTarget);
+    // runnerTarget and activeRun are always set together by startRun, with
+    // the same token — runnerTarget carries the {type, id} activeRun itself
+    // doesn't duplicate.
+    if (
+      activeRun &&
+      runnerTarget?.token === activeRun.token &&
+      activeRun.token !== lastToken.current
+    ) {
+      lastToken.current = activeRun.token;
+      void runNow(runnerTarget, activeRun.token, activeRun.controller.signal);
     }
-  }, [runnerTarget]);
+  }, [activeRun, runnerTarget]);
 
   const completed = rows.filter((r) => r.status === "done");
   const passedRequests = completed.filter((r) => rowPassed(r.outcome)).length;
@@ -146,10 +163,20 @@ export function CollectionRunnerModal() {
           )}
         </div>
 
+        {running && (
+          <button
+            type="button"
+            onClick={() => useStore.getState().stopRun()}
+            className="inline-flex h-9 items-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3.5 text-xs font-medium text-destructive transition hover:bg-destructive/15"
+          >
+            <Square className="size-3 fill-current" /> Stop
+          </button>
+        )}
+
         {!running && runnerTarget && rows.length > 0 && (
           <button
             type="button"
-            onClick={() => void runNow(runnerTarget)}
+            onClick={() => useStore.getState().startRun(runnerTarget)}
             className="inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-background/80 px-3.5 text-xs font-medium transition hover:border-foreground/15 hover:bg-accent"
           >
             <RotateCcw className="size-3.5" /> Run again
