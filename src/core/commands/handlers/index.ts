@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { commandRegistry } from "../registry";
 import type { CommandDescriptor } from "../types";
+import type { Workspace } from "@/services/db";
 import { useStore, pickFile } from "@/stores/useStore";
 import { applyTheme, getStoredTheme, resolveTheme, setStoredTheme } from "@/lib/theme";
 import { useCodeSnippetPanelStore } from "@/features/code-snippets/stores/useCodeSnippetPanelStore";
@@ -297,9 +298,24 @@ export function registerBuiltInCommands(): () => void {
       icon: Upload,
       shortcut: "mod+alt+shift+o",
       run: async () => {
+        if (
+          !confirmDanger(
+            "Restore a workspace backup? This will replace the current local workspace.",
+          )
+        )
+          return;
         const text = await pickFile("application/json,.json");
         if (!text) return;
-        const workspace = await s().importWorkspaceJSON(text);
+
+        let workspace: Workspace | null;
+        try {
+          workspace = await s().importWorkspaceJSON(text);
+        } catch {
+          toast.error("Restore failed", {
+            description: "Nothing was changed — your current workspace is still intact.",
+          });
+          return;
+        }
         if (!workspace) {
           toast.error("Restore failed", {
             description: "The selected file is not a valid Reqlo workspace export.",
