@@ -12,13 +12,20 @@ export interface ExecuteRequestOptions {
   signal?: AbortSignal;
 }
 
+/** Runs `callback` once when `signal` aborts — immediately if it's already
+ * aborted, since an already-fired signal never emits a future "abort" event. */
+function onAbort(signal: AbortSignal, callback: () => void): void {
+  if (signal.aborted) callback();
+  else signal.addEventListener("abort", callback, { once: true });
+}
+
 export async function executeRequest(
   req: ApiRequest,
   environment?: Environment | null,
   options?: ExecuteRequestOptions,
 ): Promise<ExecutionResult> {
   if (req.mock.enabled) {
-    return buildMockResult(req.mock);
+    return buildMockResult(req.mock, options?.signal);
   }
 
   const started = performance.now();
@@ -32,13 +39,9 @@ export async function executeRequest(
     }, req.timeoutMs);
   }
   if (options?.signal) {
-    const cancel = () => controller.abort(new DOMException("Request cancelled.", "AbortError"));
-    // An already-aborted signal never fires a future "abort" event — check
-    // the current state directly too, or a cancel that raced ahead of this
-    // call (unlikely today given callers create a fresh controller per send,
-    // but not guaranteed) would silently never propagate.
-    if (options.signal.aborted) cancel();
-    else options.signal.addEventListener("abort", cancel, { once: true });
+    onAbort(options.signal, () =>
+      controller.abort(new DOMException("Request cancelled.", "AbortError")),
+    );
   }
 
   let effectiveReq = req;
@@ -179,10 +182,23 @@ function oauth2FailureResult(started: number, message: string): ExecutionResult 
   return { ...emptyFailureResult(started), error: message, oauth2RefreshError: message };
 }
 
-async function buildMockResult(mock: MockConfig): Promise<ExecutionResult> {
+async function buildMockResult(mock: MockConfig, signal?: AbortSignal): Promise<ExecutionResult> {
   const started = performance.now();
   if (mock.delayMs > 0) {
-    await new Promise((resolve) => setTimeout(resolve, mock.delayMs));
+    // The delay is the only awaited step in a mocked send — without listening
+    // for the external signal here, Cancel/Stop would have to wait out the
+    // full delay before a mocked request could ever be interrupted.
+    const cancelled = await new Promise<boolean>((resolve) => {
+      const timeout = setTimeout(() => resolve(false), mock.delayMs);
+      if (!signal) return;
+      onAbort(signal, () => {
+        clearTimeout(timeout);
+        resolve(true);
+      });
+    });
+    if (cancelled) {
+      return { ...emptyFailureResult(started), error: "Request cancelled." };
+    }
   }
 
   const bytes = new TextEncoder().encode(mock.body).length;
