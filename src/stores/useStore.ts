@@ -217,6 +217,46 @@ const DEFAULT_SIDEBAR_TREE: SidebarTreeState = {
 // never survive a reload (see plan's "no persistence across reload" scope
 // cut) the way real State does via persistSession.
 const UNDO_GRACE_MS = 6000;
+// The one number the in-memory store and the IndexedDB table now agree on —
+// init() pages the load to this many rows, addHistory prunes the table down
+// to it on every write. Applies uniformly, including to pinned entries:
+// exempting them turned a bounded-cost prune into a scan over however many a
+// user has ever pinned, and once a pinned row outlived the load window it'd
+// be invisible in the UI with no way to reach it to un-pin — worse than just
+// letting it age out like everything else.
+const HISTORY_RETENTION = 2500;
+
+/** The most recent `limit` history entries for a workspace, newest first —
+ * an indexed, bounded read instead of loading the whole table. Exported only
+ * so tests can exercise the paging/pruning mechanism at a small scale without
+ * the real HISTORY_RETENTION's row count making that prohibitively slow. */
+export async function loadRecentHistory(
+  workspaceId: string,
+  limit: number,
+): Promise<HistoryEntry[]> {
+  const items = await db.history
+    .where("[workspaceId+executedAt]")
+    .between([workspaceId, Dexie.minKey], [workspaceId, Dexie.maxKey])
+    .reverse()
+    .limit(limit)
+    .toArray();
+  return items.map(normalizeHistoryEntry);
+}
+
+/** Deletes history entries past the `limit` most recent for a workspace.
+ * Only ever touches the overflow past the cutoff, not the whole table — call
+ * from inside the same transaction as the write that might have pushed the
+ * count over the limit, so the table never briefly holds more than one
+ * entry's worth over it. */
+export async function pruneHistoryToLimit(workspaceId: string, limit: number): Promise<void> {
+  const staleIds = await db.history
+    .where("[workspaceId+executedAt]")
+    .between([workspaceId, Dexie.minKey], [workspaceId, Dexie.maxKey])
+    .reverse()
+    .offset(limit)
+    .primaryKeys();
+  if (staleIds.length) await db.history.bulkDelete(staleIds as string[]);
+}
 const recentlyDeletedRequests = new Map<string, ApiRequest>();
 const pendingRequestPrunes = new Map<string, ReturnType<typeof setTimeout>>();
 // A monotonic counter, not Date.now() — two runs started within the same
@@ -265,12 +305,7 @@ export const useStore = create<State>((set, get) => ({
         .equals(ws.id)
         .toArray()
         .then((items) => items.map(normalizeApiRequest)),
-      db.history
-        .where("[workspaceId+executedAt]")
-        .between([ws.id, Dexie.minKey], [ws.id, Dexie.maxKey])
-        .reverse()
-        .toArray()
-        .then((items) => items.map(normalizeHistoryEntry)),
+      loadRecentHistory(ws.id, HISTORY_RETENTION),
       db.environments.where("workspaceId").equals(ws.id).toArray(),
     ]);
     collections.sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
@@ -973,9 +1008,17 @@ export const useStore = create<State>((set, get) => ({
 
   addHistory: async (entry) => {
     const normalized = normalizeHistoryEntry(entry);
-    await reportDbWriteFailure(db.history.put(normalized));
+    await reportDbWriteFailure(
+      db.transaction("rw", db.history, async () => {
+        await db.history.put(normalized);
+        await pruneHistoryToLimit(normalized.workspaceId, HISTORY_RETENTION);
+      }),
+    );
     set((s) => ({
-      history: [normalized, ...s.history.filter((h) => h.id !== normalized.id)].slice(0, 2500),
+      history: [normalized, ...s.history.filter((h) => h.id !== normalized.id)].slice(
+        0,
+        HISTORY_RETENTION,
+      ),
     }));
   },
 
@@ -1397,7 +1440,12 @@ export const useStore = create<State>((set, get) => ({
           },
         }),
       )
-      .sort((left, right) => right.executedAt - left.executedAt);
+      .sort((left, right) => right.executedAt - left.executedAt)
+      // A restored export is a write like any other — it must respect the
+      // same retention limit addHistory enforces on every other write, or a
+      // heavy export reproduces the exact unbounded-table bug this retention
+      // work fixed, just via a different door.
+      .slice(0, HISTORY_RETENTION);
 
     await db.transaction(
       "rw",
