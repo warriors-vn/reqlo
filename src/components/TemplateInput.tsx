@@ -1,4 +1,11 @@
-import { useMemo, useRef, useState, type InputHTMLAttributes, type KeyboardEvent } from "react";
+import {
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type InputHTMLAttributes,
+  type KeyboardEvent,
+} from "react";
 import { Braces } from "lucide-react";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { useTemplateVariableKeys } from "@/hooks/useTemplateVariableKeys";
@@ -34,9 +41,10 @@ export function TemplateInput({
 }: TemplateInputProps) {
   const variableKeys = useTemplateVariableKeys();
   const inputRef = useRef<HTMLInputElement>(null);
+  const listboxId = useId();
   const [triggerStart, setTriggerStart] = useState<number | null>(null);
   const [query, setQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [rawActiveIndex, setActiveIndex] = useState(0);
 
   const suggestions = useMemo(() => {
     if (triggerStart === null) return [];
@@ -45,6 +53,11 @@ export function TemplateInput({
   }, [triggerStart, query, variableKeys]);
 
   const open = triggerStart !== null && suggestions.length > 0;
+  const getOptionId = (index: number) => `${listboxId}-option-${index}`;
+  // suggestions can shrink out from under activeIndex when the underlying
+  // variable list changes (e.g. edited in the Environment panel) while a
+  // popover elsewhere is open — clamp so it never points past the last row.
+  const activeIndex = Math.min(rawActiveIndex, Math.max(suggestions.length - 1, 0));
 
   const close = () => {
     setTriggerStart(null);
@@ -128,6 +141,11 @@ export function TemplateInput({
           onBlur={close}
           className={className}
           {...rest}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={open ? listboxId : undefined}
+          aria-autocomplete="list"
+          aria-activedescendant={open ? getOptionId(activeIndex) : undefined}
         />
       </PopoverAnchor>
       <PopoverContent
@@ -137,10 +155,14 @@ export function TemplateInput({
         onCloseAutoFocus={(event) => event.preventDefault()}
         className="w-56 rounded-xl border-border/80 bg-popover p-1 shadow-lg"
       >
-        <div className="max-h-56 space-y-0.5 overflow-auto">
+        <div role="listbox" id={listboxId} className="max-h-56 space-y-0.5 overflow-auto">
           {suggestions.map((key, index) => (
             <button
               key={key}
+              id={getOptionId(index)}
+              role="option"
+              aria-selected={index === activeIndex}
+              tabIndex={-1}
               type="button"
               onMouseDown={(event) => {
                 event.preventDefault();
