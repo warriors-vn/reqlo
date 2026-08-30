@@ -10,6 +10,11 @@ import {
   isTextualResponse,
   type ExecutionResult,
 } from "@/services/execution";
+import {
+  MAX_RESPONSE_RENDER_LENGTH,
+  buildPrettyBody,
+  truncateForRender,
+} from "@/lib/response-body-view";
 
 type PrimaryTab = "body" | "headers";
 type BodyView = "pretty" | "raw" | "preview";
@@ -26,18 +31,15 @@ export function ResponseViewer({
   const [copied, setCopied] = useState(false);
   const previewUrl = useObjectUrl(result?.blob ?? null);
 
-  const prettyBody = useMemo(() => {
-    if (!result) return "";
-    if (result.contentType.includes("json")) {
-      try {
-        return JSON.stringify(JSON.parse(result.body), null, 2);
-      } catch {
-        return result.body;
-      }
-    }
-    return result.body;
-  }, [result]);
+  const prettyBody = useMemo(
+    () => (result ? buildPrettyBody(result.body, result.contentType) : ""),
+    [result],
+  );
   const currentBodyView = useMemo(() => getDefaultBodyView(result), [result]);
+  const renderableBody = useMemo(() => {
+    if (bodyView === "preview") return { text: "", truncated: false, totalLength: 0 };
+    return truncateForRender(bodyView === "pretty" ? prettyBody : (result?.body ?? ""));
+  }, [bodyView, prettyBody, result]);
 
   useEffect(() => {
     setBodyView(currentBodyView);
@@ -188,10 +190,15 @@ export function ResponseViewer({
                   <ResponsePreview result={result} previewUrl={previewUrl} />
                 ) : (
                   <ScrollArea className="h-full">
+                    {renderableBody.truncated && (
+                      <div className="border-b border-border/70 bg-[var(--status-warn)]/10 px-4 py-2 text-2xs text-muted-foreground">
+                        Showing the first {MAX_RESPONSE_RENDER_LENGTH.toLocaleString()} of{" "}
+                        {renderableBody.totalLength.toLocaleString()} characters — download the
+                        response to see the rest.
+                      </div>
+                    )}
                     <pre className="p-4 font-mono text-xs leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
-                      {bodyView === "pretty"
-                        ? prettyBody || "(empty body)"
-                        : result.body || "(empty body)"}
+                      {renderableBody.text || "(empty body)"}
                     </pre>
                   </ScrollArea>
                 )}
@@ -266,13 +273,22 @@ function ResponsePreview({
   result: ExecutionResult;
   previewUrl: string | null;
 }) {
-  if (result.responseKind === "html") {
+  if (result.responseKind === "html" && result.body.length <= MAX_RESPONSE_RENDER_LENGTH) {
     return (
       <iframe
         title="HTML preview"
         srcDoc={result.body}
         className="h-full w-full border-0 bg-white"
         sandbox="allow-same-origin"
+      />
+    );
+  }
+
+  if (result.responseKind === "html") {
+    return (
+      <PreviewUnavailable
+        result={result}
+        message="This response is too large to preview safely. Use download, or switch to Raw for a capped view."
       />
     );
   }
@@ -301,14 +317,21 @@ function ResponsePreview({
     );
   }
 
+  return <PreviewUnavailable result={result} />;
+}
+
+function PreviewUnavailable({
+  result,
+  message = "This response type does not support inline preview yet. Use download to inspect the full payload.",
+}: {
+  result: ExecutionResult;
+  message?: string;
+}) {
   return (
     <div className="grid h-full min-h-[260px] place-items-center p-6">
       <div className="max-w-md rounded-[24px] border border-dashed border-border bg-background/70 px-5 py-6 text-center">
         <div className="text-sm font-semibold tracking-tight">Preview unavailable</div>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          This response type does not support inline preview yet. Use download to inspect the full
-          payload.
-        </p>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{message}</p>
         <div className="mt-3 text-2xs font-mono text-muted-foreground">
           {formatResponseKindLabel(result.responseKind)} · {formatBytes(result.sizeBytes)}
         </div>
