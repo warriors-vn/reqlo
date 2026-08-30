@@ -227,7 +227,12 @@ function convertBody(
       drafts.formData = (body.formdata ?? []).map((row) => {
         if (row.type === "file") skippedFiles++;
         const empty = createEmptyFormDataRow(row.type === "file" ? "file" : "text");
-        return { ...empty, key: row.key, value: row.type === "file" ? "" : (row.value ?? "") };
+        return {
+          ...empty,
+          key: row.key,
+          value: row.type === "file" ? "" : (row.value ?? ""),
+          enabled: !row.disabled,
+        };
       });
       if (skippedFiles > 0) {
         warnings.push(
@@ -244,6 +249,11 @@ function convertBody(
       };
       return { bodyType: "graphql", body: "", bodyDrafts: drafts };
     }
+    case "file":
+      warnings.push(
+        `"${requestName || "Untitled request"}": this request has a raw file body — Postman exports don't include the file contents, so it was dropped.`,
+      );
+      return { bodyType: "none", body: "", bodyDrafts: drafts };
     default:
       return { bodyType: "none", body: "", bodyDrafts: drafts };
   }
