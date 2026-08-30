@@ -20,6 +20,7 @@ import { useCommandSystem } from "@/hooks/useCommandSystem";
 import { CodeSnippetPanel } from "@/features/code-snippets/components/CodeSnippetPanel";
 import { mergeGlobalsIntoEnvironment } from "@/features/code-snippets/utils/request-resolver";
 import type { ExecutionResult } from "@/services/execution";
+import { pruneStaleKeys } from "@/lib/prune-stale-keys";
 import { toast } from "sonner";
 
 export function Workspace() {
@@ -73,6 +74,31 @@ export function Workspace() {
     init();
   }, [init]);
 
+  // Drop results/loading entries once their tab closes — deleteRequest
+  // already closes any tab pointing at the deleted request, so `tabs` alone
+  // covers both cases the fix asked for. Nothing ever reads a result for a
+  // request with no open tab, so this is a pure memory bound, not a behavior
+  // change — each result (and its response Blob) would otherwise be held for
+  // the rest of the session.
+  useEffect(() => {
+    const openIds = new Set(tabs.map((t) => t.requestId));
+    setResults((prev) => pruneStaleKeys(prev, openIds));
+    setLoading((prev) => {
+      // Don't drop a request that's still actively sending just because its
+      // tab closed — send()'s own completion handler is what cleans that up
+      // (and skips writing the result back in if the tab is still gone by
+      // then). Clearing the flag early here would hide an in-flight send
+      // from `isLoading`, so reopening the same request mid-flight would
+      // show "Send" instead of "Cancel" and let a second, uncancellable send
+      // race the first.
+      const keepIds = new Set(openIds);
+      for (const [id, isLoading] of Object.entries(prev)) {
+        if (isLoading) keepIds.add(id);
+      }
+      return pruneStaleKeys(prev, keepIds);
+    });
+  }, [tabs]);
+
   // The sidebar's persisted desktop preference shouldn't auto-open an overlay
   // drawer on a phone-sized viewport the first time it's seen.
   useEffect(() => {
@@ -108,8 +134,20 @@ export function Workspace() {
       { signal: controller.signal },
     );
     delete controllersRef.current[requestId];
-    setResults((s) => ({ ...s, [requestId]: outcome.result }));
-    setLoading((s) => ({ ...s, [requestId]: false }));
+
+    // The tab (or the request itself) may have closed while this was in
+    // flight. The prune effect above deliberately leaves a loading entry
+    // alone until its send finishes — don't undo that here by writing a
+    // result back in for a tab that's gone; just let both entries go.
+    const stillOpen = useStore.getState().tabs.some((t) => t.requestId === requestId);
+    setResults((s) => (stillOpen ? { ...s, [requestId]: outcome.result } : s));
+    setLoading((s) => {
+      if (stillOpen) return { ...s, [requestId]: false };
+      if (!(requestId in s)) return s;
+      const next = { ...s };
+      delete next[requestId];
+      return next;
+    });
 
     if (outcome.result.oauth2RefreshError) {
       toast.error("OAuth2 token refresh failed", {
