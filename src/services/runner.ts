@@ -16,6 +16,7 @@ import {
 } from "@/services/execution";
 import { resolveExtractPath, stringifyExtractedValue } from "@/services/extract";
 import { evaluateAssertions, type AssertionOutcome } from "@/services/assertions";
+import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
 
 const MAX_HISTORY_RESPONSE_BODY = 40_000;
 
@@ -65,7 +66,15 @@ export async function runSingleRequest(
         oauth2: { ...request.auth.oauth2, cachedToken: result.refreshedOAuth2Token },
       },
     };
-    await deps.updateRequest(request.id, { auth: effectiveRequest.auth });
+    try {
+      await deps.updateRequest(request.id, { auth: effectiveRequest.auth });
+    } catch {
+      // updateRequest's own DB-write-failure path already toasts the user —
+      // don't let a failed persist of the refreshed token abort history/
+      // extract/assert for a request that otherwise completed successfully.
+      // Worst case, the next send just refreshes again from the same stale
+      // cached token.
+    }
   }
 
   const scriptUpdates = Object.entries(result.scriptEnvironmentPatch ?? {}).map(([key, value]) => ({
@@ -162,6 +171,18 @@ async function applyExtractRules(
   );
   if (!rules.length) return { extracted: [], failed: [], noActiveEnvironment: false };
   if (!environment) return { extracted: [], failed: [], noActiveEnvironment: true };
+
+  // JSON.parse on a body this large is itself the tab-freezing operation the
+  // response-render cap was meant to prevent — skip parsing rather than
+  // block the main thread on it, and report every rule as failed so the
+  // "couldn't extract" toast at least tells the user something happened.
+  if (responseBody.length > MAX_RESPONSE_RENDER_LENGTH) {
+    return {
+      extracted: [],
+      failed: rules.map((rule) => rule.variableName.trim() || rule.path),
+      noActiveEnvironment: false,
+    };
+  }
 
   let parsed: unknown;
   try {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { evaluateAssertions } from "@/services/assertions";
 import type { AssertionRule } from "@/services/db";
 import type { ExecutionResult } from "@/services/execution";
+import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
 
 function makeResult(overrides: Partial<ExecutionResult> = {}): ExecutionResult {
   return {
@@ -88,6 +89,14 @@ describe("evaluateAssertions", () => {
       const [outcome] = evaluateAssertions(rules, makeResult({ body: "not json" }));
       expect(outcome.passed).toBe(false);
       expect(outcome.message).toBe("Response is not valid JSON");
+    });
+
+    it("short-circuits every jsonBody rule without parsing when the body exceeds the render cap", () => {
+      const hugeBody = `{"a":"${"x".repeat(MAX_RESPONSE_RENDER_LENGTH)}"}`;
+      const rules = [makeRule({ kind: "jsonBody", operator: "exists", path: "a" })];
+      const [outcome] = evaluateAssertions(rules, makeResult({ body: hugeBody }));
+      expect(outcome.passed).toBe(false);
+      expect(outcome.message).toBe("Response is too large to evaluate");
     });
 
     it("exists: passes when the path resolves, fails when it doesn't", () => {

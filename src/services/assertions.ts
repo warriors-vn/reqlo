@@ -1,6 +1,7 @@
 import type { AssertionRule } from "@/services/db";
 import type { ExecutionResult } from "@/services/execution";
 import { resolveExtractPath, stringifyExtractedValue } from "@/services/extract";
+import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
 
 export interface AssertionOutcome {
   rule: AssertionRule;
@@ -15,7 +16,12 @@ export function evaluateAssertions(
   if (!result) return [];
 
   let parsedBody: unknown;
-  if (result.responseKind === "json" && result.body) {
+  // JSON.parse on a body this large is itself the tab-freezing operation the
+  // response-render cap was meant to prevent — skip parsing rather than
+  // block the main thread on it. jsonBody rules below report why explicitly,
+  // same as the "not valid JSON" case does.
+  const tooLargeToParse = result.body.length > MAX_RESPONSE_RENDER_LENGTH;
+  if (result.responseKind === "json" && result.body && !tooLargeToParse) {
     try {
       parsedBody = JSON.parse(result.body);
     } catch {
@@ -23,13 +29,16 @@ export function evaluateAssertions(
     }
   }
 
-  return rules.filter((rule) => rule.enabled).map((rule) => evaluateOne(rule, result, parsedBody));
+  return rules
+    .filter((rule) => rule.enabled)
+    .map((rule) => evaluateOne(rule, result, parsedBody, tooLargeToParse));
 }
 
 function evaluateOne(
   rule: AssertionRule,
   result: ExecutionResult,
   parsedBody: unknown,
+  tooLargeToParse: boolean,
 ): AssertionOutcome {
   if (rule.kind === "status") {
     const expected = Number(rule.expected);
@@ -44,7 +53,11 @@ function evaluateOne(
   }
 
   if (parsedBody === undefined) {
-    return { rule, passed: false, message: "Response is not valid JSON" };
+    return {
+      rule,
+      passed: false,
+      message: tooLargeToParse ? "Response is too large to evaluate" : "Response is not valid JSON",
+    };
   }
 
   const resolved = resolveExtractPath(parsedBody, rule.path);

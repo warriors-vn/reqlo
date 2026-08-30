@@ -9,6 +9,7 @@ import {
   type KV,
 } from "@/services/db";
 import { collectRequestsInTreeOrder, runSingleRequest } from "@/services/runner";
+import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
 
 function makeRequest(overrides: Partial<ApiRequest> = {}): ApiRequest {
   const now = Date.now();
@@ -358,6 +359,61 @@ describe("runSingleRequest", () => {
 
     expect(outcome.assertionOutcomes).toHaveLength(1);
     expect(outcome.assertionOutcomes[0].passed).toBe(false);
+  });
+
+  it("still logs history when persisting a refreshed OAuth2 token fails", async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.includes("/token")
+        ? jsonResponse({ access_token: "fresh", token_type: "Bearer" })
+        : jsonResponse({}),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const deps = makeDeps();
+    deps.updateRequest.mockRejectedValueOnce(new Error("DB write failed"));
+    const request = makeRequest({
+      auth: {
+        type: "oauth2",
+        oauth2: {
+          grantType: "client_credentials",
+          tokenUrl: "https://auth.example.com/token",
+          clientId: "id",
+          cachedToken: {
+            accessToken: "stale",
+            tokenType: "Bearer",
+            expiresAt: Date.now() - 1000,
+            environmentId: null,
+            fetchedAt: Date.now() - 5000,
+          },
+        },
+      },
+    });
+
+    const outcome = await runSingleRequest(request, makeEnv(), deps);
+
+    expect(outcome.result.ok).toBe(true);
+    expect(deps.updateRequest).toHaveBeenCalledTimes(1);
+    expect(deps.addHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips JSON.parse and reports every rule as failed when the body exceeds the render cap", async () => {
+    const hugeBody = `{"token":"${"x".repeat(MAX_RESPONSE_RENDER_LENGTH)}"}`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(hugeBody, { status: 200, headers: { "content-type": "application/json" } }),
+      ),
+    );
+    const deps = makeDeps();
+    const request = makeRequest({
+      extracts: [{ id: "e1", path: "token", variableName: "authToken", enabled: true }],
+    });
+
+    const outcome = await runSingleRequest(request, makeEnv(), deps);
+
+    expect(outcome.extractedVariables).toEqual([]);
+    expect(outcome.extractFailures).toEqual(["authToken"]);
+    expect(deps.updateEnvironment).not.toHaveBeenCalled();
   });
 
   it("flags noActiveEnvironment when extract rules exist but there's no active environment", async () => {
