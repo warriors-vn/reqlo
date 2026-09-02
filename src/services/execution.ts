@@ -1,6 +1,14 @@
 import type { OAuth2CachedToken } from "@/services/db";
 
-export type ResponseKind = "empty" | "json" | "text" | "html" | "image" | "pdf" | "binary";
+export type ResponseKind =
+  | "empty"
+  | "json"
+  | "text"
+  | "html"
+  | "stream"
+  | "image"
+  | "pdf"
+  | "binary";
 
 export interface ExecutionResult {
   status: number | null;
@@ -49,6 +57,8 @@ export function formatResponseKindLabel(kind: ResponseKind) {
       return "Text";
     case "html":
       return "HTML";
+    case "stream":
+      return "Stream";
     case "image":
       return "Image";
     case "pdf":
@@ -61,5 +71,5 @@ export function formatResponseKindLabel(kind: ResponseKind) {
 }
 
 export function isTextualResponse(kind: ResponseKind) {
-  return kind === "json" || kind === "text" || kind === "html";
+  return kind === "json" || kind === "text" || kind === "html" || kind === "stream";
 }

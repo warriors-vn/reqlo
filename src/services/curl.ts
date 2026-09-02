@@ -9,6 +9,7 @@ import {
   type KV,
   type RequestBodyType,
 } from "@/services/db";
+import { looksLikeJson } from "@/services/import-shared";
 
 /**
  * Parse a cURL command into a partial ApiRequest.
@@ -233,11 +234,6 @@ function safePathname(url: string): string {
   } catch {
     return url;
   }
-}
-
-function looksLikeJson(s: string) {
-  const t = s.trim();
-  return (t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"));
 }
 
 function tokenize(s: string): string[] {

@@ -27,6 +27,8 @@ import { fetchIntrospectionSchema } from "@/services/graphql-introspection";
 import { mergeGlobalsIntoEnvironment } from "@/features/code-snippets/utils/request-resolver";
 import type { IntrospectionQuery } from "graphql";
 import { looksLikePostmanCollection, parsePostmanCollection } from "@/services/postman";
+import { looksLikeInsomniaExport, parseInsomniaExport } from "@/services/insomnia";
+import { looksLikeHarLog, parseHarLog } from "@/services/har";
 import { looksLikeOpenApiDocument, parseOpenApiDocument } from "@/services/openapi";
 import type { RunTarget } from "@/services/runner";
 import {
@@ -43,6 +45,17 @@ import {
   supportsDirectoryExport,
   writeFilesToDirectory,
 } from "@/services/gitExport";
+import {
+  collectDescendantFolderIds,
+  compareRequestsByPosition,
+  getNextCollectionPosition,
+  getNextFolderPosition,
+  getNextRequestPosition,
+  reorderByIndex,
+  resequenceRequests,
+  sortRequestsForCollection,
+  wouldCreateCycle,
+} from "@/services/tree-move";
 
 interface Tab {
   id: string;
@@ -68,6 +81,22 @@ export type OverlayKey =
   | "env-switcher"
   | "shortcuts"
   | "runner";
+
+/** A styled stand-in for window.prompt(), requested imperatively (e.g. from a
+ * command with no owning component to hold dialog state) via requestPrompt(). */
+export interface PromptRequest {
+  title: string;
+  defaultValue: string;
+  confirmLabel?: string;
+}
+
+/** A styled stand-in for window.confirm(), requested imperatively via
+ * requestConfirm() — see PromptRequest. */
+export interface ConfirmRequest {
+  title: string;
+  description?: string;
+  confirmLabel?: string;
+}
 
 // Session-only — never persisted to IndexedDB. A fetched schema is
 // derived/disposable data: refetching is cheap, and it would need its own DB
@@ -108,6 +137,12 @@ interface State {
   // is whatever runnerTarget.token currently matches, not duplicated here.
   activeRun: { token: number; controller: AbortController } | null;
 
+  // the in-flight window.prompt()/window.confirm() stand-in, if any — set by
+  // requestPrompt/requestConfirm and read by PromptDialog/GlobalConfirmDialog,
+  // the single global instances of each mounted in Workspace.tsx.
+  promptRequest: (PromptRequest & { resolve: (value: string | null) => void }) | null;
+  confirmRequest: (ConfirmRequest & { resolve: (value: boolean) => void }) | null;
+
   init: () => Promise<void>;
 
   // overlays
@@ -115,6 +150,12 @@ interface State {
   closeOverlay: (k: OverlayKey) => void;
   toggleOverlay: (k: OverlayKey) => void;
   setPalette: (open: boolean) => void; // legacy alias
+
+  // styled window.prompt()/window.confirm() replacements
+  requestPrompt: (request: PromptRequest) => Promise<string | null>;
+  resolvePrompt: (value: string | null) => void;
+  requestConfirm: (request: ConfirmRequest) => Promise<boolean>;
+  resolveConfirm: (value: boolean) => void;
 
   // collection runner
   startRun: (target: RunTarget) => void;
@@ -193,6 +234,8 @@ interface State {
   importCurl: (text: string) => Promise<ApiRequest | null>;
   importCollectionJSON: (text: string) => Promise<Collection | null>;
   importPostmanCollectionJSON: (text: string) => Promise<Collection | null>;
+  importInsomniaExportJSON: (text: string) => Promise<Collection | null>;
+  importHarLogJSON: (text: string) => Promise<Collection | null>;
   importOpenApiText: (text: string) => Promise<Collection | null>;
   importWorkspaceJSON: (text: string) => Promise<Workspace | null>;
   exportCollectionById: (id: string) => Promise<void>;
@@ -265,6 +308,55 @@ const pendingRequestPrunes = new Map<string, ReturnType<typeof setTimeout>>();
 // "is this a new run" check is a strict inequality against the last token it saw.
 let nextRunToken = 0;
 
+/** Shared tail end of every "import a collection from some external format"
+ * action (Postman, Insomnia, HAR, OpenAPI) — each parser produces the same
+ * `{ collectionName, folders, requests, warnings }` shape, and from there
+ * committing it (new Collection, re-parented folders/requests, DB write,
+ * store update, warnings toast) is identical regardless of source format. */
+async function commitImportedCollection(
+  result: { collectionName: string; folders: Folder[]; requests: ApiRequest[]; warnings: string[] },
+  ws: Workspace,
+  set: (fn: (s: State) => Partial<State>) => void,
+  get: () => State,
+): Promise<Collection> {
+  const position = getNextCollectionPosition(get().collections);
+  const newCol: Collection = {
+    id: uid(),
+    workspaceId: ws.id,
+    name: result.collectionName,
+    position,
+    createdAt: Date.now(),
+  };
+  const newFolders: Folder[] = result.folders.map((folder) => ({
+    ...folder,
+    workspaceId: ws.id,
+    collectionId: newCol.id,
+  }));
+  const newReqs: ApiRequest[] = result.requests.map((request) => ({
+    ...request,
+    workspaceId: ws.id,
+    collectionId: newCol.id,
+  }));
+
+  await db.transaction("rw", db.collections, db.folders, db.requests, async () => {
+    await db.collections.add(newCol);
+    if (newFolders.length) await db.folders.bulkAdd(newFolders);
+    if (newReqs.length) await db.requests.bulkAdd(newReqs);
+  });
+  set((s) => ({
+    collections: [...s.collections, newCol],
+    folders: [...s.folders, ...newFolders],
+    requests: [...s.requests, ...newReqs],
+  }));
+
+  if (result.warnings.length) {
+    toast.warning(`Imported with ${result.warnings.length} note(s)`, {
+      description: result.warnings.slice(0, 3).join(" · "),
+    });
+  }
+  return newCol;
+}
+
 export const useStore = create<State>((set, get) => ({
   ready: false,
   workspace: null,
@@ -293,6 +385,8 @@ export const useStore = create<State>((set, get) => ({
   sendPing: 0,
   runnerTarget: null,
   activeRun: null,
+  promptRequest: null,
+  confirmRequest: null,
 
   init: async () => {
     void requestPersistentStorage();
@@ -373,6 +467,23 @@ export const useStore = create<State>((set, get) => ({
   closeOverlay: (k) => set((s) => ({ overlays: { ...s.overlays, [k]: false } })),
   toggleOverlay: (k) => set((s) => ({ overlays: { ...s.overlays, [k]: !s.overlays[k] } })),
   setPalette: (open) => set((s) => ({ overlays: { ...s.overlays, palette: open } })),
+
+  requestPrompt: (request) =>
+    new Promise((resolve) => {
+      set({ promptRequest: { ...request, resolve } });
+    }),
+  resolvePrompt: (value) => {
+    get().promptRequest?.resolve(value);
+    set({ promptRequest: null });
+  },
+  requestConfirm: (request) =>
+    new Promise((resolve) => {
+      set({ confirmRequest: { ...request, resolve } });
+    }),
+  resolveConfirm: (value) => {
+    get().confirmRequest?.resolve(value);
+    set({ confirmRequest: null });
+  },
 
   openRequest: (requestId) => {
     const existing = get().tabs.find((t) => t.requestId === requestId);
@@ -1238,44 +1349,33 @@ export const useStore = create<State>((set, get) => ({
       return null;
     }
     if (!looksLikePostmanCollection(parsed)) return null;
+    return commitImportedCollection(parsePostmanCollection(parsed, ws.id), ws, set, get);
+  },
 
-    const result = parsePostmanCollection(parsed, ws.id);
-    const position = getNextCollectionPosition(get().collections);
-    const newCol: Collection = {
-      id: uid(),
-      workspaceId: ws.id,
-      name: result.collectionName,
-      position,
-      createdAt: Date.now(),
-    };
-    const newFolders: Folder[] = result.folders.map((folder) => ({
-      ...folder,
-      workspaceId: ws.id,
-      collectionId: newCol.id,
-    }));
-    const newReqs: ApiRequest[] = result.requests.map((request) => ({
-      ...request,
-      workspaceId: ws.id,
-      collectionId: newCol.id,
-    }));
-
-    await db.transaction("rw", db.collections, db.folders, db.requests, async () => {
-      await db.collections.add(newCol);
-      if (newFolders.length) await db.folders.bulkAdd(newFolders);
-      if (newReqs.length) await db.requests.bulkAdd(newReqs);
-    });
-    set((s) => ({
-      collections: [...s.collections, newCol],
-      folders: [...s.folders, ...newFolders],
-      requests: [...s.requests, ...newReqs],
-    }));
-
-    if (result.warnings.length) {
-      toast.warning(`Imported with ${result.warnings.length} note(s)`, {
-        description: result.warnings.slice(0, 3).join(" · "),
-      });
+  importInsomniaExportJSON: async (text) => {
+    const ws = get().workspace;
+    if (!ws) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return null;
     }
-    return newCol;
+    if (!looksLikeInsomniaExport(parsed)) return null;
+    return commitImportedCollection(parseInsomniaExport(parsed, ws.id), ws, set, get);
+  },
+
+  importHarLogJSON: async (text) => {
+    const ws = get().workspace;
+    if (!ws) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    if (!looksLikeHarLog(parsed)) return null;
+    return commitImportedCollection(parseHarLog(parsed, ws.id), ws, set, get);
   },
 
   importOpenApiText: async (text) => {
@@ -1293,44 +1393,7 @@ export const useStore = create<State>((set, get) => ({
       }
     }
     if (!looksLikeOpenApiDocument(parsed)) return null;
-
-    const result = parseOpenApiDocument(parsed, ws.id);
-    const position = getNextCollectionPosition(get().collections);
-    const newCol: Collection = {
-      id: uid(),
-      workspaceId: ws.id,
-      name: result.collectionName,
-      position,
-      createdAt: Date.now(),
-    };
-    const newFolders: Folder[] = result.folders.map((folder) => ({
-      ...folder,
-      workspaceId: ws.id,
-      collectionId: newCol.id,
-    }));
-    const newReqs: ApiRequest[] = result.requests.map((request) => ({
-      ...request,
-      workspaceId: ws.id,
-      collectionId: newCol.id,
-    }));
-
-    await db.transaction("rw", db.collections, db.folders, db.requests, async () => {
-      await db.collections.add(newCol);
-      if (newFolders.length) await db.folders.bulkAdd(newFolders);
-      if (newReqs.length) await db.requests.bulkAdd(newReqs);
-    });
-    set((s) => ({
-      collections: [...s.collections, newCol],
-      folders: [...s.folders, ...newFolders],
-      requests: [...s.requests, ...newReqs],
-    }));
-
-    if (result.warnings.length) {
-      toast.warning(`Imported with ${result.warnings.length} note(s)`, {
-        description: result.warnings.slice(0, 3).join(" · "),
-      });
-    }
-    return newCol;
+    return commitImportedCollection(parseOpenApiDocument(parsed, ws.id), ws, set, get);
   },
 
   importWorkspaceJSON: async (text) => {
@@ -1631,88 +1694,10 @@ async function reportDbWriteFailure<T>(write: Promise<T>): Promise<T> {
   }
 }
 
-function getNextRequestPosition(
-  requests: ApiRequest[],
-  collectionId: string | null,
-  folderId: string | null,
-) {
-  const siblings = requests.filter(
-    (request) => request.collectionId === collectionId && request.folderId === folderId,
-  );
-  if (!siblings.length) return 0;
-  return Math.max(...siblings.map((request) => request.position ?? 0)) + 1;
-}
-
-function getNextCollectionPosition(collections: Collection[]) {
-  if (!collections.length) return 0;
-  return Math.max(...collections.map((collection) => collection.position ?? 0)) + 1;
-}
-
-function getNextFolderPosition(
-  folders: Folder[],
-  collectionId: string,
-  parentFolderId: string | null,
-) {
-  const siblings = folders.filter(
-    (folder) => folder.collectionId === collectionId && folder.parentFolderId === parentFolderId,
-  );
-  if (!siblings.length) return 0;
-  return Math.max(...siblings.map((folder) => folder.position ?? 0)) + 1;
-}
-
 function omitKeys<T>(record: Record<string, T>, ids: readonly string[]): Record<string, T> {
   if (!ids.length) return record;
   const doomed = new Set(ids);
   return Object.fromEntries(Object.entries(record).filter(([key]) => !doomed.has(key)));
-}
-
-function collectDescendantFolderIds(folders: Folder[], rootId: string): string[] {
-  const children = folders.filter((folder) => folder.parentFolderId === rootId);
-  return children.flatMap((child) => [child.id, ...collectDescendantFolderIds(folders, child.id)]);
-}
-
-/** Would moving `folderId` under `newParentFolderId` create a cycle (moving a folder into
- * itself or one of its own descendants)? The sole safety enforcement for folder moves — UI
- * drag state can be bypassed, so this must be checked in the store action itself. */
-function wouldCreateCycle(
-  folders: Folder[],
-  folderId: string,
-  newParentFolderId: string | null,
-): boolean {
-  if (newParentFolderId === null) return false;
-  if (newParentFolderId === folderId) return true;
-  const seen = new Set<string>();
-  let cur = folders.find((folder) => folder.id === newParentFolderId);
-  while (cur) {
-    if (cur.id === folderId || seen.has(cur.id)) return true;
-    seen.add(cur.id);
-    const parentId: string | null = cur.parentFolderId;
-    cur = parentId ? folders.find((folder) => folder.id === parentId) : undefined;
-  }
-  return false;
-}
-
-function sortRequestsForCollection(requests: ApiRequest[]) {
-  return [...requests].sort(compareRequestsByPosition);
-}
-
-function resequenceRequests(requests: ApiRequest[]) {
-  return sortRequestsForCollection(requests).map((request, index) => ({
-    ...request,
-    position: index,
-  }));
-}
-
-function compareRequestsByPosition(left: ApiRequest, right: ApiRequest) {
-  return left.position - right.position || left.createdAt - right.createdAt;
-}
-
-function reorderByIndex<T>(items: T[], from: number, to: number) {
-  const next = items.slice();
-  const [dragged] = next.splice(from, 1);
-  if (!dragged) return items;
-  next.splice(to, 0, dragged);
-  return next;
 }
 
 function remapKvIds<T extends { id: string }>(list: T[]) {

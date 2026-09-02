@@ -31,14 +31,14 @@ import { copyTextToClipboard } from "@/features/code-snippets/utils/clipboard";
 import { mergeGlobalsIntoEnvironment } from "@/features/code-snippets/utils/request-resolver";
 import { toast } from "sonner";
 
-/** Prompt helper. Returns null if user cancels or input is empty. */
-const ask = (label: string, def = "") => {
-  const v = window.prompt(label, def);
-  return v && v.trim() ? v.trim() : null;
-};
-const confirmDanger = (msg: string) => window.confirm(msg);
-
 const s = () => useStore.getState();
+
+/** Styled text-input prompt (see PromptDialog) — resolves null if the user
+ * cancels or submits empty, same contract the old window.prompt() call had. */
+const ask = (title: string, defaultValue = "") => s().requestPrompt({ title, defaultValue });
+/** Styled destructive-confirm dialog (see GlobalConfirmDialog), replacing
+ * window.confirm() so it matches the rest of the app's confirmation flows. */
+const confirmDanger = (title: string) => s().requestConfirm({ title });
 
 function suggestEnvironmentName(existingNames: string[]) {
   const taken = new Set(existingNames.map((name) => name.toLowerCase()));
@@ -97,10 +97,10 @@ export function registerBuiltInCommands(): () => void {
       icon: Pencil,
       shortcut: "mod+shift+r",
       when: (c) => c.hasActiveRequest,
-      run: () => {
+      run: async () => {
         const r = s().getActiveRequest();
         if (!r) return;
-        const name = ask("Rename request", r.name);
+        const name = await ask("Rename request", r.name);
         if (name) s().renameRequest(r.id, name);
       },
     },
@@ -111,10 +111,10 @@ export function registerBuiltInCommands(): () => void {
       icon: Trash2,
       shortcut: "mod+backspace",
       when: (c) => c.hasActiveRequest,
-      run: () => {
+      run: async () => {
         const r = s().getActiveRequest();
         if (!r) return;
-        if (confirmDanger(`Delete "${r.name}"?`)) s().deleteRequest(r.id);
+        if (await confirmDanger(`Delete "${r.name}"?`)) s().deleteRequest(r.id);
       },
     },
     {
@@ -147,8 +147,8 @@ export function registerBuiltInCommands(): () => void {
       description: "New collection",
       category: "collections",
       icon: FolderPlus,
-      run: () => {
-        const n = ask("Collection name");
+      run: async () => {
+        const n = await ask("Collection name");
         if (n) s().createCollection(n);
       },
     },
@@ -157,10 +157,10 @@ export function registerBuiltInCommands(): () => void {
       title: "Duplicate Collection",
       category: "collections",
       icon: Copy,
-      run: () => {
+      run: async () => {
         const cols = s().collections;
         if (cols.length === 0) return;
-        const name = ask("Duplicate which collection? (name)", cols[0].name);
+        const name = await ask("Duplicate which collection? (name)", cols[0].name);
         if (!name) return;
         const match = cols.find((c) => c.name.toLowerCase() === name.toLowerCase()) ?? cols[0];
         s().duplicateCollection(match.id);
@@ -259,7 +259,9 @@ export function registerBuiltInCommands(): () => void {
         const text = await pickFile("application/json,.json");
         if (!text) return;
         const col = await s().importCollectionJSON(text);
-        if (!col) window.alert("Invalid collection file.");
+        if (!col) {
+          toast.error("Import failed", { description: "Invalid collection file." });
+        }
       },
     },
     {
@@ -273,7 +275,45 @@ export function registerBuiltInCommands(): () => void {
         const text = await pickFile("application/json,.json");
         if (!text) return;
         const col = await s().importPostmanCollectionJSON(text);
-        if (!col) window.alert("Not a Postman Collection v2.1 export.");
+        if (!col) {
+          toast.error("Import failed", {
+            description: "Not a Postman Collection v2.1 export.",
+          });
+        }
+      },
+    },
+    {
+      id: "import.insomnia",
+      title: "Import Insomnia Export",
+      description: "Load an Insomnia v4 export (JSON)",
+      category: "import-export",
+      icon: Upload,
+      keywords: ["insomnia", "import", "migrate"],
+      run: async () => {
+        const text = await pickFile("application/json,.json");
+        if (!text) return;
+        const col = await s().importInsomniaExportJSON(text);
+        if (!col) {
+          toast.error("Import failed", { description: "Not an Insomnia v4 export." });
+        }
+      },
+    },
+    {
+      id: "import.har",
+      title: "Import HAR File",
+      description: "Load a HAR (HTTP Archive) capture from browser devtools",
+      category: "import-export",
+      icon: Upload,
+      keywords: ["har", "http archive", "devtools", "import"],
+      run: async () => {
+        const text = await pickFile("application/json,.har,.json");
+        if (!text) return;
+        const col = await s().importHarLogJSON(text);
+        if (!col) {
+          toast.error("Import failed", {
+            description: "Not a HAR (HTTP Archive) file.",
+          });
+        }
       },
     },
     {
@@ -287,7 +327,11 @@ export function registerBuiltInCommands(): () => void {
         const text = await pickFile("application/json,application/yaml,.json,.yaml,.yml");
         if (!text) return;
         const col = await s().importOpenApiText(text);
-        if (!col) window.alert("Not a recognized OpenAPI 3.0/3.1 document.");
+        if (!col) {
+          toast.error("Import failed", {
+            description: "Not a recognized OpenAPI 3.0/3.1 document.",
+          });
+        }
       },
     },
     {
@@ -299,9 +343,9 @@ export function registerBuiltInCommands(): () => void {
       shortcut: "mod+alt+shift+o",
       run: async () => {
         if (
-          !confirmDanger(
+          !(await confirmDanger(
             "Restore a workspace backup? This will replace the current local workspace.",
-          )
+          ))
         )
           return;
         const text = await pickFile("application/json,.json");
