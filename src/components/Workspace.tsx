@@ -187,6 +187,19 @@ export function Workspace() {
     const stillOpen = useStore.getState().tabs.some((t) => t.requestId === requestId);
     setResults((s) => (stillOpen ? { ...s, [requestId]: outcome.result } : s));
 
+    // Ahead of the script/extract warnings below: an unresolved variable means
+    // the request that actually went out isn't the one on screen (an empty URL
+    // segment, a blank auth token), and a 200 back from a half-built URL looks
+    // like success until you read the response closely.
+    if (outcome.result.unresolvedVariables?.length) {
+      const names = outcome.result.unresolvedVariables;
+      const plural = names.length > 1;
+      toast.warning(
+        `${names.length} variable${plural ? "s" : ""} had no value and ${plural ? "were" : "was"} sent empty`,
+        { description: names.map((name) => `{{${name}}}`).join(", ") },
+      );
+    }
+
     if (outcome.result.oauth2RefreshError) {
       toast.error("OAuth2 token refresh failed", {
         description: outcome.result.oauth2RefreshError,

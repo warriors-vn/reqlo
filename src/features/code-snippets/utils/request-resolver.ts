@@ -15,6 +15,10 @@ export interface ResolvedRequestArtifacts {
   resolvedHeaders: Record<string, string>;
   resolvedRequest: ApiRequest;
   serializedBody: SerializedRequestBody;
+  /** `{{VAR}}` names referenced anywhere in this request that the active
+   * environment (plus globals) had no value for — each one substituted an
+   * empty string. */
+  unresolvedVariables: string[];
 }
 
 export function createEnvironmentMap(environment?: Environment | null) {
@@ -50,17 +54,59 @@ export function mergeGlobalsIntoEnvironment(
   };
 }
 
-export function resolveTemplate(input: string, envMap: Map<string, string>) {
-  return input.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_, key: string) => envMap.get(key) ?? "");
+/**
+ * Substitutes `{{VAR}}` from the environment map. A key with no value still
+ * resolves to an empty string — that's deliberate, since half-substituted
+ * output would be worse — but every miss is recorded in `misses` when one is
+ * passed, so callers can tell the user which variables silently vanished
+ * instead of letting an empty URL segment or a blank auth token look like a
+ * successful send.
+ */
+export function resolveTemplate(input: string, envMap: Map<string, string>, misses?: Set<string>) {
+  return input.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_, key: string) => {
+    const value = envMap.get(key);
+    if (value === undefined) {
+      misses?.add(key);
+      return "";
+    }
+    return value;
+  });
 }
 
-export function resolveKvList(list: KV[], envMap: Map<string, string>) {
+/**
+ * A URL with no scheme is resolved by `fetch` against the app's own origin, so
+ * "api.example.com/todos" silently fetches reqlo's own dev server and returns
+ * its 404 page as if it were the API's response. Prepend a scheme when the
+ * text looks like a bare host, matching what Postman and Insomnia do — http
+ * for loopback (a local dev server almost never speaks TLS), https otherwise.
+ * An explicitly relative URL (leading "/") is left alone: that one is
+ * unambiguous about wanting the current origin.
+ *
+ * The scheme test deliberately requires "://" rather than a bare colon —
+ * "localhost:8080" would otherwise parse as scheme "localhost" with path
+ * "8080" and be left to hit the app's own origin, which is the exact bug this
+ * function exists to prevent.
+ */
+const LOOPBACK_HOSTS = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?$/i;
+
+export function normalizeRequestUrl(url: string) {
+  const trimmed = url.trim();
+  if (!trimmed || /^[a-zA-Z][\w+.-]*:\/\//.test(trimmed) || trimmed.startsWith("/")) {
+    return trimmed;
+  }
+  const host = trimmed.split(/[/?#]/, 1)[0];
+  if (LOOPBACK_HOSTS.test(host)) return `http://${trimmed}`;
+  if (host.includes(".")) return `https://${trimmed}`;
+  return trimmed;
+}
+
+export function resolveKvList(list: KV[], envMap: Map<string, string>, misses?: Set<string>) {
   return list
     .filter((item) => item.enabled && item.key)
     .map((item) => ({
       ...item,
-      key: resolveTemplate(item.key, envMap),
-      value: resolveTemplate(item.value, envMap),
+      key: resolveTemplate(item.key, envMap, misses),
+      value: resolveTemplate(item.value, envMap, misses),
     }))
     .filter((item) => item.key.trim());
 }
@@ -68,27 +114,28 @@ export function resolveKvList(list: KV[], envMap: Map<string, string>) {
 export function resolveRequestDrafts(
   request: ApiRequest,
   envMap: Map<string, string>,
+  misses?: Set<string>,
 ): RequestBodyDrafts {
   return {
     ...request.bodyDrafts,
-    json: resolveTemplate(request.bodyDrafts.json, envMap),
-    raw: resolveTemplate(request.bodyDrafts.raw, envMap),
-    xml: resolveTemplate(request.bodyDrafts.xml, envMap),
+    json: resolveTemplate(request.bodyDrafts.json, envMap, misses),
+    raw: resolveTemplate(request.bodyDrafts.raw, envMap, misses),
+    xml: resolveTemplate(request.bodyDrafts.xml, envMap, misses),
     urlEncoded: request.bodyDrafts.urlEncoded.map((row) => ({
       ...row,
-      key: resolveTemplate(row.key, envMap),
-      value: resolveTemplate(row.value, envMap),
+      key: resolveTemplate(row.key, envMap, misses),
+      value: resolveTemplate(row.value, envMap, misses),
     })),
     formData: request.bodyDrafts.formData.map((row) => ({
       ...row,
-      key: resolveTemplate(row.key, envMap),
-      value: resolveTemplate(row.value, envMap),
+      key: resolveTemplate(row.key, envMap, misses),
+      value: resolveTemplate(row.value, envMap, misses),
     })),
     graphql: {
       ...request.bodyDrafts.graphql,
-      query: resolveTemplate(request.bodyDrafts.graphql.query, envMap),
-      variables: resolveTemplate(request.bodyDrafts.graphql.variables, envMap),
-      operationName: resolveTemplate(request.bodyDrafts.graphql.operationName, envMap),
+      query: resolveTemplate(request.bodyDrafts.graphql.query, envMap, misses),
+      variables: resolveTemplate(request.bodyDrafts.graphql.variables, envMap, misses),
+      operationName: resolveTemplate(request.bodyDrafts.graphql.operationName, envMap, misses),
     },
   };
 }
@@ -98,22 +145,23 @@ export function applyResolvedAuth(
   envMap: Map<string, string>,
   headers: Record<string, string>,
   queryParams: KV[],
+  misses?: Set<string>,
 ) {
   switch (request.auth.type) {
     case "basic": {
-      const username = resolveTemplate(request.auth.username ?? "", envMap);
-      const password = resolveTemplate(request.auth.password ?? "", envMap);
+      const username = resolveTemplate(request.auth.username ?? "", envMap, misses);
+      const password = resolveTemplate(request.auth.password ?? "", envMap, misses);
       if (username || password) headers.Authorization = `Basic ${btoa(`${username}:${password}`)}`;
       return;
     }
     case "bearer": {
-      const token = resolveTemplate(request.auth.token ?? "", envMap);
+      const token = resolveTemplate(request.auth.token ?? "", envMap, misses);
       if (token) headers.Authorization = `Bearer ${token}`;
       return;
     }
     case "api-key": {
-      const key = resolveTemplate(request.auth.key ?? "", envMap);
-      const value = resolveTemplate(request.auth.value ?? "", envMap);
+      const key = resolveTemplate(request.auth.key ?? "", envMap, misses);
+      const value = resolveTemplate(request.auth.value ?? "", envMap, misses);
       if (!key) return;
       if (request.auth.addTo === "query") {
         queryParams.push({ id: `auth-${key}`, key, value, enabled: true });
@@ -139,16 +187,19 @@ export function buildResolvedRequestArtifacts(
   environment?: Environment | null,
 ): ResolvedRequestArtifacts {
   const envMap = createEnvironmentMap(environment);
-  const resolvedQueryParams = resolveKvList(request.queryParams, envMap);
+  const unresolved = new Set<string>();
+  const resolvedQueryParams = resolveKvList(request.queryParams, envMap, unresolved);
   const headers = Object.fromEntries(
-    resolveKvList(request.headers, envMap).map((item) => [item.key, item.value]),
+    resolveKvList(request.headers, envMap, unresolved).map((item) => [item.key, item.value]),
   );
 
-  applyResolvedAuth(request, envMap, headers, resolvedQueryParams);
+  applyResolvedAuth(request, envMap, headers, resolvedQueryParams, unresolved);
 
   const searchParams = new URLSearchParams();
   resolvedQueryParams.forEach((item) => searchParams.append(item.key, item.value));
-  const baseUrl = resolveTemplate(request.url.trim(), envMap);
+  // Normalize after substitution, not before — "{{BASE_URL}}/todos" only has
+  // a scheme once BASE_URL has been filled in.
+  const baseUrl = normalizeRequestUrl(resolveTemplate(request.url.trim(), envMap, unresolved));
   const url = searchParams.size
     ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}${searchParams.toString()}`
     : baseUrl;
@@ -163,7 +214,7 @@ export function buildResolvedRequestArtifacts(
       enabled: true,
     })),
     queryParams: resolvedQueryParams,
-    bodyDrafts: resolveRequestDrafts(request, envMap),
+    bodyDrafts: resolveRequestDrafts(request, envMap, unresolved),
   };
 
   const serializedBody = serializeRequestBody(resolvedRequest);
@@ -192,6 +243,7 @@ export function buildResolvedRequestArtifacts(
     resolvedHeaders: headers,
     resolvedRequest,
     serializedBody,
+    unresolvedVariables: [...unresolved],
   };
 }
 

@@ -254,6 +254,13 @@ function RunRowView({ row }: { row: RunRow }) {
           Script: {outcome.result.scriptError}
         </p>
       )}
+      {/* `> 0` rather than a bare `.length`: an empty array would make the
+          guard evaluate to 0, which React renders as a literal "0". */}
+      {!outcome?.result.error && (outcome?.result.unresolvedVariables?.length ?? 0) > 0 && (
+        <p className="mt-1.5 truncate text-3xs text-[var(--status-warn)]">
+          Sent empty: {outcome?.result.unresolvedVariables?.map((name) => `{{${name}}}`).join(", ")}
+        </p>
+      )}
       {!outcome?.result.error &&
         !outcome?.result.scriptError &&
         outcome?.scriptEnvironmentDropped && (

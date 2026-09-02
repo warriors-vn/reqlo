@@ -47,7 +47,9 @@ const METHOD_FILTERS: HistoryMethodFilter[] = [
   "OPTIONS",
 ];
 const STATUS_FILTERS: HistoryStatusFilter[] = ["ALL", "SUCCESS", "ERROR", "4XX", "5XX"];
-const ROW_HEIGHT = 96;
+/** Must stay in sync with HistoryRow's own `h-[96px]` + `mb-2` (8px) — the
+ * virtualiser positions every row at an exact multiple of this. */
+const ROW_HEIGHT = 104;
 
 export function RequestHistoryPanel() {
   const open = useStore((state) => state.overlays.history);
@@ -466,7 +468,12 @@ function HistoryRow({
       exit={{ opacity: 0, y: -4 }}
       transition={{ duration: 0.14 }}
       className={cn(
-        "group mb-2 rounded-[22px] border px-3 py-3 transition",
+        // Fixed height, and every inner line kept to one line: the virtualiser
+        // (useVirtualHistoryList) positions rows at exact ROW_HEIGHT multiples
+        // and derives total scroll height from it, so a row that grows to fit a
+        // long name would drift every row below it out of its slot and break
+        // both the scrollbar and arrow-key scroll-into-view.
+        "group mb-2 h-[96px] overflow-hidden rounded-[22px] border px-3 py-3 transition",
         selected
           ? "border-primary/25 bg-accent/55 shadow-[0_16px_42px_rgba(99,102,241,0.10)]"
           : "border-border/70 bg-background/80 hover:border-foreground/10 hover:bg-accent/30",
@@ -476,7 +483,7 @@ function HistoryRow({
       <div className="flex items-start gap-3">
         <MethodBadge method={entry.method} className="mt-0.5 w-12 shrink-0 text-right" />
         <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onOpen}
@@ -484,24 +491,24 @@ function HistoryRow({
             >
               {entry.requestName || entry.url}
             </button>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-3xs font-medium text-muted-foreground">
+            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-3xs font-medium text-muted-foreground">
               {formatRelativeHistoryTime(entry.executedAt)}
             </span>
             {entry.environmentName && (
-              <span className="rounded-full bg-background px-2 py-0.5 text-3xs text-muted-foreground">
+              <span className="max-w-[10rem] shrink-0 truncate rounded-full bg-background px-2 py-0.5 text-3xs text-muted-foreground">
                 {entry.environmentName}
               </span>
             )}
           </div>
           <div className="truncate font-mono text-2xs text-muted-foreground">{entry.url}</div>
-          <div className="flex flex-wrap items-center gap-3 text-2xs">
-            <span className={cn("font-mono font-semibold", statusTone)}>
+          <div className="flex items-center gap-3 text-2xs">
+            <span className={cn("shrink-0 font-mono font-semibold", statusTone)}>
               {entry.errorMessage ? "ERR" : (entry.status ?? "—")}
             </span>
-            <span className="font-mono text-muted-foreground">
+            <span className="shrink-0 font-mono text-muted-foreground">
               {entry.durationMs.toFixed(0)} ms
             </span>
-            <span className="font-mono text-muted-foreground">
+            <span className="shrink-0 font-mono text-muted-foreground">
               {Math.round((entry.sizeBytes / 1024) * 10) / 10 || 0} KB
             </span>
             {entry.responseExcerpt && (
