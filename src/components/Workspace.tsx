@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useStore } from "@/stores/useStore";
 import { Sidebar } from "@/components/Sidebar";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -6,7 +13,7 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/componen
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { TabBar } from "@/components/TabBar";
 import { RequestBuilder } from "@/components/RequestBuilder";
-import { ResponseViewer } from "@/components/ResponseViewer";
+import { ResponseViewer, type StreamingProgress } from "@/components/ResponseViewer";
 import { LazyCommandPalette } from "@/components/LazyCommandPalette";
 import { LazyImportCurlModal } from "@/components/LazyImportCurlModal";
 import { HistoryDrawer } from "@/components/HistoryDrawer";
@@ -14,6 +21,8 @@ import { LazySettingsModal } from "@/components/LazySettingsModal";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LazyEnvironmentSwitcher } from "@/components/LazyEnvironmentSwitcher";
 import { LazyCollectionRunnerModal } from "@/components/LazyCollectionRunnerModal";
+import { LazyPromptDialog } from "@/components/LazyPromptDialog";
+import { LazyGlobalConfirmDialog } from "@/components/LazyGlobalConfirmDialog";
 import { runSingleRequest } from "@/services/runner";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCommandSystem } from "@/hooks/useCommandSystem";
@@ -43,6 +52,9 @@ export function Workspace() {
   } = useStore();
   const [results, setResults] = useState<Record<string, ExecutionResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [streamingByRequest, setStreamingByRequest] = useState<Record<string, StreamingProgress>>(
+    {},
+  );
   const controllersRef = useRef<Record<string, AbortController>>({});
   const lastPing = useRef(0);
   const isMobile = useMediaQuery("(max-width: 767px)");
@@ -83,6 +95,7 @@ export function Workspace() {
   useEffect(() => {
     const openIds = new Set(tabs.map((t) => t.requestId));
     setResults((prev) => pruneStaleKeys(prev, openIds));
+    setStreamingByRequest((prev) => pruneStaleKeys(prev, openIds));
     setLoading((prev) => {
       // Don't drop a request that's still actively sending just because its
       // tab closed — send()'s own completion handler is what cleans that up
@@ -124,16 +137,29 @@ export function Workspace() {
   const send = async () => {
     if (!activeRequest || !workspace) return;
     const requestId = activeRequest.id;
+    // The Send/Cancel button already swaps itself once `sending` is true,
+    // but the Cmd/Ctrl+Enter shortcut (RequestBuilder.tsx) calls onSend()
+    // unconditionally — without this, a second rapid press overwrites the
+    // first send's AbortController (making it uncancellable) and both
+    // sends' onStreamChunk callbacks race to write the same streaming key.
+    if (loading[requestId]) return;
     const controller = new AbortController();
     controllersRef.current[requestId] = controller;
     setLoading((s) => ({ ...s, [requestId]: true }));
+    clearStreaming(requestId, setStreamingByRequest);
     const outcome = await runSingleRequest(
       activeRequest,
       activeEnvironment,
       { workspaceId: workspace.id, addHistory, updateEnvironment, updateRequest },
-      { signal: controller.signal },
+      {
+        signal: controller.signal,
+        onStreamChunk: (text, contentType) =>
+          setStreamingByRequest((s) => ({ ...s, [requestId]: { text, contentType } })),
+      },
     );
     delete controllersRef.current[requestId];
+    // The result now carries everything the live view was standing in for.
+    clearStreaming(requestId, setStreamingByRequest);
 
     // The tab (or the request itself) may have closed while this was in
     // flight. The prune effect above deliberately leaves a loading entry
@@ -239,7 +265,12 @@ export function Workspace() {
                   result={result}
                 />
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <ResponseViewer result={result ?? null} loading={isLoading} />
+                  <ResponseViewer
+                    result={result ?? null}
+                    loading={isLoading}
+                    request={activeRequest}
+                    streaming={streamingByRequest[activeRequest.id] ?? null}
+                  />
                 </div>
               </motion.div>
             ) : (
@@ -297,8 +328,22 @@ export function Workspace() {
       <KeyboardShortcutsModal />
       <LazyEnvironmentSwitcher />
       <LazyCollectionRunnerModal />
+      <LazyPromptDialog />
+      <LazyGlobalConfirmDialog />
     </div>
   );
+}
+
+function clearStreaming(
+  requestId: string,
+  setStreamingByRequest: Dispatch<SetStateAction<Record<string, StreamingProgress>>>,
+) {
+  setStreamingByRequest((s) => {
+    if (!(requestId in s)) return s;
+    const next = { ...s };
+    delete next[requestId];
+    return next;
+  });
 }
 
 function EmptyState() {

@@ -16,7 +16,7 @@ import {
 } from "@/services/execution";
 import { resolveExtractPath, stringifyExtractedValue } from "@/services/extract";
 import { evaluateAssertions, type AssertionOutcome } from "@/services/assertions";
-import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
+import { isTooLargeToParse } from "@/lib/response-body-view";
 
 const MAX_HISTORY_RESPONSE_BODY = 40_000;
 
@@ -172,11 +172,9 @@ async function applyExtractRules(
   if (!rules.length) return { extracted: [], failed: [], noActiveEnvironment: false };
   if (!environment) return { extracted: [], failed: [], noActiveEnvironment: true };
 
-  // JSON.parse on a body this large is itself the tab-freezing operation the
-  // response-render cap was meant to prevent — skip parsing rather than
-  // block the main thread on it, and report every rule as failed so the
-  // "couldn't extract" toast at least tells the user something happened.
-  if (responseBody.length > MAX_RESPONSE_RENDER_LENGTH) {
+  // Report every rule as failed rather than silently skip, so the "couldn't
+  // extract" toast at least tells the user something happened.
+  if (isTooLargeToParse(responseBody)) {
     return {
       extracted: [],
       failed: rules.map((rule) => rule.variableName.trim() || rule.path),

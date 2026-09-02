@@ -11,6 +11,7 @@ import {
   type RequestAuth,
   type RequestBodyType,
 } from "@/services/db";
+import { looksLikeJson } from "@/services/import-shared";
 
 // Postman Collection Format v2.1 — only the fields this importer reads.
 // https://schema.postman.com/collection/json/v2.1.0/draft-07/collection.json
@@ -291,9 +292,4 @@ function convertAuth(
       );
       return createDefaultAuth();
   }
-}
-
-function looksLikeJson(s: string) {
-  const t = s.trim();
-  return (t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"));
 }
