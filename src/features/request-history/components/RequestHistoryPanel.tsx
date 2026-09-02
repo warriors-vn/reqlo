@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckCircle2,
@@ -8,6 +9,7 @@ import {
   Heart,
   Pin,
   Play,
+  Save,
   Search,
   Star,
   Trash2,
@@ -17,6 +19,8 @@ import { MethodBadge } from "@/components/MethodBadge";
 import { LazyConfirmDeleteDialog as ConfirmDeleteDialog } from "@/components/LazyConfirmDeleteDialog";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/stores/useStore";
+import { createDefaultMock } from "@/services/db";
+import { buildMockFromResponse, type MockFromResponseResult } from "@/services/mock-from-response";
 import { useDebouncedValue } from "@/features/request-history/hooks/useDebouncedValue";
 import { useVirtualHistoryList } from "@/features/request-history/hooks/useVirtualHistoryList";
 import { useRequestHistoryStore } from "@/features/request-history/stores/useRequestHistoryStore";
@@ -48,6 +52,8 @@ const ROW_HEIGHT = 96;
 export function RequestHistoryPanel() {
   const open = useStore((state) => state.overlays.history);
   const history = useStore((state) => state.history);
+  const requests = useStore((state) => state.requests);
+  const updateRequest = useStore((state) => state.updateRequest);
   const restoreHistoryEntry = useStore((state) => state.restoreHistoryEntry);
   const toggleHistoryFavorite = useStore((state) => state.toggleHistoryFavorite);
   const toggleHistoryPinned = useStore((state) => state.toggleHistoryPinned);
@@ -93,6 +99,7 @@ export function RequestHistoryPanel() {
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingMockOverwriteId, setPendingMockOverwriteId] = useState<string | null>(null);
 
   const compareEntries = useMemo(
     () =>
@@ -182,6 +189,48 @@ export function RequestHistoryPanel() {
   const exitCompareMode = () => {
     setCompareMode(false);
     setCompareIds([]);
+  };
+
+  const mockEligibilityFor = (entry: HistoryEntry): MockFromResponseResult => {
+    const target = entry.requestId ? requests.find((r) => r.id === entry.requestId) : undefined;
+    if (!target) {
+      return { ok: false, reason: "The original request no longer exists." };
+    }
+    return buildMockFromResponse({
+      status: entry.status,
+      contentType: entry.responseContentType,
+      body: entry.responseBody,
+      responseKind: entry.responseKind,
+      truncated: entry.responseBodyTruncated,
+      hasError: Boolean(entry.errorMessage),
+    });
+  };
+
+  const applyMockSave = (entry: HistoryEntry) => {
+    const target = requests.find((r) => r.id === entry.requestId);
+    const eligibility = mockEligibilityFor(entry);
+    if (!target || !eligibility.ok) return;
+    void updateRequest(target.id, { mock: { ...target.mock, ...eligibility.mock } });
+    toast.success(`Saved as mock for "${target.name || "this request"}"`, {
+      description: target.mock.enabled
+        ? "Mock is already on — Send will return this."
+        : "Open the Mock tab to turn mocking on.",
+    });
+  };
+
+  const saveAsMock = (entry: HistoryEntry) => {
+    const target = requests.find((r) => r.id === entry.requestId);
+    if (!target || !mockEligibilityFor(entry).ok) return;
+    // Same "is there really something to lose" check ResponseViewer's own
+    // Save-as-mock uses — every request starts with a non-empty placeholder
+    // mock body, so a plain non-empty check would confirm on every first save.
+    const hasCustomMockBody =
+      target.mock.body.trim() && target.mock.body !== createDefaultMock().body;
+    if (hasCustomMockBody) {
+      setPendingMockOverwriteId(entry.id);
+      return;
+    }
+    applyMockSave(entry);
   };
 
   return (
@@ -317,8 +366,12 @@ export function RequestHistoryPanel() {
                       }
                       onRun={() => void restoreHistoryEntry(row.item.id, { rerun: true })}
                       onDelete={() => setPendingDeleteId(row.item.id)}
-                      onToggleFavorite={() => void toggleHistoryFavorite(row.item.id)}
-                      onTogglePinned={() => void toggleHistoryPinned(row.item.id)}
+                      onToggleFavorite={() =>
+                        void toggleHistoryFavorite(row.item.id).catch(() => {})
+                      }
+                      onTogglePinned={() => void toggleHistoryPinned(row.item.id).catch(() => {})}
+                      mockEligibility={mockEligibilityFor(row.item)}
+                      onSaveAsMock={() => saveAsMock(row.item)}
                       compareMode={compareMode}
                       compareSelected={compareIds.includes(row.item.id)}
                       onToggleCompare={() => toggleCompareSelection(row.item.id)}
@@ -343,8 +396,27 @@ export function RequestHistoryPanel() {
             : ""
         }
         onConfirm={() => {
-          if (pendingDeleteId) void deleteHistoryEntry(pendingDeleteId);
+          if (pendingDeleteId) void deleteHistoryEntry(pendingDeleteId).catch(() => {});
           setPendingDeleteId(null);
+        }}
+      />
+
+      <ConfirmDeleteDialog
+        open={pendingMockOverwriteId !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setPendingMockOverwriteId(null);
+        }}
+        title="Replace mock body?"
+        description={(() => {
+          const entry = history.find((item) => item.id === pendingMockOverwriteId);
+          const target = entry ? requests.find((r) => r.id === entry.requestId) : undefined;
+          return `"${target?.name || "This request"}"'s current mock body will be replaced with this response. This can't be undone.`;
+        })()}
+        confirmLabel="Replace"
+        onConfirm={() => {
+          const entry = history.find((item) => item.id === pendingMockOverwriteId);
+          if (entry) applyMockSave(entry);
+          setPendingMockOverwriteId(null);
         }}
       />
     </div>
@@ -361,6 +433,8 @@ interface HistoryRowProps {
   onDelete: () => void;
   onToggleFavorite: () => void;
   onTogglePinned: () => void;
+  mockEligibility: MockFromResponseResult;
+  onSaveAsMock: () => void;
   compareMode: boolean;
   compareSelected: boolean;
   onToggleCompare: () => void;
@@ -376,6 +450,8 @@ function HistoryRow({
   onDelete,
   onToggleFavorite,
   onTogglePinned,
+  mockEligibility,
+  onSaveAsMock,
   compareMode,
   compareSelected,
   onToggleCompare,
@@ -494,6 +570,22 @@ function HistoryRow({
             title="Restore in new tab"
           >
             <ExternalLink className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            disabled={!mockEligibility.ok}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSaveAsMock();
+            }}
+            className={cn(actionButtonClass(), "disabled:cursor-not-allowed disabled:opacity-40")}
+            title={
+              mockEligibility.ok
+                ? "Save this response as the request's mock"
+                : mockEligibility.reason
+            }
+          >
+            <Save className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"

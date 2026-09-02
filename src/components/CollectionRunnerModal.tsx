@@ -18,6 +18,34 @@ interface RunRow {
   outcome?: RunSingleRequestOutcome;
 }
 
+/** Turns a thrown write failure (see the catch around runSingleRequest below)
+ * into the same outcome shape a normal row gets, so RunRowView's existing
+ * `outcome.result.error` rendering shows it with no extra cases to handle. */
+function writeFailureOutcome(error: unknown): RunSingleRequestOutcome {
+  const message = error instanceof Error ? error.message : "Couldn't save this request's result.";
+  return {
+    result: {
+      status: null,
+      statusText: "",
+      durationMs: 0,
+      sizeBytes: 0,
+      headers: {},
+      body: "",
+      contentType: "",
+      ok: false,
+      responseKind: "empty",
+      blob: null,
+      fileName: null,
+      error: message,
+    },
+    assertionOutcomes: [],
+    extractedVariables: [],
+    extractFailures: [],
+    noActiveEnvironment: false,
+    scriptEnvironmentDropped: false,
+  };
+}
+
 function rowPassed(outcome: RunSingleRequestOutcome | undefined) {
   if (!outcome) return false;
   return (
@@ -76,17 +104,27 @@ export function CollectionRunnerModal() {
           current.workspace?.globals ?? [],
         );
 
-        const outcome = await runSingleRequest(
-          request,
-          environment,
-          {
-            workspaceId,
-            addHistory: current.addHistory,
-            updateEnvironment: current.updateEnvironment,
-            updateRequest: current.updateRequest,
-          },
-          { signal },
-        );
+        // A write failure inside runSingleRequest (history/environment/request
+        // persistence) now throws instead of failing silently — without this
+        // catch, that row's status would stay stuck at "running" forever even
+        // though the `finally` below already stops the run overall, and the
+        // rest of an unattended batch run would never get a chance to execute.
+        let outcome: RunSingleRequestOutcome;
+        try {
+          outcome = await runSingleRequest(
+            request,
+            environment,
+            {
+              workspaceId,
+              addHistory: current.addHistory,
+              updateEnvironment: current.updateEnvironment,
+              updateRequest: current.updateRequest,
+            },
+            { signal },
+          );
+        } catch (error) {
+          outcome = writeFailureOutcome(error);
+        }
 
         setRows((prev) =>
           prev.map((row) =>

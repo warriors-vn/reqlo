@@ -93,7 +93,10 @@ export function EnvironmentSwitcher() {
       return;
     }
     if (nextName !== selectedEnvironment.name) {
-      void updateEnvironment(selectedEnvironment.id, { name: nextName });
+      // A write failure already toasts inside updateEnvironment — catch here
+      // only to stop it from also surfacing as an unhandled promise rejection
+      // in the console, since this control has no loading state of its own.
+      void updateEnvironment(selectedEnvironment.id, { name: nextName }).catch(() => {});
     }
   };
 
@@ -301,7 +304,7 @@ export function EnvironmentSwitcher() {
                 </div>
                 <KeyValueGrid
                   rows={globals}
-                  onChange={(next) => void updateWorkspaceGlobals(next)}
+                  onChange={(next) => void updateWorkspaceGlobals(next).catch(() => {})}
                   keyLabel="Variable"
                   valueLabel="Value"
                   supportsSecret
@@ -416,7 +419,7 @@ export function EnvironmentSwitcher() {
                 <KeyValueGrid
                   rows={selectedEnvironment.variables}
                   onChange={(variables) =>
-                    void updateEnvironment(selectedEnvironment.id, { variables })
+                    void updateEnvironment(selectedEnvironment.id, { variables }).catch(() => {})
                   }
                   keyLabel="Variable"
                   valueLabel="Value"

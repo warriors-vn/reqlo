@@ -147,33 +147,45 @@ export function Workspace() {
     controllersRef.current[requestId] = controller;
     setLoading((s) => ({ ...s, [requestId]: true }));
     clearStreaming(requestId, setStreamingByRequest);
-    const outcome = await runSingleRequest(
-      activeRequest,
-      activeEnvironment,
-      { workspaceId: workspace.id, addHistory, updateEnvironment, updateRequest },
-      {
-        signal: controller.signal,
-        onStreamChunk: (text, contentType) =>
-          setStreamingByRequest((s) => ({ ...s, [requestId]: { text, contentType } })),
-      },
-    );
-    delete controllersRef.current[requestId];
-    // The result now carries everything the live view was standing in for.
-    clearStreaming(requestId, setStreamingByRequest);
 
-    // The tab (or the request itself) may have closed while this was in
-    // flight. The prune effect above deliberately leaves a loading entry
-    // alone until its send finishes — don't undo that here by writing a
-    // result back in for a tab that's gone; just let both entries go.
+    // A write inside runSingleRequest (history/environment/request updates)
+    // can now throw on failure instead of failing silently — reportDbWriteFailure
+    // already toasts, but without this try/finally the throw would skip
+    // everything below, leaving `loading[requestId]` stuck true forever and
+    // the Send button spinning until the page reloads.
+    let outcome: Awaited<ReturnType<typeof runSingleRequest>>;
+    try {
+      outcome = await runSingleRequest(
+        activeRequest,
+        activeEnvironment,
+        { workspaceId: workspace.id, addHistory, updateEnvironment, updateRequest },
+        {
+          signal: controller.signal,
+          onStreamChunk: (text, contentType) =>
+            setStreamingByRequest((s) => ({ ...s, [requestId]: { text, contentType } })),
+        },
+      );
+    } finally {
+      delete controllersRef.current[requestId];
+      // The result now carries everything the live view was standing in for.
+      clearStreaming(requestId, setStreamingByRequest);
+
+      // The tab (or the request itself) may have closed while this was in
+      // flight. The prune effect above deliberately leaves a loading entry
+      // alone until its send finishes — don't undo that here on a tab that's
+      // gone; just let the entry go.
+      const stillOpenAtFinish = useStore.getState().tabs.some((t) => t.requestId === requestId);
+      setLoading((s) => {
+        if (stillOpenAtFinish) return { ...s, [requestId]: false };
+        if (!(requestId in s)) return s;
+        const next = { ...s };
+        delete next[requestId];
+        return next;
+      });
+    }
+
     const stillOpen = useStore.getState().tabs.some((t) => t.requestId === requestId);
     setResults((s) => (stillOpen ? { ...s, [requestId]: outcome.result } : s));
-    setLoading((s) => {
-      if (stillOpen) return { ...s, [requestId]: false };
-      if (!(requestId in s)) return s;
-      const next = { ...s };
-      delete next[requestId];
-      return next;
-    });
 
     if (outcome.result.oauth2RefreshError) {
       toast.error("OAuth2 token refresh failed", {
