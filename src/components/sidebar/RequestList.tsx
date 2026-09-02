@@ -1,4 +1,13 @@
-import { GripVertical, Trash2, Star, Heart, Inbox, MoreHorizontal, Plus } from "lucide-react";
+import {
+  GripVertical,
+  Trash2,
+  Star,
+  Heart,
+  Inbox,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+} from "lucide-react";
 import { MethodBadge } from "@/components/MethodBadge";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
@@ -33,6 +42,7 @@ export function RequestList({
   onReorder,
   onRequestDropTargetChange,
   onSectionAppendHover,
+  onRename,
   onDuplicate,
   onDelete,
   emptyIcon = <Inbox className="h-3.5 w-3.5" />,
@@ -72,6 +82,7 @@ export function RequestList({
     value: { targetId: string | null; collectionId: string | null; folderId: string | null } | null,
   ) => void;
   onSectionAppendHover: (collectionId: string | null) => void;
+  onRename: (id: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   emptyIcon?: React.ReactNode;
@@ -233,6 +244,9 @@ export function RequestList({
                       </DropdownMenuRadioGroup>
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
+                  <DropdownMenuItem onSelect={() => onRename(request.id)}>
+                    <Pencil className="h-3.5 w-3.5" /> Rename request
+                  </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => onDuplicate(request.id)}>
                     <Plus className="h-3.5 w-3.5" /> Duplicate request
                   </DropdownMenuItem>

@@ -95,16 +95,47 @@ Every PR runs the same checks in CI — `main` only accepts commits that pass al
 Docker
 ------
 
-A multi-stage `Dockerfile` and `docker-compose.yml` are included for a reproducible dev environment.
+A multi-stage `Dockerfile` and `docker-compose.yml` are included, so you can run ``reqlo`` without installing Node locally.
+
+**Prerequisites:** [Docker](https://docs.docker.com/get-docker/) 20.10+ and [Docker Compose](https://docs.docker.com/compose/) v2 (bundled with recent Docker Desktop installs).
+
+<h3>Development (hot reload)</h3>
 
     docker-compose up --build
     # open http://localhost:8080
 
-Production image:
+The `frontend` service builds the Dockerfile's `dev` target, mounts the repo into the container, and runs the Vite dev server bound to `0.0.0.0` — edits on your host trigger the same hot reload as running `npm run dev` directly. `node_modules` is kept as an anonymous volume inside the container so host and container installs never collide.
 
-    docker build --target build -t reqlo:build .
+Useful variations:
+
+    docker-compose up -d --build     # detached
+    docker-compose logs -f frontend  # follow logs
+    docker-compose down              # stop and remove the container
+
+Override the exposed port or turn on polling (useful on macOS/WSL if file-watch events don't fire) via env vars or a `.env` file next to `docker-compose.yml`:
+
+    FRONTEND_PORT=3000 CHOKIDAR_USEPOLLING=true docker-compose up --build
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `FRONTEND_PORT` | `8080` | Host and container port for the dev server |
+| `CHOKIDAR_USEPOLLING` | `false` | Force polling for file watching |
+| `FRONTEND_TOOL` | `auto` | Framework detection override (`vite`/`cra`) for the entrypoint script |
+
+<h3>Production image</h3>
+
+The Dockerfile's default target (`production`) builds the app and serves the static output with nginx — this is the target you'd deploy:
+
     docker build -t reqlo:prod .
     docker run --rm -p 80:80 reqlo:prod
+    # open http://localhost:80
+
+To stop at the intermediate build stage instead (e.g. to lift the compiled `dist/` out without nginx):
+
+    docker build --target build -t reqlo:build .
+    docker create --name reqlo-build reqlo:build
+    docker cp reqlo-build:/app/dist ./dist
+    docker rm reqlo-build
 
 Git Flow
 --------
