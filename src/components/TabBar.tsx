@@ -58,43 +58,48 @@ export function TabBar() {
           </>
         )}
       </div>
-      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
-        {tabs.map((tab) => {
-          const req = requests.find((r) => r.id === tab.requestId);
-          if (!req) return null;
-          const active = tab.id === activeTabId;
-          return (
-            <div
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "group flex h-8 shrink-0 cursor-pointer items-center gap-2 rounded-md border px-2.5 text-xs transition",
-                active
-                  ? "border-border bg-[var(--surface-elevated)] text-foreground shadow-sm"
-                  : "border-transparent text-muted-foreground hover:bg-accent/60",
-              )}
-            >
-              <MethodBadge method={req.method} className="w-9 text-right" />
-              <span className="max-w-[140px] truncate">{req.name || "Untitled"}</span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(tab.id);
-                }}
-                className="grid h-4 w-4 place-items-center rounded text-muted-foreground opacity-0 hover:bg-foreground/10 hover:text-foreground group-hover:opacity-100"
+      <div className="relative min-w-0 flex-1">
+        <div className="flex items-center gap-0.5 overflow-x-auto">
+          {tabs.map((tab) => {
+            const req = requests.find((r) => r.id === tab.requestId);
+            if (!req) return null;
+            const active = tab.id === activeTabId;
+            return (
+              <div
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "group flex h-8 shrink-0 cursor-pointer items-center gap-2 rounded-md border px-2.5 text-xs transition",
+                  active
+                    ? "border-border bg-[var(--surface-elevated)] text-foreground shadow-sm"
+                    : "border-transparent text-muted-foreground hover:bg-accent/60",
+                )}
               >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          );
-        })}
-        <button
-          onClick={() => createRequest(activeCollectionId, activeFolderId)}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          title="New tab (⌘T)"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
+                <MethodBadge method={req.method} className="w-9 text-right" />
+                <span className="max-w-[140px] truncate">{req.name || "Untitled"}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTab(tab.id);
+                  }}
+                  className="grid h-4 w-4 place-items-center rounded text-muted-foreground opacity-0 hover:bg-foreground/10 hover:text-foreground group-hover:opacity-100"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          })}
+          <button
+            onClick={() => createRequest(activeCollectionId, activeFolderId)}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            title="New tab (⌘T)"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        {tabs.length > 1 && (
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-[var(--surface)] to-transparent" />
+        )}
       </div>
       <div className="ml-2 flex items-center gap-1.5">
         <button

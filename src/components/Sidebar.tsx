@@ -51,6 +51,8 @@ export function Sidebar() {
     reorderRequests,
     deleteRequest,
     duplicateRequest,
+    renameRequest,
+    requestPrompt,
     duplicateCollection,
     deleteCollection,
     createFolder,
@@ -193,6 +195,13 @@ export function Sidebar() {
     setFolderNameDraft("");
   };
 
+  const startRequestRename = async (id: string) => {
+    const target = requests.find((r) => r.id === id);
+    if (!target) return;
+    const name = await requestPrompt({ title: "Rename request", defaultValue: target.name });
+    if (name) await renameRequest(id, name);
+  };
+
   const createFolderInline = async (collectionId: string, parentFolderId: string | null) => {
     const folder = await createFolder(collectionId, parentFolderId, "New folder");
     startFolderRename(folder.id, folder.name);
@@ -310,6 +319,7 @@ export function Sidebar() {
             onReorder={() => undefined}
             onRequestDropTargetChange={() => undefined}
             onSectionAppendHover={() => undefined}
+            onRename={(id) => void startRequestRename(id)}
             onDuplicate={(id) => void duplicateRequest(id)}
             onDelete={(id) => setPendingDeleteRequestId(id)}
             emptyIcon={<Heart className="h-3.5 w-3.5" />}
@@ -364,6 +374,7 @@ export function Sidebar() {
             }
             onRequestDropTargetChange={setRequestDropTarget}
             onSectionAppendHover={setCollectionAppendTargetId}
+            onRename={(id) => void startRequestRename(id)}
             onDuplicate={(id) => void duplicateRequest(id)}
             onDelete={(id) => setPendingDeleteRequestId(id)}
             emptyIcon={<Inbox className="h-3.5 w-3.5" />}
@@ -543,6 +554,7 @@ export function Sidebar() {
                   void reorderRequestDrop(draggedId, targetId, collectionId, folderId)
                 }
                 onRequestDropTargetChange={setRequestDropTarget}
+                onRenameRequest={(id) => void startRequestRename(id)}
                 onDuplicateRequest={(id) => void duplicateRequest(id)}
                 onDeleteRequest={(id) => setPendingDeleteRequestId(id)}
                 onDropRequestIntoFolder={(requestId, collectionId, folderId) =>

@@ -12,15 +12,17 @@ const COLOR: Record<HttpMethod, string> = {
 };
 
 export function MethodBadge({ method, className }: { method: HttpMethod; className?: string }) {
+  // `method` is typed as HttpMethod, but legacy/imported/hand-edited request
+  // records can carry a value outside that union at runtime — fall back to a
+  // muted placeholder instead of rendering an undefined color/blank label.
+  const color = COLOR[method] ?? "text-muted-foreground";
+  const label = method in COLOR ? method : "—";
+
   return (
     <span
-      className={cn(
-        "font-mono text-3xs font-semibold tracking-wider uppercase",
-        COLOR[method],
-        className,
-      )}
+      className={cn("font-mono text-3xs font-semibold tracking-wider uppercase", color, className)}
     >
-      {method}
+      {label}
     </span>
   );
 }

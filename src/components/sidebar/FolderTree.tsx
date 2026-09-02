@@ -65,6 +65,7 @@ export interface FolderTreeProps {
   onRequestDropTargetChange: (
     value: { targetId: string | null; collectionId: string | null; folderId: string | null } | null,
   ) => void;
+  onRenameRequest: (id: string) => void;
   onDuplicateRequest: (id: string) => void;
   onDeleteRequest: (id: string) => void;
   onDropRequestIntoFolder: (requestId: string, collectionId: string, folderId: string) => void;
@@ -229,6 +230,7 @@ export function FolderTree(props: FolderTreeProps) {
         onReorder={props.onReorderRequest}
         onRequestDropTargetChange={props.onRequestDropTargetChange}
         onSectionAppendHover={() => undefined}
+        onRename={props.onRenameRequest}
         onDuplicate={props.onDuplicateRequest}
         onDelete={props.onDeleteRequest}
         emptyIcon={<FolderClosed className="h-3.5 w-3.5" />}

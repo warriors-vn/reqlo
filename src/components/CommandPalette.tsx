@@ -1,5 +1,5 @@
 import { Command } from "cmdk";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search } from "lucide-react";
 import { useStore } from "@/stores/useStore";
@@ -20,6 +20,14 @@ export function CommandPalette() {
   const commands = useCommands();
   const ctx = useCommandContext();
   const [query, setQuery] = useState("");
+
+  // The palette is kept mounted (lazy-mount-once pattern) rather than
+  // unmounted on close, so state doesn't reset on its own — clear the query
+  // whenever it closes so the next open starts from a blank field instead of
+  // whatever was last typed.
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
 
   const visible = useMemo(() => commands.filter((c) => !c.when || c.when(ctx)), [commands, ctx]);
 
@@ -149,7 +157,9 @@ export function CommandPalette() {
               <div className="flex items-center gap-3 border-t border-border bg-[var(--surface)]/80 px-3 py-1.5 text-3xs text-muted-foreground">
                 <span>↑↓ navigate</span>
                 <span>↵ select</span>
-                <span className="ml-auto">{commands.length} commands</span>
+                <span className="ml-auto">
+                  {(ranked ?? visible).length} {query ? "results" : "commands"}
+                </span>
               </div>
             </Command>
           </motion.div>

@@ -6,6 +6,7 @@ import {
   Trash2,
   Star,
   Pencil,
+  Play,
   Search,
   Download,
   Upload,
@@ -164,6 +165,22 @@ export function registerBuiltInCommands(): () => void {
         if (!name) return;
         const match = cols.find((c) => c.name.toLowerCase() === name.toLowerCase()) ?? cols[0];
         s().duplicateCollection(match.id);
+      },
+    },
+    {
+      id: "collection.run",
+      title: "Run Collection",
+      description: "Run every request in a collection",
+      category: "collections",
+      icon: Play,
+      keywords: ["runner", "run all", "collection runner"],
+      run: () => {
+        const state = s();
+        const cols = state.collections;
+        if (!cols.length) return;
+        const active = state.getActiveRequest();
+        const target = (active && cols.find((c) => c.id === active.collectionId)) ?? cols[0];
+        state.startRun({ type: "collection", id: target.id });
       },
     },
 
