@@ -14,7 +14,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # jsdom 30 (added for the component test layer) requires Node
+          # ^22.22.2 || ^24.15.0 || >=26 — 20 is below its supported range,
+          # which fails jsdom's *.test.tsx files at worker startup in CI.
+          node-version: 22
           cache: npm
 
       - run: npm ci
@@ -37,7 +40,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # jsdom 30 (added for the component test layer) requires Node
+          # ^22.22.2 || ^24.15.0 || >=26 — 20 is below its supported range,
+          # which fails jsdom's *.test.tsx files at worker startup in CI.
+          node-version: 22
           cache: npm
 
       - run: npm ci
