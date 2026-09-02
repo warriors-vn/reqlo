@@ -1,4 +1,4 @@
-# reqlo [![Framework][framework-img]][framework] [![Bundler][bundler-img]][bundler] [![TypeScript][ts-img]][ts] [![Release][release-img]][release]
+# reqlo [![CI][ci-img]][ci] [![Framework][framework-img]][framework] [![Bundler][bundler-img]][bundler] [![TypeScript][ts-img]][ts] [![Release][release-img]][release]
 
 ``reqlo`` is a local-first HTTP client built with [React](https://reactjs.org) and [TanStack](https://tanstack.com) tooling.
 
@@ -12,13 +12,17 @@ Features
 --------
 
 * **Collections & nested folders** — organize requests in folders nested to any depth; drag-and-drop to reorder or re-parent.
-* **Environments** — swap `{{VARIABLE}}` values per environment without touching the request itself.
-* **cURL import** — paste a curl command from your terminal or devtools, get a full request back.
-* **Postman import** — import a Postman v2.1 collection directly; anything that can't translate 1:1 (OAuth2, form-data files) surfaces as a clear warning instead of failing silently.
+* **Environments** — swap `{{VARIABLE}}` values per environment without touching the request itself, with inline autocomplete as you type.
+* **Import from cURL, Postman, Insomnia, OpenAPI, or HAR** — paste a curl command, or bring a Postman v2.1 collection, an Insomnia export, an OpenAPI spec, or a browser HAR file; anything that can't translate 1:1 surfaces as a clear warning instead of failing silently.
 * **Git-friendly export** — export a collection as a folder of plain files instead of one giant JSON blob, so diffs in version control are actually readable.
 * **Request chaining** — extract a value from one response (status, header, JSON path) and feed it into a later request.
+* **Collection Runner** — run every request in a collection or folder sequentially and see pass/fail, timing, and extracted variables for each step.
+* **Pre-request scripting** — run a small JS script before a request goes out, sandboxed via QuickJS-in-Wasm with no ambient `fetch`/DOM/storage access.
+* **OAuth2** — authorization-code or client-credentials grants, with expired tokens refreshed automatically before a request is sent instead of going out unauthenticated.
+* **GraphQL introspection** — point at a GraphQL endpoint and pull its schema in for query building.
 * **Assertions** — simple pass/fail checks on status or JSON body — no scripting engine, no `eval`.
 * **Local mock responses** — flip a request into mock mode and get a saved response back instantly, with zero network calls.
+* **Streaming responses** — `text/event-stream` and other textual responses render live as chunks arrive, instead of waiting for the connection to close.
 * **History** — every send is recorded and searchable, with side-by-side comparison.
 * **Installable & offline** — reqlo is a PWA; install it and it keeps working without a network connection.
 * **Durable storage** — asks the browser to treat its IndexedDB data as persistent rather than evictable under disk pressure.
@@ -76,6 +80,18 @@ Performance
 
 Large collections and long history lists are virtualized, and Monaco/code-editor bundles are split out of the main chunk so the app stays snappy. Open an issue if you find a slow path — profiling contributions are always welcome.
 
+Testing
+-------
+
+    npm run typecheck    # tsc --noEmit
+    npm run lint         # eslint
+    npm run test         # vitest (unit + component)
+    npm run test:e2e     # playwright (end-to-end smoke)
+    npm run build        # production build
+    npm run check:bundle-size
+
+Every PR runs the same checks in CI — `main` only accepts commits that pass all of them.
+
 Docker
 ------
 
@@ -113,6 +129,8 @@ Authors
 
 * Tuan Nguyen Van
 
+[ci-img]: https://github.com/warriors-vn/reqlo/actions/workflows/ci.yml/badge.svg?branch=main
+[ci]: https://github.com/warriors-vn/reqlo/actions/workflows/ci.yml
 [framework-img]: https://img.shields.io/badge/React-19.x-61DAFB?logo=react&logoColor=white
 [framework]: https://reactjs.org
 [bundler-img]: https://img.shields.io/badge/Bundler-Vite-646cff?logo=vite&logoColor=white
