@@ -14,7 +14,6 @@ export const pythonGenerator: SnippetGenerator = {
     family: "backend",
     description: "Python requests client ready for scripts and tooling.",
     monacoLanguage: "python",
-    accent: "from-yellow-300/80 to-blue-300/80",
   },
   generate: (context) => {
     const sections = ["import requests"];

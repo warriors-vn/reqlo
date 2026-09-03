@@ -8,7 +8,6 @@ export const rustGenerator: SnippetGenerator = {
     family: "backend",
     description: "Async reqwest client with Tokio runtime.",
     monacoLanguage: "rust",
-    accent: "from-orange-400/80 to-red-200/80",
   },
   generate: (context) => {
     const setup: string[] = [];

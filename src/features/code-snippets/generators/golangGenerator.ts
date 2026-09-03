@@ -15,7 +15,6 @@ export const golangGenerator: SnippetGenerator = {
     family: "backend",
     description: "Go client using net/http and idiomatic request builders.",
     monacoLanguage: "go",
-    accent: "from-cyan-300/80 to-sky-200/80",
   },
   generate: (context) => {
     const imports = new Set(["fmt", "io", "net/http", "strings"]);

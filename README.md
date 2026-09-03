@@ -137,6 +137,14 @@ To stop at the intermediate build stage instead (e.g. to lift the compiled `dist
     docker cp reqlo-build:/app/dist ./dist
     docker rm reqlo-build
 
+reqlo's built-in CORS-bypass proxy (`/api/proxy`, used automatically when a
+direct send looks CORS-blocked) is a server route, so it only works where
+reqlo runs with its own app server — `npm run dev`, or a Cloudflare Worker
+deploy via `wrangler`. The `production` image above serves the built
+`dist/` as static files through plain nginx, which has no route for
+`/api/proxy`; a CORS-blocked request there behaves exactly as it does without
+the proxy (a clear error, no silent hang).
+
 Git Flow
 --------
 

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { executeRequest } from "@/services/executor";
-import { normalizeApiRequest, uid, type ApiRequest } from "@/services/db";
+import { normalizeApiRequest, uid, type ApiRequest, type HttpMethod } from "@/services/db";
 import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
+import { PROXIED_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
 
 function makeRequest(overrides: Partial<ApiRequest> = {}): ApiRequest {
   const now = Date.now();
@@ -139,6 +140,119 @@ describe("executeRequest — send-failure diagnosis", () => {
     const result = await executeRequest(request, null);
     expect(result.error).toBe("Request failed: boom. Check the URL, CORS, or network connection.");
   });
+});
+
+describe("executeRequest — CORS-block proxy retry", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("retries through /api/proxy and succeeds when it carries the proxied marker header", async () => {
+    vi.stubGlobal("location", { protocol: "https:", origin: "https://app.reqlo.dev" });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === "/api/proxy") {
+        expect(new Headers(init?.headers).get(PROXY_TARGET_HEADER)).toBe(
+          "https://api.example.com/data",
+        );
+        return new Response("ok", { status: 200, headers: { [PROXIED_HEADER]: "1" } });
+      }
+      throw new TypeError("Failed to fetch");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = makeRequest({ url: "https://api.example.com/data" });
+    const result = await executeRequest(request, null);
+
+    expect(result.viaProxy).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to the normal CORS message when the proxy response carries no marker header (route doesn't exist in this deployment)", async () => {
+    vi.stubGlobal("location", { protocol: "https:", origin: "https://app.reqlo.dev" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url === "/api/proxy") {
+          return new Response("Not Found", { status: 404 });
+        }
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+
+    const request = makeRequest({ url: "https://api.example.com/data" });
+    const result = await executeRequest(request, null);
+
+    expect(result.viaProxy).toBeFalsy();
+    expect(result.error).toContain("CORS");
+  });
+
+  it("never retries a same-origin failure through the proxy", async () => {
+    vi.stubGlobal("location", { protocol: "https:", origin: "https://api.example.com" });
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = makeRequest({ url: "https://api.example.com/data" });
+    await executeRequest(request, null);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  // A CORS block only ever means the browser withheld the *response* — for
+  // a "simple request" (e.g. a form-urlencoded POST with no custom headers),
+  // the real request can already have reached the server with no preflight
+  // at all. Auto-retrying one of those through the proxy risks silently
+  // firing the same side-effecting call twice, so only safe/idempotent
+  // methods (GET/HEAD/OPTIONS) are retried automatically.
+  it.each(["POST", "PUT", "PATCH", "DELETE"])(
+    "never auto-retries a %s through the proxy, even when it looks CORS-blocked",
+    async (method) => {
+      vi.stubGlobal("location", { protocol: "https:", origin: "https://app.reqlo.dev" });
+      const fetchMock = vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const request = makeRequest({
+        url: "https://api.example.com/data",
+        method: method as HttpMethod,
+      });
+      const result = await executeRequest(request, null);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(result.viaProxy).toBeFalsy();
+      expect(result.error).toContain("CORS");
+    },
+  );
+
+  it.each(["GET", "HEAD", "OPTIONS"])(
+    "does auto-retry a safe %s through the proxy",
+    async (method) => {
+      vi.stubGlobal("location", { protocol: "https:", origin: "https://app.reqlo.dev" });
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url === "/api/proxy") {
+          return new Response("ok", { status: 200, headers: { [PROXIED_HEADER]: "1" } });
+        }
+        throw new TypeError("Failed to fetch");
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const request = makeRequest({
+        url: "https://api.example.com/data",
+        method: method as HttpMethod,
+      });
+      const result = await executeRequest(request, null);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(result.viaProxy).toBe(true);
+    },
+  );
 });
 
 /** A `Response` whose body streams `chunks` (each a `Uint8Array`) one at a

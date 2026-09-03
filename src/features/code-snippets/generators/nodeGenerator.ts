@@ -15,7 +15,6 @@ export const nodeGenerator: SnippetGenerator = {
     family: "backend",
     description: "Node 18+ native fetch with file-system helpers.",
     monacoLanguage: "javascript",
-    accent: "from-emerald-400/80 to-lime-200/80",
   },
   generate: (context) => {
     const imports = new Set<string>();

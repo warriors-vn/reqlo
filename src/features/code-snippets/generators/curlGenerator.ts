@@ -8,7 +8,6 @@ export const curlGenerator: SnippetGenerator = {
     family: "cli",
     description: "Shell-ready cURL for terminals and docs.",
     monacoLanguage: "shell",
-    accent: "from-slate-400/80 to-zinc-200/80",
   },
   generate: (context) => {
     const lines = [
