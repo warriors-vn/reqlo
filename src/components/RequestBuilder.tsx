@@ -112,12 +112,17 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
               if (e.key === "Enter") (e.target as HTMLInputElement).blur();
               if (e.key === "Escape") setNameEdit(false);
             }}
-            className="rounded-md border border-border bg-background px-2 py-0.5 text-sm font-medium focus-ring outline-none"
+            className="w-full max-w-md rounded-md border border-border bg-background px-2 py-0.5 text-sm font-medium focus-ring outline-none"
           />
         ) : (
+          // min-w-0 + truncate + text-left: a long name would otherwise span
+          // the full width, wrap to two centre-aligned lines (button's own
+          // default alignment) and push the URL row down — the sidebar, tab
+          // bar and snippet header all truncate the same name instead.
           <button
             onClick={() => setNameEdit(true)}
-            className="rounded px-1 py-0.5 text-sm font-medium hover:bg-accent"
+            title={request.name || "Untitled request"}
+            className="min-w-0 max-w-full truncate rounded px-1 py-0.5 text-left text-sm font-medium hover:bg-accent"
           >
             {request.name || "Untitled request"}
           </button>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckCircle2,
@@ -8,6 +9,7 @@ import {
   Heart,
   Pin,
   Play,
+  Save,
   Search,
   Star,
   Trash2,
@@ -17,6 +19,8 @@ import { MethodBadge } from "@/components/MethodBadge";
 import { LazyConfirmDeleteDialog as ConfirmDeleteDialog } from "@/components/LazyConfirmDeleteDialog";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/stores/useStore";
+import { createDefaultMock } from "@/services/db";
+import { buildMockFromResponse, type MockFromResponseResult } from "@/services/mock-from-response";
 import { useDebouncedValue } from "@/features/request-history/hooks/useDebouncedValue";
 import { useVirtualHistoryList } from "@/features/request-history/hooks/useVirtualHistoryList";
 import { useRequestHistoryStore } from "@/features/request-history/stores/useRequestHistoryStore";
@@ -43,11 +47,15 @@ const METHOD_FILTERS: HistoryMethodFilter[] = [
   "OPTIONS",
 ];
 const STATUS_FILTERS: HistoryStatusFilter[] = ["ALL", "SUCCESS", "ERROR", "4XX", "5XX"];
-const ROW_HEIGHT = 96;
+/** Must stay in sync with HistoryRow's own `h-[96px]` + `mb-2` (8px) — the
+ * virtualiser positions every row at an exact multiple of this. */
+const ROW_HEIGHT = 104;
 
 export function RequestHistoryPanel() {
   const open = useStore((state) => state.overlays.history);
   const history = useStore((state) => state.history);
+  const requests = useStore((state) => state.requests);
+  const updateRequest = useStore((state) => state.updateRequest);
   const restoreHistoryEntry = useStore((state) => state.restoreHistoryEntry);
   const toggleHistoryFavorite = useStore((state) => state.toggleHistoryFavorite);
   const toggleHistoryPinned = useStore((state) => state.toggleHistoryPinned);
@@ -93,6 +101,7 @@ export function RequestHistoryPanel() {
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingMockOverwriteId, setPendingMockOverwriteId] = useState<string | null>(null);
 
   const compareEntries = useMemo(
     () =>
@@ -182,6 +191,48 @@ export function RequestHistoryPanel() {
   const exitCompareMode = () => {
     setCompareMode(false);
     setCompareIds([]);
+  };
+
+  const mockEligibilityFor = (entry: HistoryEntry): MockFromResponseResult => {
+    const target = entry.requestId ? requests.find((r) => r.id === entry.requestId) : undefined;
+    if (!target) {
+      return { ok: false, reason: "The original request no longer exists." };
+    }
+    return buildMockFromResponse({
+      status: entry.status,
+      contentType: entry.responseContentType,
+      body: entry.responseBody,
+      responseKind: entry.responseKind,
+      truncated: entry.responseBodyTruncated,
+      hasError: Boolean(entry.errorMessage),
+    });
+  };
+
+  const applyMockSave = (entry: HistoryEntry) => {
+    const target = requests.find((r) => r.id === entry.requestId);
+    const eligibility = mockEligibilityFor(entry);
+    if (!target || !eligibility.ok) return;
+    void updateRequest(target.id, { mock: { ...target.mock, ...eligibility.mock } });
+    toast.success(`Saved as mock for "${target.name || "this request"}"`, {
+      description: target.mock.enabled
+        ? "Mock is already on — Send will return this."
+        : "Open the Mock tab to turn mocking on.",
+    });
+  };
+
+  const saveAsMock = (entry: HistoryEntry) => {
+    const target = requests.find((r) => r.id === entry.requestId);
+    if (!target || !mockEligibilityFor(entry).ok) return;
+    // Same "is there really something to lose" check ResponseViewer's own
+    // Save-as-mock uses — every request starts with a non-empty placeholder
+    // mock body, so a plain non-empty check would confirm on every first save.
+    const hasCustomMockBody =
+      target.mock.body.trim() && target.mock.body !== createDefaultMock().body;
+    if (hasCustomMockBody) {
+      setPendingMockOverwriteId(entry.id);
+      return;
+    }
+    applyMockSave(entry);
   };
 
   return (
@@ -317,8 +368,12 @@ export function RequestHistoryPanel() {
                       }
                       onRun={() => void restoreHistoryEntry(row.item.id, { rerun: true })}
                       onDelete={() => setPendingDeleteId(row.item.id)}
-                      onToggleFavorite={() => void toggleHistoryFavorite(row.item.id)}
-                      onTogglePinned={() => void toggleHistoryPinned(row.item.id)}
+                      onToggleFavorite={() =>
+                        void toggleHistoryFavorite(row.item.id).catch(() => {})
+                      }
+                      onTogglePinned={() => void toggleHistoryPinned(row.item.id).catch(() => {})}
+                      mockEligibility={mockEligibilityFor(row.item)}
+                      onSaveAsMock={() => saveAsMock(row.item)}
                       compareMode={compareMode}
                       compareSelected={compareIds.includes(row.item.id)}
                       onToggleCompare={() => toggleCompareSelection(row.item.id)}
@@ -343,8 +398,27 @@ export function RequestHistoryPanel() {
             : ""
         }
         onConfirm={() => {
-          if (pendingDeleteId) void deleteHistoryEntry(pendingDeleteId);
+          if (pendingDeleteId) void deleteHistoryEntry(pendingDeleteId).catch(() => {});
           setPendingDeleteId(null);
+        }}
+      />
+
+      <ConfirmDeleteDialog
+        open={pendingMockOverwriteId !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setPendingMockOverwriteId(null);
+        }}
+        title="Replace mock body?"
+        description={(() => {
+          const entry = history.find((item) => item.id === pendingMockOverwriteId);
+          const target = entry ? requests.find((r) => r.id === entry.requestId) : undefined;
+          return `"${target?.name || "This request"}"'s current mock body will be replaced with this response. This can't be undone.`;
+        })()}
+        confirmLabel="Replace"
+        onConfirm={() => {
+          const entry = history.find((item) => item.id === pendingMockOverwriteId);
+          if (entry) applyMockSave(entry);
+          setPendingMockOverwriteId(null);
         }}
       />
     </div>
@@ -361,6 +435,8 @@ interface HistoryRowProps {
   onDelete: () => void;
   onToggleFavorite: () => void;
   onTogglePinned: () => void;
+  mockEligibility: MockFromResponseResult;
+  onSaveAsMock: () => void;
   compareMode: boolean;
   compareSelected: boolean;
   onToggleCompare: () => void;
@@ -376,6 +452,8 @@ function HistoryRow({
   onDelete,
   onToggleFavorite,
   onTogglePinned,
+  mockEligibility,
+  onSaveAsMock,
   compareMode,
   compareSelected,
   onToggleCompare,
@@ -390,7 +468,12 @@ function HistoryRow({
       exit={{ opacity: 0, y: -4 }}
       transition={{ duration: 0.14 }}
       className={cn(
-        "group mb-2 rounded-[22px] border px-3 py-3 transition",
+        // Fixed height, and every inner line kept to one line: the virtualiser
+        // (useVirtualHistoryList) positions rows at exact ROW_HEIGHT multiples
+        // and derives total scroll height from it, so a row that grows to fit a
+        // long name would drift every row below it out of its slot and break
+        // both the scrollbar and arrow-key scroll-into-view.
+        "group mb-2 h-[96px] overflow-hidden rounded-[22px] border px-3 py-3 transition",
         selected
           ? "border-primary/25 bg-accent/55 shadow-[0_16px_42px_rgba(99,102,241,0.10)]"
           : "border-border/70 bg-background/80 hover:border-foreground/10 hover:bg-accent/30",
@@ -400,7 +483,7 @@ function HistoryRow({
       <div className="flex items-start gap-3">
         <MethodBadge method={entry.method} className="mt-0.5 w-12 shrink-0 text-right" />
         <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onOpen}
@@ -408,24 +491,24 @@ function HistoryRow({
             >
               {entry.requestName || entry.url}
             </button>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-3xs font-medium text-muted-foreground">
+            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-3xs font-medium text-muted-foreground">
               {formatRelativeHistoryTime(entry.executedAt)}
             </span>
             {entry.environmentName && (
-              <span className="rounded-full bg-background px-2 py-0.5 text-3xs text-muted-foreground">
+              <span className="max-w-[10rem] shrink-0 truncate rounded-full bg-background px-2 py-0.5 text-3xs text-muted-foreground">
                 {entry.environmentName}
               </span>
             )}
           </div>
           <div className="truncate font-mono text-2xs text-muted-foreground">{entry.url}</div>
-          <div className="flex flex-wrap items-center gap-3 text-2xs">
-            <span className={cn("font-mono font-semibold", statusTone)}>
+          <div className="flex items-center gap-3 text-2xs">
+            <span className={cn("shrink-0 font-mono font-semibold", statusTone)}>
               {entry.errorMessage ? "ERR" : (entry.status ?? "—")}
             </span>
-            <span className="font-mono text-muted-foreground">
+            <span className="shrink-0 font-mono text-muted-foreground">
               {entry.durationMs.toFixed(0)} ms
             </span>
-            <span className="font-mono text-muted-foreground">
+            <span className="shrink-0 font-mono text-muted-foreground">
               {Math.round((entry.sizeBytes / 1024) * 10) / 10 || 0} KB
             </span>
             {entry.responseExcerpt && (
@@ -494,6 +577,22 @@ function HistoryRow({
             title="Restore in new tab"
           >
             <ExternalLink className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            disabled={!mockEligibility.ok}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSaveAsMock();
+            }}
+            className={cn(actionButtonClass(), "disabled:cursor-not-allowed disabled:opacity-40")}
+            title={
+              mockEligibility.ok
+                ? "Save this response as the request's mock"
+                : mockEligibility.reason
+            }
+          >
+            <Save className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"

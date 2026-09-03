@@ -111,4 +111,41 @@ describe("RequestBuilder — Params/Headers survive a tab switch", () => {
       expect.objectContaining({ key: "extra", value: "2" }),
     ]);
   });
+
+  // Regression test for a bug caught live (not by any automated test) in
+  // v1.3.0: the textarea used to bind straight to `serializeKVText(list)`,
+  // recomputed on every render, which raced React's controlled-value reset
+  // against fast/pasted multi-line input and scrambled the text (a dropped
+  // newline merged two lines into one, plus a spurious blank row). Fixed by
+  // giving the textarea its own local draft state (see `textDraft` in
+  // RequestBuilder.tsx's KVEditor) — this test only became possible once the
+  // component-test layer landed, after the original fix already shipped.
+  it("keeps every line intact through fast multi-line input in text mode", async () => {
+    const request = seedRequest();
+    const user = userEvent.setup();
+    render(<Wrapper requestId={request.id} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit as text" }));
+    const textarea = screen.getByPlaceholderText(/key: value/);
+
+    const lines = [
+      "Content-Type: application/json",
+      "Authorization: Bearer abc123",
+      "X-Request-Id: req-1",
+    ];
+    // Starts as ":" — the serialized form of the single blank row seedRequest()
+    // creates — so clear it first rather than typing on top of it.
+    await user.click(textarea);
+    await user.clear(textarea);
+    await user.type(textarea, lines.join("\n"));
+
+    expect(textarea).toHaveValue(lines.join("\n"));
+
+    await user.click(screen.getByRole("button", { name: "Edit as rows" }));
+    expect(useStore.getState().requests[0].queryParams).toEqual([
+      expect.objectContaining({ key: "Content-Type", value: "application/json", enabled: true }),
+      expect.objectContaining({ key: "Authorization", value: "Bearer abc123", enabled: true }),
+      expect.objectContaining({ key: "X-Request-Id", value: "req-1", enabled: true }),
+    ]);
+  });
 });

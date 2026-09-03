@@ -82,6 +82,7 @@ export function TabBar() {
                     e.stopPropagation();
                     closeTab(tab.id);
                   }}
+                  aria-label={`Close ${req.name || "Untitled"}`}
                   className="grid h-4 w-4 place-items-center rounded text-muted-foreground opacity-0 hover:bg-foreground/10 hover:text-foreground group-hover:opacity-100"
                 >
                   <X className="h-3 w-3" />

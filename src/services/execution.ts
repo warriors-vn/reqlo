@@ -33,6 +33,10 @@ export interface ExecutionResult {
   refreshedOAuth2Token?: OAuth2CachedToken;
   /** Set when a cached OAuth2 token was expired and refreshing it was unavailable or failed — the request was not sent. */
   oauth2RefreshError?: string;
+  /** `{{VAR}}` names this send referenced that the active environment had no
+   * value for — each substituted an empty string, so the request that went out
+   * isn't the one the user wrote. Absent when everything resolved. */
+  unresolvedVariables?: string[];
 }
 
 export function formatBytes(n: number) {

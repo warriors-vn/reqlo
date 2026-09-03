@@ -114,6 +114,11 @@ export function RequestAssertionEditor({ request, result }: Props) {
 
               <button
                 onClick={() => remove(rule.id)}
+                aria-label={
+                  rule.kind === "jsonBody" && rule.path
+                    ? `Remove rule for ${rule.path}`
+                    : "Remove test rule"
+                }
                 className="ml-auto grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               >
                 <X className="h-3 w-3" />

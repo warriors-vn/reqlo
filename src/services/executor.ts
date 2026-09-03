@@ -59,6 +59,7 @@ export async function executeRequest(
   // resolution succeeds, but falls back to the raw configured URL so a
   // failure during resolution itself can still be classified.
   let resolvedUrl: string = req.url;
+  let unresolvedVariables: string[] | undefined;
   try {
     if (req.auth.type === "oauth2" && req.auth.oauth2?.cachedToken) {
       const oauth2Config = req.auth.oauth2;
@@ -118,6 +119,9 @@ export async function executeRequest(
 
     const { url, resolvedHeaders: headers, serializedBody } = resolved;
     resolvedUrl = url;
+    unresolvedVariables = resolved.unresolvedVariables.length
+      ? resolved.unresolvedVariables
+      : undefined;
     if (scriptHeaderPatch) Object.assign(headers, scriptHeaderPatch);
     const init: RequestInit = { method: effectiveReq.method, headers };
 
@@ -156,6 +160,7 @@ export async function executeRequest(
       scriptEnvironmentPatch,
       scriptError,
       refreshedOAuth2Token,
+      unresolvedVariables,
     };
   } catch (e: unknown) {
     const isAbort =
@@ -170,6 +175,7 @@ export async function executeRequest(
       scriptEnvironmentPatch,
       scriptError,
       refreshedOAuth2Token,
+      unresolvedVariables,
     };
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
