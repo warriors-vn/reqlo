@@ -27,7 +27,6 @@ import { LazySnippetCodeEditor as SnippetCodeEditor } from "@/features/code-snip
 import { copyTextToClipboard } from "@/features/code-snippets/utils/clipboard";
 import type { SnippetLanguage } from "@/features/code-snippets/types";
 import type { ApiRequest, Environment } from "@/services/db";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 const COLLAPSED_WIDTH = 68;
@@ -251,12 +250,7 @@ function PanelSurface({
             </div>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-3xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            <span
-              className={cn(
-                "rounded-full px-2 py-1 text-foreground shadow-sm dark:brightness-[0.55] dark:saturate-[0.35]",
-                `bg-gradient-to-r ${activeMeta.accent}`,
-              )}
-            >
+            <span className="rounded-full border border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 px-2 py-1 text-foreground/80">
               {activeMeta.family}
             </span>
             {environment && (

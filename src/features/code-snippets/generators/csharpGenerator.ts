@@ -8,7 +8,6 @@ export const csharpGenerator: SnippetGenerator = {
     family: "backend",
     description: "HttpClient snippet for .NET services and tools.",
     monacoLanguage: "csharp",
-    accent: "from-violet-400/80 to-fuchsia-200/80",
   },
   generate: (context) => {
     const setup: string[] = [];

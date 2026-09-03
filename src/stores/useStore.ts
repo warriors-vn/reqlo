@@ -232,6 +232,7 @@ interface State {
 
   // import / export
   importCurl: (text: string) => Promise<ApiRequest | null>;
+  applyCurlToRequest: (id: string, curlText: string) => Promise<boolean>;
   importCollectionJSON: (text: string) => Promise<Collection | null>;
   importPostmanCollectionJSON: (text: string) => Promise<Collection | null>;
   importInsomniaExportJSON: (text: string) => Promise<Collection | null>;
@@ -1272,6 +1273,53 @@ export const useStore = create<State>((set, get) => ({
     }
 
     return req;
+  },
+
+  // Overwrites an already-open request in place, rather than creating a new
+  // one like importCurl — this is what pasting a full cURL command into the
+  // URL field does, matching Postman's URL-bar paste behavior.
+  applyCurlToRequest: async (id, curlText) => {
+    const existing = get().requests.find((r) => r.id === id);
+    if (!existing) return false;
+    const parsed = parseCurl(curlText, existing.workspaceId, existing.collectionId);
+    if (!parsed.url) return false;
+
+    const previous = {
+      method: existing.method,
+      url: existing.url,
+      headers: existing.headers,
+      queryParams: existing.queryParams,
+      body: existing.body,
+      bodyType: existing.bodyType,
+      bodyDrafts: existing.bodyDrafts,
+      auth: existing.auth,
+    };
+    await get().updateRequest(id, {
+      method: parsed.method,
+      url: parsed.url,
+      headers: parsed.headers,
+      queryParams: parsed.queryParams,
+      body: parsed.body,
+      bodyType: parsed.bodyType,
+      bodyDrafts: parsed.bodyDrafts,
+      auth: parsed.auth,
+    });
+
+    toast(`Request replaced from pasted cURL`, {
+      duration: UNDO_GRACE_MS,
+      action: { label: "Undo", onClick: () => void get().updateRequest(id, previous) },
+    });
+
+    const unattachedFiles = parsed.bodyDrafts.formData.filter(
+      (row) => row.kind === "file" && row.files.length === 0,
+    ).length;
+    if (unattachedFiles > 0) {
+      toast.info(
+        `${unattachedFiles} file field${unattachedFiles === 1 ? "" : "s"} need${unattachedFiles === 1 ? "s" : ""} to be reattached — curl file paths aren't accessible from the browser.`,
+      );
+    }
+
+    return true;
   },
 
   importCollectionJSON: async (text) => {

@@ -15,7 +15,6 @@ export const fetchGenerator: SnippetGenerator = {
     family: "frontend",
     description: "Browser-native fetch with clean request init.",
     monacoLanguage: "javascript",
-    accent: "from-sky-400/80 to-cyan-200/80",
   },
   generate: (context) => {
     const setup: string[] = [];

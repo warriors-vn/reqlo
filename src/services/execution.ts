@@ -37,6 +37,10 @@ export interface ExecutionResult {
    * value for — each substituted an empty string, so the request that went out
    * isn't the one the user wrote. Absent when everything resolved. */
   unresolvedVariables?: string[];
+  /** True when a likely-CORS failure on the direct request was retried
+   * through reqlo's own same-origin proxy (see executor.ts), and that retry
+   * is what actually produced this result. */
+  viaProxy?: boolean;
 }
 
 export function formatBytes(n: number) {

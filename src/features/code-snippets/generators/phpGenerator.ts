@@ -8,7 +8,6 @@ export const phpGenerator: SnippetGenerator = {
     family: "backend",
     description: "PHP cURL handle for backend integrations.",
     monacoLanguage: "php",
-    accent: "from-indigo-300/80 to-purple-200/80",
   },
   generate: (context) => {
     const headerLines = context.headers.map(

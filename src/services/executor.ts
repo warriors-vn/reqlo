@@ -5,6 +5,7 @@ import {
 } from "@/features/code-snippets/utils/request-resolver";
 import { fetchClientCredentialsToken, refreshOAuth2Token } from "@/services/oauth2";
 import { isTextualResponse, type ExecutionResult, type ResponseKind } from "@/services/execution";
+import { PROXIED_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
 
 export interface ExecuteRequestOptions {
   /** External cancellation source (e.g. a Cancel button) — independent of
@@ -134,7 +135,25 @@ export async function executeRequest(
       init.body = serializedBody.body;
     }
 
-    const res = await fetch(url, { ...init, signal: controller.signal });
+    let res: Response;
+    let viaProxy = false;
+    try {
+      res = await fetch(url, { ...init, signal: controller.signal });
+    } catch (fetchError) {
+      if (!shouldRetryViaProxy(fetchError, url, effectiveReq.method)) throw fetchError;
+      try {
+        const proxied = await fetchViaProxy(url, init, controller.signal);
+        // No marker header means this deployment has no server for
+        // /api/proxy at all (e.g. the static-nginx Docker production image
+        // just 404s) rather than the proxy having actually run and failed —
+        // in that case fall through to the original, more honest error.
+        if (!proxied.headers.has(PROXIED_HEADER)) throw fetchError;
+        res = proxied;
+        viaProxy = true;
+      } catch {
+        throw fetchError;
+      }
+    }
     const respHeaders: Record<string, string> = {};
     res.headers.forEach((v, k) => {
       respHeaders[k] = v;
@@ -161,6 +180,7 @@ export async function executeRequest(
       scriptError,
       refreshedOAuth2Token,
       unresolvedVariables,
+      viaProxy,
     };
   } catch (e: unknown) {
     const isAbort =
@@ -239,6 +259,56 @@ function isCrossOrigin(url: string, pageOrigin: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** GET/HEAD/OPTIONS never mutate state on a well-behaved server, so retrying
+ * one is safe even though the original attempt might technically have
+ * reached the target — nothing to double up. POST/PUT/PATCH/DELETE are the
+ * opposite: with CORS, the browser can (and for a "simple request" — e.g.
+ * form-urlencoded body, no custom headers — routinely does) send the real
+ * request and only withhold the *response* when the origin isn't allowed.
+ * Auto-retrying one of those through the proxy risks silently firing the
+ * same side-effecting call twice. */
+const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** Same "looks like a CORS block" heuristic `describeSendFailure` uses for
+ * its message — reused here to decide whether it's worth retrying through
+ * reqlo's own proxy at all. */
+function shouldRetryViaProxy(e: unknown, url: string, method: string): boolean {
+  const pageOrigin = globalThis.location?.origin;
+  return (
+    globalThis.navigator?.onLine !== false &&
+    e instanceof TypeError &&
+    !!pageOrigin &&
+    isCrossOrigin(url, pageOrigin) &&
+    SAFE_RETRY_METHODS.has(method.toUpperCase())
+  );
+}
+
+/** Re-sends the same request to reqlo's own same-origin /api/proxy route
+ * (see src/routes/api.proxy.ts), which forwards it server-side — a browser
+ * never applies CORS to a same-origin call, and the real request leaves from
+ * reqlo's server instead of the browser. No `duplex` option needed here:
+ * `init.body` is at most a string/FormData/Blob (SerializedRequestBody),
+ * never a stream. */
+function fetchViaProxy(url: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+  const headers = new Headers(init.headers);
+  headers.set(PROXY_TARGET_HEADER, url);
+  // The outer URL is always the literal string "/api/proxy" — the real
+  // target lives in a header, which the browser's HTTP cache doesn't key on.
+  // Without this, a second send to a different target through the same
+  // browser session can be served an earlier target's cached response
+  // outright. The server route also sends Cache-Control: no-store; this is
+  // belt-and-suspenders on the request side.
+  //
+  // redirect: "manual" matters here too, not just server-side: the proxy
+  // route itself never follows a redirect from the target (see
+  // api.proxy.ts), so what comes back from THIS fetch can legitimately be a
+  // 3xx. Without "manual", the browser would transparently re-fetch that
+  // Location URL directly and cross-origin — the exact CORS wall this
+  // retry exists to route around, and one that skips the proxy's SSRF check
+  // entirely on that hop.
+  return fetch("/api/proxy", { ...init, headers, signal, cache: "no-store", redirect: "manual" });
 }
 
 async function buildMockResult(mock: MockConfig, signal?: AbortSignal): Promise<ExecutionResult> {

@@ -1,6 +1,7 @@
 import { useStore } from "@/stores/useStore";
 import { uid, type ApiRequest, type HttpMethod } from "@/services/db";
 import type { ExecutionResult } from "@/services/execution";
+import { parseCurl } from "@/services/curl";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { AdvancedBodyEditor } from "@/features/request-body/components/AdvancedBodyEditor";
@@ -41,6 +42,7 @@ interface Props {
 export function RequestBuilder({ request, onSend, onCancel, sending, result = null }: Props) {
   const updateRequest = useStore((s) => s.updateRequest);
   const renameRequest = useStore((s) => s.renameRequest);
+  const applyCurlToRequest = useStore((s) => s.applyCurlToRequest);
   const [tab, setTab] = useState<
     "params" | "headers" | "body" | "auth" | "script" | "extract" | "tests" | "mock"
   >("params");
@@ -163,6 +165,17 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
             spellCheck={false}
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === "Enter") onSend();
+            }}
+            onPaste={(e) => {
+              const text = e.clipboardData.getData("text");
+              // Same gate ImportCurlModal already uses to decide whether to
+              // show its own preview — a plain URL paste falls through to
+              // the input's normal default behavior untouched.
+              if (!text.trim().toLowerCase().startsWith("curl")) return;
+              const parsed = parseCurl(text, request.workspaceId, request.collectionId);
+              if (!parsed.url) return;
+              e.preventDefault();
+              void applyCurlToRequest(request.id, text);
             }}
             className="h-9 flex-1 bg-transparent px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60"
           />

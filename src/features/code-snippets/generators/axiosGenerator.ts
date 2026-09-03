@@ -15,7 +15,6 @@ export const axiosGenerator: SnippetGenerator = {
     family: "frontend",
     description: "Promise-based Axios request config.",
     monacoLanguage: "javascript",
-    accent: "from-indigo-400/80 to-violet-200/80",
   },
   generate: (context) => {
     const setup = ['import axios from "axios";\n'];

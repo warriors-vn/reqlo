@@ -8,7 +8,6 @@ export const javaGenerator: SnippetGenerator = {
     family: "backend",
     description: "OkHttp client for JVM services and tooling.",
     monacoLanguage: "java",
-    accent: "from-orange-300/80 to-amber-200/80",
   },
   generate: (context) => {
     const setup: string[] = ["OkHttpClient client = new OkHttpClient();"];

@@ -26,7 +26,6 @@ export interface SnippetLanguageMeta {
   family: SnippetFamily;
   description: string;
   monacoLanguage: string;
-  accent: string;
 }
 
 export interface SnippetHeader {
