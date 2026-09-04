@@ -8,6 +8,7 @@ import {
   type HistoryEntry,
   type KV,
 } from "@/services/db";
+import { PROXIED_HEADER } from "@/services/proxy-constants";
 import { collectRequestsInTreeOrder, runSingleRequest } from "@/services/runner";
 import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
 
@@ -45,10 +46,13 @@ function makeDeps(workspaceId = "ws-1") {
   };
 }
 
+// Carries PROXIED_HEADER because every send goes through /api/proxy now, and
+// executeRequest treats a response without that marker as "this deployment
+// has no proxy" rather than as the API's own answer.
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", [PROXIED_HEADER]: "1" },
   });
 }
 
@@ -208,10 +212,11 @@ describe("runSingleRequest", () => {
     });
     await runSingleRequest(requestB, envAfter, deps);
 
+    // Read through Headers rather than as a plain object: the send goes out
+    // via /api/proxy, and fetchViaProxy rebuilds the init's headers as a
+    // Headers instance so it can add the proxy target to them.
     const [, calledInit] = fetchMock.mock.calls[0];
-    expect((calledInit?.headers as Record<string, string>).Authorization).toBe(
-      "Bearer chained-token",
-    );
+    expect(new Headers(calledInit?.headers).get("Authorization")).toBe("Bearer chained-token");
   });
 
   it("runs a pre-request script whose environment write interpolates into this same request's headers, and persists it", async () => {
@@ -230,9 +235,9 @@ describe("runSingleRequest", () => {
 
     expect(outcome.result.scriptError).toBeUndefined();
     const [, calledInit] = fetchMock.mock.calls[0];
-    const sentHeaders = calledInit?.headers as Record<string, string>;
-    expect(sentHeaders["X-Nonce"]).toBe("computed-nonce");
-    expect(sentHeaders["X-Signature"]).toBe("GET");
+    const sentHeaders = new Headers(calledInit?.headers);
+    expect(sentHeaders.get("X-Nonce")).toBe("computed-nonce");
+    expect(sentHeaders.get("X-Signature")).toBe("GET");
     expect(deps.updateEnvironment).toHaveBeenCalledWith("env-1", {
       variables: [{ id: expect.any(String), key: "nonce", value: "computed-nonce", enabled: true }],
     });
@@ -401,7 +406,10 @@ describe("runSingleRequest", () => {
       "fetch",
       vi.fn(
         async () =>
-          new Response(hugeBody, { status: 200, headers: { "content-type": "application/json" } }),
+          new Response(hugeBody, {
+            status: 200,
+            headers: { "content-type": "application/json", [PROXIED_HEADER]: "1" },
+          }),
       ),
     );
     const deps = makeDeps();

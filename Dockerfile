@@ -53,31 +53,35 @@ ENV NODE_ENV=production
 # Copy full source and build
 COPY . /app
 
-# Use the project's build script. The entrypoint detection logic is not needed here;
-# projects should have a `build` script in package.json for production.
-RUN set -ex \
-  && if npm run -s build; then echo "Build finished"; else echo "Build failed"; fi
+# build:node (not plain `build`) is what produces a self-contained deployment:
+# TanStack Start's SPA mode prerenders dist/client/_shell.html, and the step
+# also bundles the /api/proxy handler plus the tiny Node server that serves
+# both. The default `build` target emits a Cloudflare Worker bundle with no
+# static HTML document at all, which is why the previous nginx-based image
+# served nothing at "/".
+#
+# Deliberately NOT wrapped in `if ... then ... else echo "Build failed"; fi`
+# as it used to be: that swallowed a failing build and shipped a broken image
+# as if nothing had gone wrong.
+RUN npm run build:node
 
 #############################################
-# Production stage - serve built assets with nginx (small, secure image)
+# Production stage - reqlo's own Node server (static client + /api/proxy)
 #############################################
-FROM nginx:stable-alpine AS production
+FROM node:lts-alpine AS production
+ENV NODE_ENV=production
+WORKDIR /app
 
-# Copy built files from the build stage. Different tools output to different dirs:
-# - Vite -> dist
-# - CRA  -> build
-# We'll copy the whole /app and then copy the right folder into nginx html dir at runtime.
-COPY --from=build /app /app
+# Only the build output is needed at runtime — the server is dependency-free,
+# so no node_modules ship in this image.
+COPY --from=build /app/dist ./dist
 
-# Copy a small wrapper script to choose the correct output folder
-RUN set -ex \
-  && mkdir -p /docker-entrypoint.d \
-  && echo '#!/bin/sh\nset -e\nif [ -d /app/build ]; then cp -a /app/build/. /usr/share/nginx/html; elif [ -d /app/dist ]; then cp -a /app/dist/. /usr/share/nginx/html; else echo "Warning: no build output found (looked for /app/build and /app/dist)"; fi\nexec nginx -g "daemon off;"' > /docker-entrypoint.d/start.sh \
-  && chmod +x /docker-entrypoint.d/start.sh
+# Matches the dev target and the docker-compose default.
+ENV PORT=8080
+EXPOSE 8080
 
-# Expose standard HTTP port
-EXPOSE 80
+# Don't run as root.
+USER node
 
-# Use our start script which copies the correct build output then launches nginx
-CMD ["/docker-entrypoint.d/start.sh"]
+CMD ["node", "dist/static-server.mjs"]
 

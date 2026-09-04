@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { handleProxyRequest } from "@/routes/api.proxy";
+import { handleProxyRequest } from "@/services/proxy-handler";
 import { PROXIED_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
 
 function makeRequest(target: string | null, init: RequestInit = {}) {
@@ -13,6 +13,7 @@ function makeRequest(target: string | null, init: RequestInit = {}) {
 describe("handleProxyRequest", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("rejects when the target header is missing", async () => {
@@ -74,7 +75,7 @@ describe("handleProxyRequest", () => {
     expect(res.status).toBe(400);
   });
 
-  it.each([
+  const PRIVATE_TARGETS = [
     "http://localhost:9999",
     "http://127.0.0.1:9999",
     "http://0.0.0.0",
@@ -93,16 +94,38 @@ describe("handleProxyRequest", () => {
     "http://2130706433", // decimal-encoded 127.0.0.1
     "http://0x7f.0.0.1", // hex-encoded 127.0.0.1
     "http://127.1", // shorthand for 127.0.0.1
-  ])("refuses to forward to the private/loopback target %s", async (target) => {
-    const fetchMock = vi.fn();
+  ];
+
+  // Private targets are ALLOWED by default. reqlo sends every request through
+  // this proxy, and "http://localhost:3000" is the single most common thing
+  // anyone points it at — blocking that by default would break the tool's main
+  // use on a machine the user already owns.
+  it.each(PRIVATE_TARGETS)("forwards to the private target %s by default", async (target) => {
+    const fetchMock = vi.fn(async () => new Response("ok", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const res = await handleProxyRequest({ request: makeRequest(target) });
 
-    expect(res.status).toBe(400);
-    expect(res.headers.get(PROXIED_HEADER)).toBe("1");
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  // ...and refused once a deployment opts in to hardening, which is what a
+  // public instance is expected to do.
+  it.each(PRIVATE_TARGETS)(
+    "refuses the private target %s when REQLO_BLOCK_PRIVATE_TARGETS=1",
+    async (target) => {
+      vi.stubEnv("REQLO_BLOCK_PRIVATE_TARGETS", "1");
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await handleProxyRequest({ request: makeRequest(target) });
+
+      expect(res.status).toBe(400);
+      expect(res.headers.get(PROXIED_HEADER)).toBe("1");
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not block a normal public host that merely contains private-looking substrings", async () => {
     vi.stubGlobal(
@@ -134,25 +157,123 @@ describe("handleProxyRequest", () => {
   // the FIRST hop — fetch's default redirect:"follow" would then fetch the
   // private target on this route's behalf with no further check at all.
   // Caught with a live repro (a local redirecting server) before this fix.
-  it("does not follow a redirect from the target — returns the 3xx and Location as-is", async () => {
-    let seenInit: RequestInit | undefined;
+  // Redirects are followed HERE rather than by fetch, so every hop gets the
+  // same host check the original target got — the whole point being that
+  // fetch's own "follow" would take the chain out of this function's hands and
+  // only the first hop would ever be validated.
+  it("follows a redirect and returns the final response", async () => {
+    const seen: string[] = [];
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-        seenInit = init;
-        return new Response(null, {
-          status: 302,
-          headers: { location: "http://169.254.169.254/latest/meta-data/" },
-        });
+      vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        seen.push(url.toString());
+        expect(init?.redirect).toBe("manual");
+        if (seen.length === 1) {
+          return new Response(null, {
+            status: 302,
+            headers: { location: "https://api.example.com/moved" },
+          });
+        }
+        return new Response("final", { status: 200 });
       }),
     );
 
     const res = await handleProxyRequest({ request: makeRequest("https://api.example.com") });
 
-    expect(seenInit?.redirect).toBe("manual");
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("http://169.254.169.254/latest/meta-data/");
+    expect(seen).toEqual(["https://api.example.com/", "https://api.example.com/moved"]);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("final");
+  });
+
+  it("refuses to follow a redirect into a private address when hardening is on", async () => {
+    vi.stubEnv("REQLO_BLOCK_PRIVATE_TARGETS", "1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(null, {
+            status: 302,
+            headers: { location: "http://169.254.169.254/latest/meta-data/" },
+          }),
+      ),
+    );
+
+    const res = await handleProxyRequest({ request: makeRequest("https://api.example.com") });
+
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("169.254.169.254");
     expect(res.headers.get(PROXIED_HEADER)).toBe("1");
+  });
+
+  it("gives up rather than looping forever on a redirect cycle", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(null, { status: 302, headers: { location: "https://api.example.com/loop" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await handleProxyRequest({ request: makeRequest("https://api.example.com/loop") });
+
+    expect(res.status).toBe(502);
+    expect(await res.text()).toContain("Too many redirects");
+  });
+
+  // Matches the fetch spec's redirect handling, which is what a browser (and
+  // therefore reqlo before it proxied everything) would have done.
+  it("turns a 303 into a GET and drops the body", async () => {
+    const seen: { method?: string; hasBody: boolean }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        seen.push({ method: init?.method, hasBody: init?.body != null });
+        if (seen.length === 1) {
+          return new Response(null, {
+            status: 303,
+            headers: { location: "https://api.example.com/result" },
+          });
+        }
+        return new Response("ok", { status: 200 });
+      }),
+    );
+
+    const request = new Request("https://reqlo.local/api/proxy", {
+      method: "POST",
+      headers: { [PROXY_TARGET_HEADER]: "https://api.example.com/submit" },
+      body: "payload",
+    });
+    const res = await handleProxyRequest({ request });
+
+    expect(res.status).toBe(200);
+    expect(seen[0]).toEqual({ method: "POST", hasBody: true });
+    expect(seen[1]).toEqual({ method: "GET", hasBody: false });
+  });
+
+  it("drops Authorization when a redirect crosses to another origin", async () => {
+    const seenAuth: (string | null)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        seenAuth.push(new Headers(init?.headers).get("authorization"));
+        if (seenAuth.length === 1) {
+          return new Response(null, {
+            status: 302,
+            headers: { location: "https://elsewhere.example.net/token" },
+          });
+        }
+        return new Response("ok", { status: 200 });
+      }),
+    );
+
+    const request = new Request("https://reqlo.local/api/proxy", {
+      headers: {
+        [PROXY_TARGET_HEADER]: "https://api.example.com/start",
+        authorization: "Bearer secret",
+      },
+    });
+    await handleProxyRequest({ request });
+
+    expect(seenAuth[0]).toBe("Bearer secret");
+    expect(seenAuth[1]).toBeNull();
   });
 
   it("forwards to an allowed target, stripping request metadata headers and adding the proxied marker", async () => {

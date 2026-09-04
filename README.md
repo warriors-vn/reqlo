@@ -26,6 +26,20 @@ Features
 * **History** — every send is recorded and searchable, with side-by-side comparison.
 * **Installable & offline** — reqlo is a PWA; install it and it keeps working without a network connection.
 * **Durable storage** — asks the browser to treat its IndexedDB data as persistent rather than evictable under disk pressure.
+* **No CORS wall** — every send is performed by reqlo's own server rather than by the browser, so an endpoint that doesn't send `Access-Control-Allow-Origin` works exactly like one that does. See [Sending](#sending) for what that means in practice.
+
+Sending
+-------
+
+reqlo doesn't fetch from the browser. Every send goes to its own `/api/proxy`, which performs the real request server-side and streams the response back. CORS is a rule browsers apply to cross-origin requests and servers don't, so this is what lets reqlo talk to an API that was never configured to allow it — the thing a browser-only client fundamentally cannot do.
+
+What follows from that:
+
+* **reqlo needs its own server to send anything.** `npm run dev`, `npm start` (after `npm run build:node`), the production Docker image, and a Cloudflare Worker deploy all provide one. Serving the built files from a static host does not, and reqlo says so plainly instead of failing as a network error.
+* **Each request is sent exactly once.** There's no direct attempt that might already have reached the server before a retry, so a `POST` can't fire twice.
+* **`localhost` targets resolve from wherever reqlo's server runs.** Running it directly on your machine, `http://localhost:3000` is your machine. Running it in Docker, `localhost` is the *container* — use `host.docker.internal` (or the host's LAN address) to reach a service on the host.
+* **Cookies aren't forwarded.** `Authorization` and every other header are; `Cookie`, `Origin` and `Referer` are stripped rather than handed to a third-party target.
+* **Private addresses are allowed by default**, because pointing reqlo at your own dev server is the main thing it's for. On a publicly reachable deployment set `REQLO_BLOCK_PRIVATE_TARGETS=1`, which refuses loopback/private/link-local targets (including the `169.254.169.254` cloud metadata endpoint) and stops following redirects into them. The check that the request came from reqlo's own page is always on, regardless.
 
 Why this name?
 ---------------
@@ -124,26 +138,31 @@ Override the exposed port or turn on polling (useful on macOS/WSL if file-watch 
 
 <h3>Production image</h3>
 
-The Dockerfile's default target (`production`) builds the app and serves the static output with nginx — this is the target you'd deploy:
+The Dockerfile's default target (`production`) builds the app and runs it with reqlo's own small Node server — this is the target you'd deploy:
 
     docker build -t reqlo:prod .
-    docker run --rm -p 80:80 reqlo:prod
-    # open http://localhost:80
+    docker run --rm -p 8080:8080 reqlo:prod
+    # open http://localhost:8080
 
-To stop at the intermediate build stage instead (e.g. to lift the compiled `dist/` out without nginx):
+Or via compose: `docker-compose --profile prod up --build prod`.
+
+That server does two things: serve the built client, and host `/api/proxy`, which is how every request is sent (see [Sending](#sending)). A static-file deployment can't send anything at all. That's what the image used to be (nginx serving `dist/`), and it didn't work for a second reason either: the default build emits a Cloudflare Worker bundle with no `index.html`, so nginx had no document to serve at `/`.
+
+Set `REQLO_BLOCK_PRIVATE_TARGETS=1` on the container if the instance is reachable by anyone other than you.
+
+The production build (`npm run build:node`) therefore differs from the default one (`npm run build`, the Cloudflare Worker target that `wrangler` deploys): it turns off the Cloudflare plugin and turns on TanStack Start's SPA mode, prerendering a real HTML shell. reqlo renders every route from IndexedDB in the browser anyway, so nothing is lost.
+
+To run it outside Docker:
+
+    npm run build:node
+    npm start     # http://localhost:8080, override with PORT
+
+To stop at the intermediate build stage instead (e.g. to lift the compiled `dist/` out):
 
     docker build --target build -t reqlo:build .
     docker create --name reqlo-build reqlo:build
     docker cp reqlo-build:/app/dist ./dist
     docker rm reqlo-build
-
-reqlo's built-in CORS-bypass proxy (`/api/proxy`, used automatically when a
-direct send looks CORS-blocked) is a server route, so it only works where
-reqlo runs with its own app server — `npm run dev`, or a Cloudflare Worker
-deploy via `wrangler`. The `production` image above serves the built
-`dist/` as static files through plain nginx, which has no route for
-`/api/proxy`; a CORS-blocked request there behaves exactly as it does without
-the proxy (a clear error, no silent hang).
 
 Git Flow
 --------
