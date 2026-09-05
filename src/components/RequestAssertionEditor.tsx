@@ -38,8 +38,42 @@ export function RequestAssertionEditor({ request, result }: Props) {
     <div className="space-y-3">
       <p className="text-2xs text-muted-foreground">
         A structured check, not a script — "status is 200" or "body has field X" covers most of what
-        people reach for Postman's test scripts for. Rules run after every Send.
+        people reach for Postman's test scripts for. Rules run after every Send. For anything these
+        can't express, the Script tab's post-response phase runs real{" "}
+        <code className="font-mono">test()</code> calls; their results show below.
       </p>
+
+      {!!result?.scriptTests?.length && (
+        <div className="space-y-1.5 rounded-xl border border-border/80 bg-background/70 px-3 py-2">
+          <div className="text-3xs font-medium uppercase tracking-wide text-muted-foreground">
+            From the post-response script
+          </div>
+          {result.scriptTests.map((test, index) => (
+            <div key={`${test.name}-${index}`} className="flex items-start gap-2 text-xs">
+              <span
+                className={cn(
+                  "mt-0.5 shrink-0 font-semibold",
+                  test.passed ? "text-[var(--status-ok)]" : "text-destructive",
+                )}
+              >
+                {test.passed ? "PASS" : "FAIL"}
+              </span>
+              <span className="min-w-0">
+                <span className="text-foreground">{test.name}</span>
+                {!test.passed && test.message && (
+                  <span className="ml-1.5 text-muted-foreground">— {test.message}</span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {result?.postScriptError && (
+        <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-2xs text-destructive">
+          Post-response script failed: {result.postScriptError}
+        </p>
+      )}
 
       {request.assertions.length === 0 && (
         <div className="rounded-[24px] border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">

@@ -53,11 +53,18 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
 
   const ancestors = useRequestAncestors(request);
   const inherited = inheritedContributions(ancestors);
+  // The badge counts both kinds of check together — a declarative rule and a
+  // script test both answer "did this response pass?", and splitting them into
+  // two numbers would just make the tab harder to read.
   const assertionOutcomes = evaluateAssertions(request.assertions, result);
-  const testsCount = request.assertions.filter((rule) => rule.enabled).length;
-  const testsBadge = assertionOutcomes.length
-    ? (`${assertionOutcomes.filter((o) => o.passed).length}/${assertionOutcomes.length}` as const)
-    : testsCount || undefined;
+  const scriptTests = result?.scriptTests ?? [];
+  const ranTotal = assertionOutcomes.length + scriptTests.length;
+  const ranPassed =
+    assertionOutcomes.filter((o) => o.passed).length + scriptTests.filter((t) => t.passed).length;
+  const testsCount =
+    request.assertions.filter((rule) => rule.enabled).length +
+    (request.postResponseScript.enabled && request.postResponseScript.source.trim() ? 1 : 0);
+  const testsBadge = ranTotal ? (`${ranPassed}/${ranTotal}` as const) : testsCount || undefined;
 
   const tabs = [
     {

@@ -51,9 +51,24 @@ function rowPassed(outcome: RunSingleRequestOutcome | undefined) {
   return (
     !outcome.result.error &&
     !outcome.result.scriptError &&
+    // A post-response script that couldn't run leaves its tests unanswered,
+    // which is not the same as them passing.
+    !outcome.result.postScriptError &&
     outcome.result.ok &&
-    outcome.assertionOutcomes.every((o) => o.passed)
+    outcome.assertionOutcomes.every((o) => o.passed) &&
+    (outcome.result.scriptTests ?? []).every((test) => test.passed)
   );
+}
+
+/** Declarative rules and script tests counted as one number — see the same
+ * reasoning on RequestBuilder's Tests badge. */
+function checksOf(outcome: RunSingleRequestOutcome | undefined) {
+  const assertions = outcome?.assertionOutcomes ?? [];
+  const scriptTests = outcome?.result.scriptTests ?? [];
+  return {
+    total: assertions.length + scriptTests.length,
+    passed: assertions.filter((o) => o.passed).length + scriptTests.filter((t) => t.passed).length,
+  };
 }
 
 export function CollectionRunnerModal() {
@@ -154,14 +169,8 @@ export function CollectionRunnerModal() {
 
   const completed = rows.filter((r) => r.status === "done");
   const passedRequests = completed.filter((r) => rowPassed(r.outcome)).length;
-  const totalAssertions = completed.reduce(
-    (sum, r) => sum + (r.outcome?.assertionOutcomes.length ?? 0),
-    0,
-  );
-  const passedAssertions = completed.reduce(
-    (sum, r) => sum + (r.outcome?.assertionOutcomes.filter((o) => o.passed).length ?? 0),
-    0,
-  );
+  const totalAssertions = completed.reduce((sum, r) => sum + checksOf(r.outcome).total, 0);
+  const passedAssertions = completed.reduce((sum, r) => sum + checksOf(r.outcome).passed, 0);
 
   return (
     <Overlay
@@ -229,7 +238,12 @@ export function CollectionRunnerModal() {
 function RunRowView({ row }: { row: RunRow }) {
   const passed = row.status === "done" ? rowPassed(row.outcome) : null;
   const outcome = row.outcome;
-  const failedAssertions = outcome?.assertionOutcomes.filter((o) => !o.passed) ?? [];
+  const failedAssertions = [
+    ...(outcome?.assertionOutcomes ?? []).filter((o) => !o.passed).map((o) => o.message),
+    ...(outcome?.result.scriptTests ?? [])
+      .filter((test) => !test.passed)
+      .map((test) => `${test.name}: ${test.message}`),
+  ];
 
   return (
     <div className="rounded-xl border border-border/70 bg-background/70 px-3 py-2">
@@ -274,10 +288,7 @@ function RunRowView({ row }: { row: RunRow }) {
         !outcome?.scriptEnvironmentDropped &&
         failedAssertions.length > 0 && (
           <p className="mt-1.5 truncate text-3xs text-[var(--status-error)]">
-            {failedAssertions
-              .slice(0, 2)
-              .map((o) => o.message)
-              .join(" · ")}
+            {failedAssertions.slice(0, 2).join(" · ")}
           </p>
         )}
     </div>

@@ -126,11 +126,16 @@ export interface AssertionRule {
   expected: string;
 }
 
-export interface PreRequestScriptConfig {
+/** One sandboxed (QuickJS-in-wasm) script slot. Both the pre-request and the
+ * post-response script are this shape; only when they run differs. */
+export interface ScriptConfig {
   enabled: boolean;
-  /** JavaScript source, run sandboxed (QuickJS-in-wasm) before the request is sent. */
+  /** JavaScript source. */
   source: string;
 }
+
+/** @deprecated Kept so the older migrations below still read as written. */
+export type PreRequestScriptConfig = ScriptConfig;
 
 export interface MockConfig {
   enabled: boolean;
@@ -203,7 +208,10 @@ export interface ApiRequest {
   extracts: ExtractRule[];
   assertions: AssertionRule[];
   mock: MockConfig;
-  preRequestScript: PreRequestScriptConfig;
+  preRequestScript: ScriptConfig;
+  /** Runs after a response arrives — can write environment variables and
+   * declare pass/fail tests. See services/scripting.ts. */
+  postResponseScript: ScriptConfig;
   /** Milliseconds before Send auto-aborts an in-flight request. 0 = no timeout. */
   timeoutMs: number;
   favorite?: boolean;
@@ -519,6 +527,28 @@ class ReqloDB extends Dexie {
             }
           });
       });
+    this.version(13)
+      .stores({
+        workspaces: "id, updatedAt",
+        collections: "id, workspaceId, position",
+        folders:
+          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
+        requests:
+          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
+        history:
+          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
+        environments: "id, workspaceId",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table<ApiRequest, string>("requests")
+          .toCollection()
+          .modify((request) => {
+            if (request.postResponseScript === undefined) {
+              request.postResponseScript = createDefaultPostResponseScript();
+            }
+          });
+      });
   }
 }
 
@@ -624,6 +654,10 @@ export function createDefaultMock(): MockConfig {
     body: "{\n  \n}",
     delayMs: 0,
   };
+}
+
+export function createDefaultPostResponseScript(): ScriptConfig {
+  return { enabled: false, source: "" };
 }
 
 export function createDefaultPreRequestScript(): PreRequestScriptConfig {
@@ -749,6 +783,7 @@ export function normalizeApiRequest(
     assertions: request.assertions ?? [],
     mock: request.mock ?? createDefaultMock(),
     preRequestScript: request.preRequestScript ?? createDefaultPreRequestScript(),
+    postResponseScript: request.postResponseScript ?? createDefaultPostResponseScript(),
     timeoutMs: request.timeoutMs ?? 0,
     favorite: request.favorite ?? false,
   } as ApiRequest;
@@ -886,6 +921,7 @@ export async function ensureSeed(): Promise<Workspace> {
       assertions: [],
       mock: createDefaultMock(),
       preRequestScript: createDefaultPreRequestScript(),
+      postResponseScript: createDefaultPostResponseScript(),
       timeoutMs: 0,
       createdAt: now,
       updatedAt: now,
@@ -916,6 +952,7 @@ export async function ensureSeed(): Promise<Workspace> {
       assertions: [],
       mock: createDefaultMock(),
       preRequestScript: createDefaultPreRequestScript(),
+      postResponseScript: createDefaultPostResponseScript(),
       timeoutMs: 0,
       createdAt: now,
       updatedAt: now,
@@ -939,6 +976,7 @@ export async function ensureSeed(): Promise<Workspace> {
       assertions: [],
       mock: createDefaultMock(),
       preRequestScript: createDefaultPreRequestScript(),
+      postResponseScript: createDefaultPostResponseScript(),
       timeoutMs: 0,
       createdAt: now,
       updatedAt: now,

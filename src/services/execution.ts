@@ -1,4 +1,5 @@
 import type { OAuth2CachedToken } from "@/services/db";
+import type { ScriptTestResult } from "@/services/scripting";
 
 export type ResponseKind =
   | "empty"
@@ -29,6 +30,13 @@ export interface ExecutionResult {
   scriptEnvironmentPatch?: Record<string, string>;
   /** Set when the pre-request script threw, timed out, or returned something invalid. */
   scriptError?: string;
+  /** The post-response script's equivalent, kept separate so the UI can say
+   * which phase failed rather than blaming the wrong one. */
+  postScriptError?: string;
+  /** Pass/fail results from `test()` calls in the post-response script. Shown
+   * alongside the declarative assertion rules, which they complement rather
+   * than replace. */
+  scriptTests?: ScriptTestResult[];
   /** A cached OAuth2 token auto-refreshed before sending, for the caller to persist. */
   refreshedOAuth2Token?: OAuth2CachedToken;
   /** Set when a cached OAuth2 token was expired and refreshing it was unavailable or failed — the request was not sent. */
