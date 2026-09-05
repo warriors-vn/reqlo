@@ -31,6 +31,9 @@ import {
   supportsDirectoryExport,
   writeFilesToDirectory,
 } from "@/services/gitExport";
+import { buildPostmanCollection } from "@/services/postman-export";
+import { buildOpenApiDocument } from "@/services/openapi-export";
+import { buildHarLog } from "@/services/har-export";
 import { getNextCollectionPosition, getNextRequestPosition } from "@/services/tree-move";
 import {
   commitImportedCollection,
@@ -55,7 +58,19 @@ export interface ImportExportSlice {
   importWorkspaceJSON: (text: string) => Promise<Workspace | null>;
   exportCollectionById: (id: string) => Promise<void>;
   exportCollectionAsFilesById: (id: string) => Promise<void>;
+  exportCollectionAsPostman: (id: string) => Promise<void>;
+  exportCollectionAsOpenApi: (id: string) => Promise<void>;
+  exportHistoryAsHar: () => Promise<void>;
   exportActiveWorkspace: () => Promise<void>;
+}
+
+/** Every exporter reports what the target format couldn't hold. Surfacing it
+ * is the difference between a lossy export and a silently wrong one. */
+function reportExportWarnings(warnings: string[]) {
+  if (!warnings.length) return;
+  toast.warning(`Exported with ${warnings.length} note(s)`, {
+    description: warnings.slice(0, 3).join(" · "),
+  });
 }
 
 export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, get) => ({
@@ -439,6 +454,36 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
       return;
     }
     downloadZip(files, `${slugify(col.name)}.zip`, slugify(col.name));
+  },
+
+  exportCollectionAsPostman: async (id) => {
+    const col = get().collections.find((c) => c.id === id);
+    if (!col) return;
+    const { collection, warnings } = buildPostmanCollection(col, get().folders, get().requests);
+    downloadJSON(collection, `${slugify(col.name)}.postman_collection.json`);
+    reportExportWarnings(warnings);
+  },
+
+  exportCollectionAsOpenApi: async (id) => {
+    const col = get().collections.find((c) => c.id === id);
+    if (!col) return;
+    const { document, warnings } = buildOpenApiDocument(col, get().folders, get().requests);
+    downloadJSON(document, `${slugify(col.name)}.openapi.json`);
+    reportExportWarnings(warnings);
+  },
+
+  // From history rather than from a collection: a HAR records requests that
+  // actually happened, along with the responses they got.
+  exportHistoryAsHar: async () => {
+    const history = get().history;
+    if (!history.length) {
+      toast.info("No history to export yet");
+      return;
+    }
+    downloadJSON(
+      buildHarLog(history),
+      `reqlo-history-${new Date().toISOString().slice(0, 10)}.har`,
+    );
   },
 
   exportActiveWorkspace: async () => {

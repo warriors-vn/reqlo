@@ -12,6 +12,7 @@ import {
   Save,
   Search,
   Star,
+  Download,
   Trash2,
   X,
 } from "lucide-react";
@@ -61,6 +62,7 @@ export function RequestHistoryPanel() {
   const toggleHistoryPinned = useStore((state) => state.toggleHistoryPinned);
   const deleteHistoryEntry = useStore((state) => state.deleteHistoryEntry);
   const clearHistory = useStore((state) => state.clearHistory);
+  const exportHistoryAsHar = useStore((state) => state.exportHistoryAsHar);
 
   const filters = useRequestHistoryStore((state) => state.filters);
   const query = filters.query;
@@ -308,6 +310,14 @@ export function RequestHistoryPanel() {
               {compareMode
                 ? `Exit compare${compareIds.length ? ` (${compareIds.length}/2)` : ""}`
                 : "Compare executions"}
+            </button>
+            <button
+              onClick={() => void exportHistoryAsHar()}
+              disabled={history.length === 0}
+              title="Save every recorded execution as a HAR file — the format browser devtools and HAR viewers read"
+              className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-1.5 font-medium transition hover:bg-accent disabled:opacity-40"
+            >
+              <Download className="h-3.5 w-3.5" /> Export as HAR
             </button>
             <button
               onClick={() => void clearHistory()}

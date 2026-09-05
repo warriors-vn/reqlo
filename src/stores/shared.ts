@@ -15,6 +15,7 @@ import {
   type Collection,
   type Folder,
   type HistoryEntry,
+  type RequestDefaults,
   type Workspace,
 } from "@/services/db";
 import { getNextCollectionPosition } from "@/services/tree-move";
@@ -79,7 +80,15 @@ export async function pruneHistoryToLimit(workspaceId: string, limit: number): P
  * committing it (new Collection, re-parented folders/requests, DB write,
  * store update, warnings toast) is identical regardless of source format. */
 export async function commitImportedCollection(
-  result: { collectionName: string; folders: Folder[]; requests: ApiRequest[]; warnings: string[] },
+  result: {
+    collectionName: string;
+    folders: Folder[];
+    requests: ApiRequest[];
+    warnings: string[];
+    /** Only the Postman importer has a collection-level concept to carry; the
+     * others leave the new collection on empty defaults. */
+    collectionDefaults?: RequestDefaults;
+  },
   ws: Workspace,
   set: (fn: (s: Store) => Partial<Store>) => void,
   get: () => Store,
@@ -90,7 +99,7 @@ export async function commitImportedCollection(
     workspaceId: ws.id,
     name: result.collectionName,
     position,
-    defaults: createDefaultRequestDefaults(),
+    defaults: result.collectionDefaults ?? createDefaultRequestDefaults(),
     createdAt: Date.now(),
   };
   const newFolders: Folder[] = result.folders.map((folder) => ({
