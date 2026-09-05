@@ -1,7 +1,11 @@
-// Pre-request scripting, sandboxed via QuickJS-in-wasm. The interpreter has no
+// Request scripting, sandboxed via QuickJS-in-wasm. The interpreter has no
 // ambient fetch/DOM/storage — nothing is bound into it, so a script genuinely
 // cannot make network calls or touch app data beyond what's passed in below.
 // This is deliberately separate from Extract/Tests' no-eval path-rule system.
+//
+// Two phases share one interpreter and one contract: a pre-request script sees
+// the request about to go out, a post-response script sees the response that
+// came back and can additionally declare pass/fail tests.
 
 import type { QuickJSWASMModule } from "quickjs-emscripten-core";
 
@@ -16,9 +20,29 @@ export interface ScriptContext {
   environment: Record<string, string>;
 }
 
+/** What a post-response script gets in addition to the request context. */
+export interface ScriptResponseContext {
+  status: number | null;
+  statusText: string;
+  ok: boolean;
+  durationMs: number;
+  headers: Record<string, string>;
+  body: string;
+}
+
+/** One `test("name", fn)` call's outcome. A test fails by throwing — including
+ * the assertion helpers below — so the script reads like any other test file
+ * rather than having to hand-build a result array. */
+export interface ScriptTestResult {
+  name: string;
+  passed: boolean;
+  message: string;
+}
+
 export interface ScriptResult {
   headers?: Record<string, string>;
   environment?: Record<string, string>;
+  tests?: ScriptTestResult[];
   error?: string;
 }
 
@@ -44,9 +68,29 @@ function loadQuickJS(): Promise<QuickJSWASMModule> {
   return modulePromise;
 }
 
-export async function runPreRequestScript(
+export function runPreRequestScript(source: string, context: ScriptContext): Promise<ScriptResult> {
+  return runScript(source, context, null);
+}
+
+export function runPostResponseScript(
   source: string,
   context: ScriptContext,
+  response: ScriptResponseContext,
+): Promise<ScriptResult> {
+  return runScript(source, context, response);
+}
+
+/**
+ * `response` being non-null is what makes this the post-response phase: the
+ * harness then exposes `response` plus the `test`/`expect` helpers, and
+ * collects whatever tests ran. Both phases otherwise share the same
+ * interpreter setup, timeout, and return-value validation, so a fix to one
+ * can't drift out of sync with the other.
+ */
+async function runScript(
+  source: string,
+  context: ScriptContext,
+  response: ScriptResponseContext | null,
 ): Promise<ScriptResult> {
   let QuickJS: QuickJSWASMModule;
   try {
@@ -64,15 +108,69 @@ export async function runPreRequestScript(
     vm.setProp(vm.global, "__CTX__", ctxHandle);
     ctxHandle.dispose();
 
+    const responseHandle = vm.newString(JSON.stringify(response));
+    vm.setProp(vm.global, "__RES__", responseHandle);
+    responseHandle.dispose();
+
     const harness = `
       (function () {
         const request = JSON.parse(__CTX__);
         const environment = request.environment;
+        const response = JSON.parse(__RES__);
+        const __tests__ = [];
+
+        // A test fails by throwing, so a bare "throw new Error(...)" works and
+        // the helpers below are just sugar over it. Everything is collected
+        // rather than aborting the script: one failing check shouldn't hide
+        // the results of the ones after it.
+        function test(name, fn) {
+          try {
+            fn();
+            __tests__.push({ name: String(name), passed: true, message: "" });
+          } catch (e) {
+            __tests__.push({
+              name: String(name),
+              passed: false,
+              message: (e && e.message) ? String(e.message) : String(e),
+            });
+          }
+        }
+
+        function expect(actual) {
+          const show = (v) => {
+            try { return JSON.stringify(v); } catch (_) { return String(v); }
+          };
+          return {
+            toBe(expected) {
+              if (actual !== expected) {
+                throw new Error("expected " + show(expected) + " but got " + show(actual));
+              }
+            },
+            toEqual(expected) {
+              if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+                throw new Error("expected " + show(expected) + " but got " + show(actual));
+              }
+            },
+            toContain(needle) {
+              const ok = typeof actual === "string"
+                ? actual.indexOf(needle) !== -1
+                : Array.isArray(actual) && actual.indexOf(needle) !== -1;
+              if (!ok) throw new Error(show(actual) + " does not contain " + show(needle));
+            },
+            toBeTruthy() {
+              if (!actual) throw new Error("expected a truthy value, got " + show(actual));
+            },
+          };
+        }
+
         function __run__() {
           ${source}
         }
         const result = __run__();
-        return JSON.stringify(result === undefined ? {} : result);
+        const out = (result === undefined || result === null) ? {} : result;
+        if (typeof out !== "object" || Array.isArray(out)) return JSON.stringify(out);
+        if (__tests__.length) out.tests = __tests__;
+        return JSON.stringify(out);
       })();
     `;
 
@@ -101,8 +199,9 @@ export async function runPreRequestScript(
       return { error: "Script must return a plain object (or nothing)." };
     }
 
-    const { headers, environment } = parsed as Record<string, unknown>;
+    const { headers, environment, tests } = parsed as Record<string, unknown>;
     const result: ScriptResult = {};
+    if (Array.isArray(tests)) result.tests = tests as ScriptTestResult[];
     if (headers !== undefined) {
       if (!isStringRecord(headers)) return { error: "Returned `headers` must be a string map." };
       result.headers = headers;

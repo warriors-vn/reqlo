@@ -1,6 +1,7 @@
 import {
   blobToBase64,
   createDefaultMock,
+  createDefaultPostResponseScript,
   createDefaultPreRequestScript,
   db,
   type ApiRequest,
@@ -208,6 +209,7 @@ async function sanitizeHistoryForExport(history: HistoryEntry): Promise<HistoryE
     assertions: [],
     mock: createDefaultMock(),
     preRequestScript: createDefaultPreRequestScript(),
+    postResponseScript: createDefaultPostResponseScript(),
     timeoutMs: 0,
     favorite: false,
     createdAt: history.executedAt,

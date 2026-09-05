@@ -7,6 +7,7 @@ import { fetchClientCredentialsToken, refreshOAuth2Token } from "@/services/oaut
 import { isTextualResponse, type ExecutionResult, type ResponseKind } from "@/services/execution";
 import { PROXIED_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
 import type { RequestAncestors } from "@/services/inheritance";
+import type { ScriptResponseContext, ScriptTestResult } from "@/services/scripting";
 
 export interface ExecuteRequestOptions {
   /** External cancellation source (e.g. a Cancel button) — independent of
@@ -41,7 +42,26 @@ export async function executeRequest(
   options?: ExecuteRequestOptions,
 ): Promise<ExecutionResult> {
   if (req.mock.enabled) {
-    return buildMockResult(req.mock, options?.signal);
+    const mocked = await buildMockResult(req.mock, options?.signal);
+    // Tests run against a mock too. A mock exists precisely to stand in for a
+    // response, so tests that only ever run against the network would be
+    // unusable exactly where the mock is being relied on.
+    if (mocked.error) return mocked;
+    const resolved = buildResolvedRequestArtifacts(req, environment, ancestors);
+    const post = await applyPostResponseScript(req, resolved, {
+      status: mocked.status,
+      statusText: mocked.statusText,
+      ok: mocked.ok,
+      durationMs: mocked.durationMs,
+      headers: mocked.headers,
+      body: mocked.body,
+    });
+    return {
+      ...mocked,
+      scriptEnvironmentPatch: post.environmentPatch,
+      postScriptError: post.error,
+      scriptTests: post.tests,
+    };
   }
 
   const started = performance.now();
@@ -160,6 +180,20 @@ export async function executeRequest(
     );
     const responseKind = detectResponseKind(contentType, res.status, sizeBytes);
 
+    const post = await applyPostResponseScript(effectiveReq, resolved, {
+      status: res.status,
+      statusText: res.statusText,
+      ok: res.ok,
+      durationMs: performance.now() - started,
+      headers: respHeaders,
+      body: isTextualResponse(responseKind) ? body : "",
+    });
+    // Post wins on a key collision: it ran later and saw the response, so its
+    // value is the more informed one.
+    if (post.environmentPatch) {
+      scriptEnvironmentPatch = { ...scriptEnvironmentPatch, ...post.environmentPatch };
+    }
+
     return {
       status: res.status,
       statusText: res.statusText,
@@ -176,6 +210,8 @@ export async function executeRequest(
       scriptError,
       refreshedOAuth2Token,
       unresolvedVariables,
+      postScriptError: post.error,
+      scriptTests: post.tests,
     };
   } catch (e: unknown) {
     const isAbort =
@@ -191,6 +227,52 @@ export async function executeRequest(
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
+}
+
+interface PostResponseOutcome {
+  environmentPatch?: Record<string, string>;
+  tests?: ScriptTestResult[];
+  error?: string;
+}
+
+/**
+ * Runs a request's post-response script, if it has one enabled. Kept beside
+ * the send rather than in runner.ts so a mocked result gets tests too — a test
+ * that only runs against the network is no use for the case mocks exist for.
+ *
+ * A failure here never invalidates the response: the request already happened
+ * and its result is real, so a broken script surfaces as postScriptError next
+ * to the response rather than replacing it.
+ */
+async function applyPostResponseScript(
+  request: ApiRequest,
+  resolved: { envMap: Map<string, string>; url: string; resolvedHeaders: Record<string, string> },
+  response: ScriptResponseContext,
+): Promise<PostResponseOutcome> {
+  const script = request.postResponseScript;
+  if (!script?.enabled || !script.source.trim()) return {};
+
+  const { runPostResponseScript } = await import("@/services/scripting");
+  const outcome = await runPostResponseScript(
+    script.source,
+    {
+      method: request.method,
+      url: resolved.url,
+      headers: resolved.resolvedHeaders,
+      body: null,
+      environment: Object.fromEntries(resolved.envMap),
+    },
+    response,
+  );
+
+  if (outcome.error) return { error: outcome.error, tests: outcome.tests };
+  return {
+    environmentPatch:
+      outcome.environment && Object.keys(outcome.environment).length
+        ? outcome.environment
+        : undefined,
+    tests: outcome.tests?.length ? outcome.tests : undefined,
+  };
 }
 
 /** Shared shape for a result with no real response — the request never went

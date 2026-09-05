@@ -238,6 +238,127 @@ function proxiedResponse(body: string, init: ResponseInit = {}): Response {
   return new Response(body, { status: 200, ...init, headers });
 }
 
+describe("executeRequest — post-response script", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const scripted = (source: string) =>
+    makeRequest({
+      url: "https://api.example.com/data",
+      postResponseScript: { enabled: true, source },
+    });
+
+  it("runs tests against the real response and reports their outcomes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        proxiedResponse('{"token":"t-1"}', { headers: { "content-type": "application/json" } }),
+      ),
+    );
+
+    const result = await executeRequest(
+      scripted(`
+        test("is 200", () => expect(response.status).toBe(200));
+        test("has a token", () => expect(JSON.parse(response.body).token).toBe("nope"));
+      `),
+      null,
+      NO_ANCESTORS,
+    );
+
+    expect(result.scriptTests?.map((t) => [t.name, t.passed])).toEqual([
+      ["is 200", true],
+      ["has a token", false],
+    ]);
+    expect(result.postScriptError).toBeUndefined();
+  });
+
+  it("feeds the script's environment patch back for the caller to persist", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => proxiedResponse('{"token":"t-9"}')),
+    );
+
+    const result = await executeRequest(
+      scripted(`return { environment: { authToken: JSON.parse(response.body).token } };`),
+      null,
+      NO_ANCESTORS,
+    );
+
+    expect(result.scriptEnvironmentPatch).toEqual({ authToken: "t-9" });
+  });
+
+  // The response already happened; a broken script is the script's problem.
+  it("keeps the response intact when the script throws", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => proxiedResponse("ok", { status: 201 })),
+    );
+
+    const result = await executeRequest(
+      scripted(`throw new Error("bad script");`),
+      null,
+      NO_ANCESTORS,
+    );
+
+    expect(result.status).toBe(201);
+    expect(result.error).toBeUndefined();
+    expect(result.postScriptError).toBe("bad script");
+  });
+
+  it("does not run when the script is disabled", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => proxiedResponse("ok")),
+    );
+
+    const result = await executeRequest(
+      makeRequest({
+        url: "https://api.example.com/data",
+        postResponseScript: {
+          enabled: false,
+          source: `test("x", () => { throw new Error("!"); });`,
+        },
+      }),
+      null,
+      NO_ANCESTORS,
+    );
+
+    expect(result.scriptTests).toBeUndefined();
+    expect(result.postScriptError).toBeUndefined();
+  });
+
+  // A mock stands in for a response, so the checks that guard that response
+  // have to run against it too — otherwise tests are dead exactly where the
+  // mock is being relied on.
+  it("runs against a mocked response, with no network call at all", async () => {
+    const fetchMock = vi.fn(async () => proxiedResponse("ok"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeRequest(
+      makeRequest({
+        mock: {
+          enabled: true,
+          status: 418,
+          contentType: "application/json",
+          body: `{"brewing":false}`,
+          delayMs: 0,
+        },
+        postResponseScript: {
+          enabled: true,
+          source: `test("teapot", () => expect(response.status).toBe(418));`,
+        },
+      }),
+      null,
+      NO_ANCESTORS,
+    );
+
+    expect(result.mocked).toBe(true);
+    expect(result.scriptTests).toEqual([{ name: "teapot", passed: true, message: "" }]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 /** A `Response` whose body streams `chunks` (each a `Uint8Array`) one at a
  * time, so tests can exercise the real `ReadableStream` reader path instead
  * of the buffered `res.blob()` one. */

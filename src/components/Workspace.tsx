@@ -209,6 +209,10 @@ export function Workspace() {
       });
     } else if (outcome.result.scriptError) {
       toast.warning("Pre-request script failed", { description: outcome.result.scriptError });
+    } else if (outcome.result.postScriptError) {
+      toast.warning("Post-response script failed", {
+        description: outcome.result.postScriptError,
+      });
     } else if (outcome.scriptEnvironmentDropped) {
       toast.warning("Couldn't save the script's environment variable(s)", {
         description: "No active environment is selected.",
@@ -226,16 +230,18 @@ export function Workspace() {
       );
     }
 
-    const failedAssertions = outcome.assertionOutcomes.filter((o) => !o.passed);
-    if (failedAssertions.length) {
+    // Declarative rules and script tests are one set of checks to the user, so
+    // one toast covers both rather than two that have to be read together.
+    const scriptTests = outcome.result.scriptTests ?? [];
+    const failedChecks = [
+      ...outcome.assertionOutcomes.filter((o) => !o.passed).map((o) => o.message),
+      ...scriptTests.filter((test) => !test.passed).map((test) => `${test.name}: ${test.message}`),
+    ];
+    const totalChecks = outcome.assertionOutcomes.length + scriptTests.length;
+    if (failedChecks.length) {
       toast.warning(
-        `${failedAssertions.length} of ${outcome.assertionOutcomes.length} test${outcome.assertionOutcomes.length > 1 ? "s" : ""} failed`,
-        {
-          description: failedAssertions
-            .slice(0, 3)
-            .map((o) => o.message)
-            .join(" · "),
-        },
+        `${failedChecks.length} of ${totalChecks} test${totalChecks > 1 ? "s" : ""} failed`,
+        { description: failedChecks.slice(0, 3).join(" · ") },
       );
     }
   };
