@@ -1,4 +1,12 @@
-import { FolderClosed, MoreHorizontal, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import {
+  FolderClosed,
+  MoreHorizontal,
+  Pencil,
+  Play,
+  Plus,
+  SlidersHorizontal,
+  Trash2,
+} from "lucide-react";
 import { useStore } from "@/stores/useStore";
 import { MethodBadge } from "@/components/MethodBadge";
 import {
@@ -193,6 +201,13 @@ export function FolderTree(props: FolderTreeProps) {
                     <FolderClosed className="h-3.5 w-3.5" /> New subfolder
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      useStore.getState().openDefaultsEditor({ type: "folder", id: folder.id })
+                    }
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" /> Folder settings
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={() => useStore.getState().startRun({ type: "folder", id: folder.id })}
                   >

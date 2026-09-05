@@ -6,6 +6,7 @@ import {
 import { fetchClientCredentialsToken, refreshOAuth2Token } from "@/services/oauth2";
 import { isTextualResponse, type ExecutionResult, type ResponseKind } from "@/services/execution";
 import { PROXIED_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
+import type { RequestAncestors } from "@/services/inheritance";
 
 export interface ExecuteRequestOptions {
   /** External cancellation source (e.g. a Cancel button) — independent of
@@ -27,9 +28,16 @@ function onAbort(signal: AbortSignal, callback: () => void): void {
   else signal.addEventListener("abort", callback, { once: true });
 }
 
+/**
+ * `ancestors` is positional and required rather than tucked into `options`
+ * for the same reason buildResolvedRequestArtifacts takes it that way: a send
+ * that silently omits its collection's headers/auth is precisely the bug this
+ * feature must not ship.
+ */
 export async function executeRequest(
   req: ApiRequest,
-  environment?: Environment | null,
+  environment: Environment | null | undefined,
+  ancestors: RequestAncestors,
   options?: ExecuteRequestOptions,
 ): Promise<ExecutionResult> {
   if (req.mock.enabled) {
@@ -56,10 +64,6 @@ export async function executeRequest(
   let refreshedOAuth2Token: ExecutionResult["refreshedOAuth2Token"];
   let scriptEnvironmentPatch: Record<string, string> | undefined;
   let scriptError: string | undefined;
-  // Best-effort URL for failure-message classification below — set as soon as
-  // resolution succeeds, but falls back to the raw configured URL so a
-  // failure during resolution itself can still be classified.
-  let resolvedUrl: string = req.url;
   let unresolvedVariables: string[] | undefined;
   try {
     if (req.auth.type === "oauth2" && req.auth.oauth2?.cachedToken) {
@@ -105,21 +109,26 @@ export async function executeRequest(
     // the environment, in which case it's the only case that needs a second,
     // re-interpolated resolve (avoids doubling body/FormData serialization
     // on every send just to give the script a preview).
-    const initialResolve = buildResolvedRequestArtifacts(effectiveReq, environment);
-    const scriptOutcome = await applyPreRequestScript(effectiveReq, environment, initialResolve, {
-      method: effectiveReq.method,
-      headers: initialResolve.resolvedHeaders,
-      body:
-        typeof initialResolve.serializedBody.body === "string"
-          ? initialResolve.serializedBody.body
-          : null,
-    });
+    const initialResolve = buildResolvedRequestArtifacts(effectiveReq, environment, ancestors);
+    const scriptOutcome = await applyPreRequestScript(
+      effectiveReq,
+      environment,
+      initialResolve,
+      {
+        method: effectiveReq.method,
+        headers: initialResolve.resolvedHeaders,
+        body:
+          typeof initialResolve.serializedBody.body === "string"
+            ? initialResolve.serializedBody.body
+            : null,
+      },
+      ancestors,
+    );
     const { resolved, scriptHeaderPatch } = scriptOutcome;
     scriptEnvironmentPatch = scriptOutcome.scriptEnvironmentPatch;
     scriptError = scriptOutcome.scriptError;
 
     const { url, resolvedHeaders: headers, serializedBody } = resolved;
-    resolvedUrl = url;
     unresolvedVariables = resolved.unresolvedVariables.length
       ? resolved.unresolvedVariables
       : undefined;
@@ -135,24 +144,11 @@ export async function executeRequest(
       init.body = serializedBody.body;
     }
 
-    let res: Response;
-    let viaProxy = false;
-    try {
-      res = await fetch(url, { ...init, signal: controller.signal });
-    } catch (fetchError) {
-      if (!shouldRetryViaProxy(fetchError, url, effectiveReq.method)) throw fetchError;
-      try {
-        const proxied = await fetchViaProxy(url, init, controller.signal);
-        // No marker header means this deployment has no server for
-        // /api/proxy at all (e.g. the static-nginx Docker production image
-        // just 404s) rather than the proxy having actually run and failed —
-        // in that case fall through to the original, more honest error.
-        if (!proxied.headers.has(PROXIED_HEADER)) throw fetchError;
-        res = proxied;
-        viaProxy = true;
-      } catch {
-        throw fetchError;
-      }
+    // Every send goes through reqlo's own server. Nothing is attempted
+    // directly from the browser first — see fetchViaProxy for why.
+    const res = await fetchViaProxy(url, init, controller.signal);
+    if (!res.headers.has(PROXIED_HEADER)) {
+      throw new ProxyUnavailableError();
     }
     const respHeaders: Record<string, string> = {};
     res.headers.forEach((v, k) => {
@@ -180,18 +176,13 @@ export async function executeRequest(
       scriptError,
       refreshedOAuth2Token,
       unresolvedVariables,
-      viaProxy,
     };
   } catch (e: unknown) {
     const isAbort =
       e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError");
     return {
       ...emptyFailureResult(started),
-      error: isAbort
-        ? e instanceof Error
-          ? e.message
-          : String(e)
-        : describeSendFailure(resolvedUrl, e),
+      error: isAbort ? (e instanceof Error ? e.message : String(e)) : describeSendFailure(e),
       scriptEnvironmentPatch,
       scriptError,
       refreshedOAuth2Token,
@@ -233,82 +224,79 @@ function oauth2FailureResult(started: number, message: string): ExecutionResult 
  * accordingly, and anything that doesn't match either falls back to the
  * original generic wording.
  */
-function describeSendFailure(url: string, e: unknown): string {
+function describeSendFailure(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
+
+  if (e instanceof ProxyUnavailableError) return e.message;
 
   if (globalThis.navigator?.onLine === false) {
     return "Couldn't send — this browser is currently offline, so nothing went out.";
   }
 
-  const pageProtocol = globalThis.location?.protocol;
-  if (pageProtocol === "https:" && /^http:\/\//i.test(url)) {
-    return `Couldn't send — reqlo is loaded over https:// and this request's URL is http://. Browsers block insecure ("mixed content") requests from a secure page; use an https:// URL instead.`;
-  }
-
-  const pageOrigin = globalThis.location?.origin;
-  if (pageOrigin && e instanceof TypeError && isCrossOrigin(url, pageOrigin)) {
-    return `Request possibly blocked by CORS — the request may have reached the server, but the browser can withhold the response when the server doesn't allow this origin. This looks the same to reqlo as a plain network failure, so it isn't certain; if the server is reachable, check its CORS configuration. (${msg})`;
-  }
-
-  return `Request failed: ${msg}. Check the URL, CORS, or network connection.`;
+  // The only fetch this function ever describes now is the same-origin one to
+  // /api/proxy, so the old CORS and mixed-content branches can't apply: CORS
+  // never applies to a same-origin request, and the target's own scheme is
+  // the server's problem, not the browser's. A failure here means reqlo's own
+  // server didn't answer.
+  return `Couldn't reach reqlo's own server to send this request: ${msg}. Check that reqlo is still running.`;
 }
 
-function isCrossOrigin(url: string, pageOrigin: string): boolean {
-  try {
-    return new URL(url, pageOrigin).origin !== pageOrigin;
-  } catch {
-    return false;
+/**
+ * Thrown when /api/proxy answered without the marker header — meaning nothing
+ * on the other end is reqlo's proxy. In practice: the app is being served as
+ * static files (an S3/Pages-style host, or the old nginx Docker image), so the
+ * request fell through to the SPA shell and came back as a 200 full of HTML.
+ */
+export class ProxyUnavailableError extends Error {
+  constructor() {
+    super(
+      "This copy of reqlo has no server behind it, so it can't send requests. " +
+        "Every send goes through reqlo's own /api/proxy, which needs the app to be " +
+        "run with its server (npm run dev, npm start after npm run build:node, the " +
+        "production Docker image, or a Cloudflare Worker deploy) rather than served " +
+        "as static files.",
+    );
+    this.name = "ProxyUnavailableError";
   }
 }
 
-/** GET/HEAD/OPTIONS never mutate state on a well-behaved server, so retrying
- * one is safe even though the original attempt might technically have
- * reached the target — nothing to double up. POST/PUT/PATCH/DELETE are the
- * opposite: with CORS, the browser can (and for a "simple request" — e.g.
- * form-urlencoded body, no custom headers — routinely does) send the real
- * request and only withhold the *response* when the origin isn't allowed.
- * Auto-retrying one of those through the proxy risks silently firing the
- * same side-effecting call twice. */
-const SAFE_RETRY_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-
-/** Same "looks like a CORS block" heuristic `describeSendFailure` uses for
- * its message — reused here to decide whether it's worth retrying through
- * reqlo's own proxy at all. */
-function shouldRetryViaProxy(e: unknown, url: string, method: string): boolean {
-  const pageOrigin = globalThis.location?.origin;
-  return (
-    globalThis.navigator?.onLine !== false &&
-    e instanceof TypeError &&
-    !!pageOrigin &&
-    isCrossOrigin(url, pageOrigin) &&
-    SAFE_RETRY_METHODS.has(method.toUpperCase())
-  );
-}
-
-/** Re-sends the same request to reqlo's own same-origin /api/proxy route
- * (see src/routes/api.proxy.ts), which forwards it server-side — a browser
- * never applies CORS to a same-origin call, and the real request leaves from
- * reqlo's server instead of the browser. No `duplex` option needed here:
- * `init.body` is at most a string/FormData/Blob (SerializedRequestBody),
- * never a stream. */
-function fetchViaProxy(url: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+/**
+ * Sends the request through reqlo's own same-origin /api/proxy route (see
+ * src/services/proxy-handler.ts), which performs the real call server-side.
+ *
+ * This is the only path — nothing is ever fetched directly from the browser.
+ * That's deliberate: a browser applies CORS to every cross-origin request and
+ * a server applies none, so routing everything through the server makes an
+ * API client that works the same on every endpoint instead of one that works
+ * on whichever endpoints happen to send the right headers. It also means a
+ * request is sent exactly once, so a POST can't be attempted directly, get
+ * its response withheld by CORS, and then be retried — which is what the
+ * earlier retry-on-failure design risked.
+ *
+ * The cost is that reqlo now needs a server to send anything at all. When it
+ * doesn't have one, the missing marker header surfaces as
+ * ProxyUnavailableError rather than a confusing network error.
+ *
+ * No `duplex` option needed here: `init.body` is at most a string/FormData/
+ * Blob (SerializedRequestBody), never a stream.
+ */
+export function fetchViaProxy(
+  url: string,
+  init: RequestInit,
+  signal?: AbortSignal,
+): Promise<Response> {
   const headers = new Headers(init.headers);
-  headers.set(PROXY_TARGET_HEADER, url);
+  // Resolved against the page origin so a relative target ("/health") arrives
+  // as something the server can actually parse — new URL() on the server has
+  // no origin to resolve it against.
+  headers.set(PROXY_TARGET_HEADER, new URL(url, globalThis.location?.origin).toString());
   // The outer URL is always the literal string "/api/proxy" — the real
   // target lives in a header, which the browser's HTTP cache doesn't key on.
   // Without this, a second send to a different target through the same
   // browser session can be served an earlier target's cached response
   // outright. The server route also sends Cache-Control: no-store; this is
   // belt-and-suspenders on the request side.
-  //
-  // redirect: "manual" matters here too, not just server-side: the proxy
-  // route itself never follows a redirect from the target (see
-  // api.proxy.ts), so what comes back from THIS fetch can legitimately be a
-  // 3xx. Without "manual", the browser would transparently re-fetch that
-  // Location URL directly and cross-origin — the exact CORS wall this
-  // retry exists to route around, and one that skips the proxy's SSRF check
-  // entirely on that hop.
-  return fetch("/api/proxy", { ...init, headers, signal, cache: "no-store", redirect: "manual" });
+  return fetch("/api/proxy", { ...init, headers, signal, cache: "no-store" });
 }
 
 async function buildMockResult(mock: MockConfig, signal?: AbortSignal): Promise<ExecutionResult> {

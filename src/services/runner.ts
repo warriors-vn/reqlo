@@ -17,6 +17,7 @@ import {
 import { resolveExtractPath, stringifyExtractedValue } from "@/services/extract";
 import { evaluateAssertions, type AssertionOutcome } from "@/services/assertions";
 import { isTooLargeToParse } from "@/lib/response-body-view";
+import type { RequestAncestors } from "@/services/inheritance";
 
 const MAX_HISTORY_RESPONSE_BODY = 40_000;
 
@@ -49,10 +50,11 @@ export interface RunSingleRequestOutcome {
 export async function runSingleRequest(
   request: ApiRequest,
   environment: Environment | null,
+  ancestors: RequestAncestors,
   deps: RunSingleRequestDeps,
   options?: ExecuteRequestOptions,
 ): Promise<RunSingleRequestOutcome> {
-  const result = await executeRequest(request, environment, options);
+  const result = await executeRequest(request, environment, ancestors, options);
 
   // When a cached token got auto-refreshed, log history and persist the
   // request against the refreshed copy — the stale/expired token isn't what

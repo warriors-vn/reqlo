@@ -1,13 +1,15 @@
 import { buildResolvedRequestArtifacts } from "@/features/code-snippets/utils/request-resolver";
 import type { SnippetContext, SnippetMultipartEntry } from "@/features/code-snippets/types";
 import type { ApiRequest, Environment } from "@/services/db";
+import type { RequestAncestors } from "@/services/inheritance";
 
 export function buildSnippetContext(
   request: ApiRequest,
-  environment?: Environment | null,
+  environment: Environment | null | undefined,
+  ancestors: RequestAncestors,
 ): SnippetContext {
   const { url, resolvedHeaders, resolvedQueryParams, resolvedRequest, serializedBody } =
-    buildResolvedRequestArtifacts(request, environment);
+    buildResolvedRequestArtifacts(request, environment, ancestors);
 
   const headers = Object.entries(resolvedHeaders).map(([key, value]) => ({ key, value }));
   const queryParams = resolvedQueryParams.map((item) => ({ key: item.key, value: item.value }));

@@ -14,9 +14,29 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 // when `!ctx.viteConfig.build.ssr`, and this project's single `vite build` invocation builds
 // both the client and ssr environments back to back (Vite's Environment API), which left that
 // check permanently false and silently skipped service worker generation.
+// Two build targets from one config.
+//
+// Default (`npm run build`): the Cloudflare Worker bundle this repo has always
+// deployed — SSR, wrangler.jsonc, unchanged.
+//
+// REQLO_TARGET=node (`npm run build:node`, what the production Docker image
+// runs): Cloudflare's plugin off and SPA mode on, so the build emits a real
+// static dist/client/index.html. It has to be a separate mode rather than the
+// default because the two are mutually exclusive in practice: the Cloudflare
+// plugin renames the server entry to dist/server/index.js, while TanStack's
+// SPA prerender step looks for dist/server/server.js and dies with
+// "Failed to fetch /: Internal Server Error" when it isn't there.
+//
+// reqlo is a local-first client app — every route renders from IndexedDB in
+// the browser and SSR only ever produced the HTML shell — so the SPA output is
+// a complete app, not a degraded one.
+const selfHostedNodeBuild = process.env.REQLO_TARGET === "node";
+
 export default defineConfig({
+  ...(selfHostedNodeBuild ? { cloudflare: false as const } : {}),
   tanstackStart: {
     server: { entry: "server" },
+    ...(selfHostedNodeBuild ? { spa: { enabled: true } } : {}),
   },
   vite: {
     optimizeDeps: {

@@ -1,5 +1,8 @@
 import type { IntrospectionQuery } from "graphql";
 import type { ApiRequest, Environment } from "@/services/db";
+import type { RequestAncestors } from "@/services/inheritance";
+import { fetchViaProxy, ProxyUnavailableError } from "@/services/executor";
+import { PROXIED_HEADER } from "@/services/proxy-constants";
 import {
   applyPreRequestScript,
   buildResolvedRequestArtifacts,
@@ -26,8 +29,9 @@ function setJsonContentType(headers: Record<string, string>) {
 export async function fetchIntrospectionSchema(
   request: ApiRequest,
   environment: Environment | null,
+  ancestors: RequestAncestors,
 ): Promise<IntrospectionResult> {
-  const initialResolve = buildResolvedRequestArtifacts(request, environment);
+  const initialResolve = buildResolvedRequestArtifacts(request, environment, ancestors);
   if (!initialResolve.url) return { ok: false, error: "This request has no URL to introspect." };
 
   const { getIntrospectionQuery } = await import("graphql");
@@ -35,11 +39,13 @@ export async function fetchIntrospectionSchema(
 
   const headersForScript = { ...initialResolve.resolvedHeaders };
   setJsonContentType(headersForScript);
-  const scriptOutcome = await applyPreRequestScript(request, environment, initialResolve, {
-    method: "POST",
-    headers: headersForScript,
-    body,
-  });
+  const scriptOutcome = await applyPreRequestScript(
+    request,
+    environment,
+    initialResolve,
+    { method: "POST", headers: headersForScript, body },
+    ancestors,
+  );
   if (scriptOutcome.scriptError) {
     return { ok: false, error: `Pre-request script failed: ${scriptOutcome.scriptError}` };
   }
@@ -51,12 +57,19 @@ export async function fetchIntrospectionSchema(
   setJsonContentType(headers);
   if (scriptHeaderPatch) Object.assign(headers, scriptHeaderPatch);
 
+  // Through reqlo's own proxy, exactly like a normal send (executor.ts) — an
+  // introspection call is a cross-origin POST like any other, and pointing it
+  // straight at the endpoint would put the CORS wall back in front of the one
+  // feature that exists to read a third-party schema.
   let res: Response;
   try {
-    res = await fetch(resolved.url, { method: "POST", headers, body });
+    res = await fetchViaProxy(resolved.url, { method: "POST", headers, body });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: `Request failed: ${msg}. Check the URL, CORS, or network.` };
+    return { ok: false, error: `Request failed: ${msg}. Check the URL or network.` };
+  }
+  if (!res.headers.has(PROXIED_HEADER)) {
+    return { ok: false, error: new ProxyUnavailableError().message };
   }
 
   if (!res.ok) {

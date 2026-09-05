@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { normalizeApiRequest, type ApiRequest, type Collection, type Folder } from "@/services/db";
+import {
+  createDefaultRequestDefaults,
+  normalizeApiRequest,
+  type ApiRequest,
+  type Collection,
+  type Folder,
+} from "@/services/db";
 import {
   collectDescendantFolderIds,
   compareRequestsByPosition,
@@ -30,6 +36,7 @@ function makeFolder(overrides: Partial<Folder> & { id: string; collectionId: str
     parentFolderId: null,
     name: "folder",
     position: 0,
+    defaults: createDefaultRequestDefaults(),
     createdAt: 0,
     ...overrides,
   };
@@ -40,6 +47,7 @@ function makeCollection(overrides: Partial<Collection> & { id: string }): Collec
     workspaceId: "ws1",
     name: "collection",
     position: 0,
+    defaults: createDefaultRequestDefaults(),
     createdAt: 0,
     ...overrides,
   };

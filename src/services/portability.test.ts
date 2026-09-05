@@ -12,6 +12,7 @@ import {
   type Folder,
   type HistoryEntry,
   type Workspace,
+  createDefaultRequestDefaults,
 } from "@/services/db";
 import {
   exportCollection,
@@ -44,7 +45,14 @@ describe("validateCollectionExport", () => {
     schema: "reqlo.collection",
     version: 1,
     exportedAt: Date.now(),
-    collection: { id: "c1", workspaceId: "ws1", name: "C", position: 0, createdAt: Date.now() },
+    collection: {
+      id: "c1",
+      workspaceId: "ws1",
+      name: "C",
+      position: 0,
+      defaults: createDefaultRequestDefaults(),
+      createdAt: Date.now(),
+    },
     requests: [],
   };
 
@@ -216,6 +224,7 @@ describe("exportCollection / exportWorkspace round-trips", () => {
       workspaceId,
       name: "My Collection",
       position: 0,
+      defaults: createDefaultRequestDefaults(),
       createdAt: Date.now(),
     };
     await db.collections.add(collection);
@@ -227,6 +236,7 @@ describe("exportCollection / exportWorkspace round-trips", () => {
       parentFolderId: null,
       name: "Folder A",
       position: 0,
+      defaults: createDefaultRequestDefaults(),
       createdAt: Date.now(),
     };
     await db.folders.add(folder);
@@ -277,6 +287,7 @@ describe("exportCollection / exportWorkspace round-trips", () => {
       workspaceId: workspace.id,
       name: "C",
       position: 0,
+      defaults: createDefaultRequestDefaults(),
       createdAt: Date.now(),
     };
     await db.collections.add(collection);

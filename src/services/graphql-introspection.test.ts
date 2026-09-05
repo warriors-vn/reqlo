@@ -1,3 +1,5 @@
+import { NO_ANCESTORS } from "@/services/inheritance";
+import { PROXIED_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeApiRequest, uid, type ApiRequest, type Environment } from "@/services/db";
 import { fetchIntrospectionSchema } from "@/services/graphql-introspection";
@@ -27,10 +29,12 @@ function makeEnv(overrides: Partial<Environment> = {}): Environment {
   };
 }
 
+// Introspection goes through /api/proxy like any other send, and the client
+// treats a response without this marker as "this deployment has no proxy".
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", [PROXIED_HEADER]: "1" },
   });
 }
 
@@ -54,7 +58,7 @@ describe("fetchIntrospectionSchema", () => {
       "fetch",
       vi.fn(async () => jsonResponse({ data: VALID_INTROSPECTION })),
     );
-    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv());
+    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv(), NO_ANCESTORS);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.introspection.__schema.queryType.name).toBe("Query");
   });
@@ -77,15 +81,16 @@ describe("fetchIntrospectionSchema", () => {
       ],
     });
 
-    await fetchIntrospectionSchema(request, environment);
+    await fetchIntrospectionSchema(request, environment, NO_ANCESTORS);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://api.example.com/graphql");
+    expect(url).toBe("/api/proxy");
     expect(init?.method).toBe("POST");
-    const headers = init?.headers as Record<string, string>;
-    expect(headers["X-Api-Key"]).toBe("secret-key");
-    expect(headers.Authorization).toBe("Bearer abc123");
+    const headers = new Headers(init?.headers);
+    expect(headers.get(PROXY_TARGET_HEADER)).toBe("https://api.example.com/graphql");
+    expect(headers.get("X-Api-Key")).toBe("secret-key");
+    expect(headers.get("Authorization")).toBe("Bearer abc123");
     const body = JSON.parse(init?.body as string);
     expect(typeof body.query).toBe("string");
     expect(body.query).toContain("__schema");
@@ -96,7 +101,7 @@ describe("fetchIntrospectionSchema", () => {
       "fetch",
       vi.fn(async () => jsonResponse({ data: { user: { id: "1" } } })),
     );
-    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv());
+    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv(), NO_ANCESTORS);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/introspection/i);
   });
@@ -106,7 +111,7 @@ describe("fetchIntrospectionSchema", () => {
       "fetch",
       vi.fn(async () => jsonResponse({ error: "unauthorized" }, 401)),
     );
-    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv());
+    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv(), NO_ANCESTORS);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("401");
   });
@@ -118,7 +123,7 @@ describe("fetchIntrospectionSchema", () => {
         throw new Error("network down");
       }),
     );
-    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv());
+    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv(), NO_ANCESTORS);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("network down");
   });
@@ -126,9 +131,15 @@ describe("fetchIntrospectionSchema", () => {
   it("reports a non-JSON response body", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response("<html>not json</html>", { status: 200 })),
+      vi.fn(
+        async () =>
+          new Response("<html>not json</html>", {
+            status: 200,
+            headers: { [PROXIED_HEADER]: "1" },
+          }),
+      ),
     );
-    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv());
+    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv(), NO_ANCESTORS);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/JSON/i);
   });
@@ -136,7 +147,11 @@ describe("fetchIntrospectionSchema", () => {
   it("reports when the request has no URL", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    const result = await fetchIntrospectionSchema(makeRequest({ url: "" }), makeEnv());
+    const result = await fetchIntrospectionSchema(
+      makeRequest({ url: "" }),
+      makeEnv(),
+      NO_ANCESTORS,
+    );
     expect(result.ok).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -148,7 +163,7 @@ describe("fetchIntrospectionSchema", () => {
         jsonResponse({ errors: [{ message: "GraphQL introspection is not allowed" }] }),
       ),
     );
-    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv());
+    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv(), NO_ANCESTORS);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("GraphQL introspection is not allowed");
   });
@@ -162,13 +177,12 @@ describe("fetchIntrospectionSchema", () => {
       headers: [{ id: "h1", key: "content-type", value: "text/plain", enabled: true }],
     });
 
-    await fetchIntrospectionSchema(request, makeEnv());
+    await fetchIntrospectionSchema(request, makeEnv(), NO_ANCESTORS);
 
     const [, init] = fetchMock.mock.calls[0];
-    const headers = init?.headers as Record<string, string>;
-    const contentTypeKeys = Object.keys(headers).filter((k) => k.toLowerCase() === "content-type");
-    expect(contentTypeKeys).toHaveLength(1);
-    expect(headers[contentTypeKeys[0]]).toBe("application/json");
+    // Headers collapses case-insensitive duplicates, so a single entry here is
+    // exactly the "no duplicate Content-Type" guarantee this test is after.
+    expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
   });
 
   it("runs an enabled pre-request script and applies its header patch to the introspection request", async () => {
@@ -183,11 +197,10 @@ describe("fetchIntrospectionSchema", () => {
       },
     });
 
-    await fetchIntrospectionSchema(request, makeEnv());
+    await fetchIntrospectionSchema(request, makeEnv(), NO_ANCESTORS);
 
     const [, init] = fetchMock.mock.calls[0];
-    const headers = init?.headers as Record<string, string>;
-    expect(headers["X-Signature"]).toBe("computed-POST");
+    expect(new Headers(init?.headers).get("X-Signature")).toBe("computed-POST");
   });
 
   it("surfaces a pre-request script error instead of silently introspecting without it", async () => {
@@ -199,7 +212,7 @@ describe("fetchIntrospectionSchema", () => {
       preRequestScript: { enabled: true, source: `throw new Error("signing key missing");` },
     });
 
-    const result = await fetchIntrospectionSchema(request, makeEnv());
+    const result = await fetchIntrospectionSchema(request, makeEnv(), NO_ANCESTORS);
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("signing key missing");

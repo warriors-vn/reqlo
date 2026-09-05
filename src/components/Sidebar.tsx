@@ -14,6 +14,7 @@ import {
   Play,
   Upload,
   Terminal,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useStore } from "@/stores/useStore";
 import { runCommand } from "@/hooks/useCommandSystem";
@@ -63,6 +64,7 @@ export function Sidebar() {
     moveRequestToFolder,
     toggleFavorite,
     exportCollectionById,
+    openDefaultsEditor,
     exportCollectionAsFilesById,
     reorderCollections,
     setPalette,
@@ -497,6 +499,12 @@ export function Sidebar() {
                       }
                     >
                       <Play className="h-3.5 w-3.5" /> Run all requests
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => openDefaultsEditor({ type: "collection", id: col.id })}
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" /> Collection settings
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onSelect={() => void exportCollectionById(col.id)}>

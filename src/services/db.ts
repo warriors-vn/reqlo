@@ -63,7 +63,15 @@ export interface RequestBodyDrafts {
 }
 
 export interface RequestAuth {
-  type: "none" | "basic" | "bearer" | "api-key" | "oauth2";
+  /**
+   * "inherit" takes whichever ancestor (folder, then collection) is the
+   * nearest one to configure auth — the default for newly created requests.
+   * "none" is the opposite and deliberately distinct: an explicit "send this
+   * one unauthenticated", which no ancestor can override. Requests that
+   * predate collection-level auth were all migrated as "none" so adding a
+   * token to a collection never silently changes what they already send.
+   */
+  type: "inherit" | "none" | "basic" | "bearer" | "api-key" | "oauth2";
   username?: string;
   password?: string;
   token?: string;
@@ -142,11 +150,27 @@ export interface Workspace {
   updatedAt: number;
 }
 
+/**
+ * Auth/headers/params/variables configured once on a collection or folder and
+ * inherited by every request underneath it — so a 40-request collection needs
+ * its bearer token in one place, not forty. See services/inheritance.ts for
+ * the merge rules; `auth.type === "none"` here means "this level contributes
+ * no auth", which is what lets a nested folder fall through to its collection.
+ */
+export interface RequestDefaults {
+  auth: RequestAuth;
+  headers: KV[];
+  queryParams: KV[];
+  /** Resolved below the active environment but above workspace globals. */
+  variables: KV[];
+}
+
 export interface Collection {
   id: string;
   workspaceId: string;
   name: string;
   position: number;
+  defaults: RequestDefaults;
   createdAt: number;
 }
 
@@ -157,6 +181,7 @@ export interface Folder {
   parentFolderId: string | null;
   name: string;
   position: number;
+  defaults: RequestDefaults;
   createdAt: number;
 }
 
@@ -459,6 +484,41 @@ class ReqloDB extends Dexie {
             }
           });
       });
+    this.version(12)
+      .stores({
+        workspaces: "id, updatedAt",
+        collections: "id, workspaceId, position",
+        folders:
+          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
+        requests:
+          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
+        history:
+          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
+        environments: "id, workspaceId",
+      })
+      .upgrade(async (tx) => {
+        // Collection/folder-level defaults. Existing requests are deliberately
+        // left on whatever auth they already had (including "none") rather
+        // than migrated to "inherit" — see RequestAuth's comment: a request
+        // that sends no auth today must keep sending none after someone adds
+        // a token to its collection.
+        await tx
+          .table<Collection, string>("collections")
+          .toCollection()
+          .modify((collection) => {
+            if (collection.defaults === undefined) {
+              collection.defaults = createDefaultRequestDefaults();
+            }
+          });
+        await tx
+          .table<Folder, string>("folders")
+          .toCollection()
+          .modify((folder) => {
+            if (folder.defaults === undefined) {
+              folder.defaults = createDefaultRequestDefaults();
+            }
+          });
+      });
   }
 }
 
@@ -482,6 +542,55 @@ export function uid(): string {
 
 export function createDefaultAuth(): RequestAuth {
   return { type: "none" };
+}
+
+/** What a newly created request starts on, as opposed to createDefaultAuth's
+ * explicit "none" — see RequestAuth's comment for why the two differ. */
+export function createInheritedAuth(): RequestAuth {
+  return { type: "inherit" };
+}
+
+/** A collection/folder that contributes nothing to the requests under it. */
+export function createDefaultRequestDefaults(): RequestDefaults {
+  return { auth: createDefaultAuth(), headers: [], queryParams: [], variables: [] };
+}
+
+/** Fills in `defaults` for a Collection that came from outside the current
+ * schema — an older export file, or a parser that predates this field. Rows
+ * read from IndexedDB are already backfilled by the version(12) upgrade. */
+export function normalizeCollection(collection: Partial<Collection> & { id: string }): Collection {
+  return {
+    ...collection,
+    defaults: normalizeRequestDefaults(collection.defaults),
+  } as Collection;
+}
+
+/** Folder counterpart to normalizeCollection. */
+export function normalizeFolder(folder: Partial<Folder> & { id: string }): Folder {
+  return {
+    ...folder,
+    defaults: normalizeRequestDefaults(folder.defaults),
+  } as Folder;
+}
+
+/** A deep-enough copy for duplicating a collection/folder — every KV row gets
+ * a fresh identity so editing the copy can't write through to the original. */
+export function cloneRequestDefaults(defaults: RequestDefaults): RequestDefaults {
+  return {
+    auth: { ...defaults.auth },
+    headers: defaults.headers.map((item) => ({ ...item, id: uid() })),
+    queryParams: defaults.queryParams.map((item) => ({ ...item, id: uid() })),
+    variables: defaults.variables.map((item) => ({ ...item, id: uid() })),
+  };
+}
+
+export function normalizeRequestDefaults(defaults?: Partial<RequestDefaults>): RequestDefaults {
+  return {
+    auth: defaults?.auth ?? createDefaultAuth(),
+    headers: cloneKV(defaults?.headers ?? []),
+    queryParams: cloneKV(defaults?.queryParams ?? []),
+    variables: cloneKV(defaults?.variables ?? []),
+  };
 }
 
 export function createDefaultOAuth2Config(): OAuth2Config {
@@ -752,6 +861,7 @@ export async function ensureSeed(): Promise<Workspace> {
     workspaceId: ws.id,
     name: "Getting Started",
     position: 0,
+    defaults: createDefaultRequestDefaults(),
     createdAt: now,
   };
   await db.collections.add(col);

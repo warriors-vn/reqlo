@@ -237,14 +237,6 @@ export function ResponseViewer({
                 Mocked
               </span>
             )}
-            {result.viaProxy && (
-              <span
-                className="inline-flex items-center rounded-full border border-border/80 bg-background/60 px-2.5 py-1 font-semibold uppercase tracking-wide text-muted-foreground"
-                title="A direct send looked CORS-blocked, so this went out through reqlo's own proxy instead."
-              >
-                Via proxy
-              </span>
-            )}
           </div>
 
           <div className="ml-auto flex flex-wrap items-center gap-2">

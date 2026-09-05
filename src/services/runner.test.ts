@@ -7,7 +7,10 @@ import {
   type Folder,
   type HistoryEntry,
   type KV,
+  createDefaultRequestDefaults,
 } from "@/services/db";
+import { NO_ANCESTORS } from "@/services/inheritance";
+import { PROXIED_HEADER } from "@/services/proxy-constants";
 import { collectRequestsInTreeOrder, runSingleRequest } from "@/services/runner";
 import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
 
@@ -45,10 +48,13 @@ function makeDeps(workspaceId = "ws-1") {
   };
 }
 
+// Carries PROXIED_HEADER because every send goes through /api/proxy now, and
+// executeRequest treats a response without that marker as "this deployment
+// has no proxy" rather than as the API's own answer.
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", [PROXIED_HEADER]: "1" },
   });
 }
 
@@ -65,6 +71,7 @@ describe("collectRequestsInTreeOrder", () => {
     parentFolderId: null,
     name: "A",
     position: 0,
+    defaults: createDefaultRequestDefaults(),
     createdAt: 1,
   };
   const folderB: Folder = {
@@ -74,6 +81,7 @@ describe("collectRequestsInTreeOrder", () => {
     parentFolderId: null,
     name: "B",
     position: 1,
+    defaults: createDefaultRequestDefaults(),
     createdAt: 2,
   };
   const folderA1: Folder = {
@@ -83,6 +91,7 @@ describe("collectRequestsInTreeOrder", () => {
     parentFolderId: "fA",
     name: "A1",
     position: 0,
+    defaults: createDefaultRequestDefaults(),
     createdAt: 3,
   };
   const folders = [folderA, folderB, folderA1];
@@ -148,7 +157,7 @@ describe("runSingleRequest", () => {
     const deps = makeDeps();
     const request = makeRequest({ name: "Get thing" });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.result.status).toBe(200);
     expect(outcome.result.ok).toBe(true);
@@ -169,7 +178,7 @@ describe("runSingleRequest", () => {
       extracts: [{ id: "e1", path: "token", variableName: "authToken", enabled: true }],
     });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.extractedVariables).toEqual(["authToken"]);
     expect(deps.updateEnvironment).toHaveBeenCalledWith("env-1", {
@@ -189,7 +198,7 @@ describe("runSingleRequest", () => {
       extracts: [{ id: "e1", path: "token", variableName: "authToken", enabled: true }],
     });
     const envBefore = makeEnv();
-    await runSingleRequest(requestA, envBefore, deps);
+    await runSingleRequest(requestA, envBefore, NO_ANCESTORS, deps);
 
     // Simulate what the real runner does between iterations: re-read the
     // environment after the update the first request just wrote.
@@ -206,12 +215,13 @@ describe("runSingleRequest", () => {
       name: "Get profile",
       headers: [{ id: "h1", key: "Authorization", value: "Bearer {{authToken}}", enabled: true }],
     });
-    await runSingleRequest(requestB, envAfter, deps);
+    await runSingleRequest(requestB, envAfter, NO_ANCESTORS, deps);
 
+    // Read through Headers rather than as a plain object: the send goes out
+    // via /api/proxy, and fetchViaProxy rebuilds the init's headers as a
+    // Headers instance so it can add the proxy target to them.
     const [, calledInit] = fetchMock.mock.calls[0];
-    expect((calledInit?.headers as Record<string, string>).Authorization).toBe(
-      "Bearer chained-token",
-    );
+    expect(new Headers(calledInit?.headers).get("Authorization")).toBe("Bearer chained-token");
   });
 
   it("runs a pre-request script whose environment write interpolates into this same request's headers, and persists it", async () => {
@@ -226,13 +236,13 @@ describe("runSingleRequest", () => {
       },
     });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.result.scriptError).toBeUndefined();
     const [, calledInit] = fetchMock.mock.calls[0];
-    const sentHeaders = calledInit?.headers as Record<string, string>;
-    expect(sentHeaders["X-Nonce"]).toBe("computed-nonce");
-    expect(sentHeaders["X-Signature"]).toBe("GET");
+    const sentHeaders = new Headers(calledInit?.headers);
+    expect(sentHeaders.get("X-Nonce")).toBe("computed-nonce");
+    expect(sentHeaders.get("X-Signature")).toBe("GET");
     expect(deps.updateEnvironment).toHaveBeenCalledWith("env-1", {
       variables: [{ id: expect.any(String), key: "nonce", value: "computed-nonce", enabled: true }],
     });
@@ -248,7 +258,7 @@ describe("runSingleRequest", () => {
       preRequestScript: { enabled: true, source: `return { environment: { nonce: "x" } };` },
     });
 
-    const outcome = await runSingleRequest(request, null, deps);
+    const outcome = await runSingleRequest(request, null, NO_ANCESTORS, deps);
 
     expect(outcome.scriptEnvironmentDropped).toBe(true);
     expect(deps.updateEnvironment).not.toHaveBeenCalled();
@@ -264,7 +274,7 @@ describe("runSingleRequest", () => {
       preRequestScript: { enabled: true, source: `return { headers: { "X-Signature": "x" } };` },
     });
 
-    const outcome = await runSingleRequest(request, null, deps);
+    const outcome = await runSingleRequest(request, null, NO_ANCESTORS, deps);
 
     expect(outcome.scriptEnvironmentDropped).toBe(false);
   });
@@ -279,7 +289,7 @@ describe("runSingleRequest", () => {
       preRequestScript: { enabled: true, source: `throw new Error("bad script");` },
     });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.result.scriptError).toContain("bad script");
     expect(outcome.result.status).toBe(200);
@@ -301,7 +311,7 @@ describe("runSingleRequest", () => {
     const deps = makeDeps();
     const request = makeRequest({ timeoutMs: 50 });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.result.ok).toBe(false);
     expect(outcome.result.status).toBeNull();
@@ -313,7 +323,7 @@ describe("runSingleRequest", () => {
     vi.stubGlobal("fetch", fetchMock);
     const request = makeRequest({ timeoutMs: 0 });
 
-    await runSingleRequest(request, makeEnv(), makeDeps());
+    await runSingleRequest(request, makeEnv(), NO_ANCESTORS, makeDeps());
 
     const [, init] = fetchMock.mock.calls[0];
     expect((init?.signal as AbortSignal).aborted).toBe(false);
@@ -335,7 +345,7 @@ describe("runSingleRequest", () => {
     const controller = new AbortController();
     controller.abort();
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps, {
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps, {
       signal: controller.signal,
     });
 
@@ -355,7 +365,7 @@ describe("runSingleRequest", () => {
       ],
     });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.assertionOutcomes).toHaveLength(1);
     expect(outcome.assertionOutcomes[0].passed).toBe(false);
@@ -388,7 +398,7 @@ describe("runSingleRequest", () => {
       },
     });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.result.ok).toBe(true);
     expect(deps.updateRequest).toHaveBeenCalledTimes(1);
@@ -401,7 +411,10 @@ describe("runSingleRequest", () => {
       "fetch",
       vi.fn(
         async () =>
-          new Response(hugeBody, { status: 200, headers: { "content-type": "application/json" } }),
+          new Response(hugeBody, {
+            status: 200,
+            headers: { "content-type": "application/json", [PROXIED_HEADER]: "1" },
+          }),
       ),
     );
     const deps = makeDeps();
@@ -409,7 +422,7 @@ describe("runSingleRequest", () => {
       extracts: [{ id: "e1", path: "token", variableName: "authToken", enabled: true }],
     });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.extractedVariables).toEqual([]);
     expect(outcome.extractFailures).toEqual(["authToken"]);
@@ -426,7 +439,7 @@ describe("runSingleRequest", () => {
       extracts: [{ id: "e1", path: "token", variableName: "authToken", enabled: true }],
     });
 
-    const outcome = await runSingleRequest(request, null, deps);
+    const outcome = await runSingleRequest(request, null, NO_ANCESTORS, deps);
 
     expect(outcome.noActiveEnvironment).toBe(true);
     expect(deps.updateEnvironment).not.toHaveBeenCalled();

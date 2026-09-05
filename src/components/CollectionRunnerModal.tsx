@@ -114,6 +114,7 @@ export function CollectionRunnerModal() {
           outcome = await runSingleRequest(
             request,
             environment,
+            current.getRequestAncestors(request.id),
             {
               workspaceId,
               addHistory: current.addHistory,

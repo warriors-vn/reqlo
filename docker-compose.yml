@@ -41,13 +41,31 @@ services:
       timeout: 10s
       retries: 3
 
+  # The deployable image: reqlo's own Node server, serving the built client
+  # plus /api/proxy. Not started by a bare `docker-compose up` — bring it up
+  # explicitly with `docker-compose --profile prod up --build prod`.
+  prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      target: production
+    image: reqlo:prod
+    container_name: reqlo-prod
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=${REQLO_PROD_PORT:-8080}
+    ports:
+      - "${REQLO_PROD_PORT:-8080}:${REQLO_PROD_PORT:-8080}"
+
 # Helpful volumes section (anonymous volumes are fine for node_modules)
 volumes:
   node_modules: {}
 
 # Notes:
-# - For production builds, you can 'docker build --target build -t my-frontend:prod .' and run the
-#   nginx `production` stage image (or `docker build -t my-frontend:prod .` to get the final image).
+# - The `production` image runs reqlo's own Node server (dist/static-server.mjs),
+#   not nginx: the CORS-bypass proxy at /api/proxy needs a server, and serving
+#   the build statically means every CORS-blocked send dead-ends.
 # - If your project uses a different dev port, set FRONTEND_PORT before `docker-compose up`.
 # - On macOS, if you experience file watch issues use CHOKIDAR_USEPOLLING=true.
 

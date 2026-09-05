@@ -21,6 +21,7 @@ import { LazySettingsModal } from "@/components/LazySettingsModal";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LazyEnvironmentSwitcher } from "@/components/LazyEnvironmentSwitcher";
 import { LazyCollectionRunnerModal } from "@/components/LazyCollectionRunnerModal";
+import { LazyCollectionSettingsModal } from "@/components/LazyCollectionSettingsModal";
 import { LazyPromptDialog } from "@/components/LazyPromptDialog";
 import { LazyGlobalConfirmDialog } from "@/components/LazyGlobalConfirmDialog";
 import { runSingleRequest } from "@/services/runner";
@@ -49,6 +50,7 @@ export function Workspace() {
     activeEnvId,
     updateEnvironment,
     updateRequest,
+    getRequestAncestors,
   } = useStore();
   const [results, setResults] = useState<Record<string, ExecutionResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
@@ -158,6 +160,7 @@ export function Workspace() {
       outcome = await runSingleRequest(
         activeRequest,
         activeEnvironment,
+        getRequestAncestors(activeRequest.id),
         { workspaceId: workspace.id, addHistory, updateEnvironment, updateRequest },
         {
           signal: controller.signal,
@@ -353,6 +356,7 @@ export function Workspace() {
       <KeyboardShortcutsModal />
       <LazyEnvironmentSwitcher />
       <LazyCollectionRunnerModal />
+      <LazyCollectionSettingsModal />
       <LazyPromptDialog />
       <LazyGlobalConfirmDialog />
     </div>

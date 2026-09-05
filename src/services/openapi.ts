@@ -1,4 +1,5 @@
 import {
+  createDefaultRequestDefaults,
   createDefaultAuth,
   createDefaultBodyDrafts,
   createEmptyFormDataRow,
@@ -318,6 +319,7 @@ export function parseOpenApiDocument(
       parentFolderId: null,
       name: tag,
       position: tagFolderIds.size,
+      defaults: createDefaultRequestDefaults(),
       createdAt: Date.now(),
     };
     folders.push(folder);
