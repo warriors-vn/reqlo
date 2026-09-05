@@ -4,7 +4,13 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { CollectionRunnerModal } from "@/components/CollectionRunnerModal";
 import { useStore } from "@/stores/useStore";
-import { normalizeApiRequest, uid, type ApiRequest, type Collection } from "@/services/db";
+import {
+  createDefaultRequestDefaults,
+  normalizeApiRequest,
+  uid,
+  type ApiRequest,
+  type Collection,
+} from "@/services/db";
 import * as runner from "@/services/runner";
 import type { RunSingleRequestOutcome } from "@/services/runner";
 
@@ -15,6 +21,7 @@ function seedCollection(requestCount: number): { collection: Collection; request
     workspaceId: "ws-1",
     name: "Col",
     position: 0,
+    defaults: createDefaultRequestDefaults(),
     createdAt: now,
   };
   const requests = Array.from({ length: requestCount }, (_, index) =>

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NO_ANCESTORS } from "@/services/inheritance";
 import { executeRequest } from "@/services/executor";
 import { normalizeApiRequest, uid, type ApiRequest, type HttpMethod } from "@/services/db";
 import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
@@ -29,7 +30,7 @@ describe("executeRequest — mocked requests", () => {
         delayMs: 10,
       },
     });
-    const result = await executeRequest(request, null);
+    const result = await executeRequest(request, null, NO_ANCESTORS);
     expect(result.mocked).toBe(true);
     expect(result.status).toBe(200);
   });
@@ -47,7 +48,7 @@ describe("executeRequest — mocked requests", () => {
         },
       });
       const controller = new AbortController();
-      const pending = executeRequest(request, null, { signal: controller.signal });
+      const pending = executeRequest(request, null, NO_ANCESTORS, { signal: controller.signal });
 
       // Cancel well before the mock's own 60s delay would resolve.
       await vi.advanceTimersByTimeAsync(100);
@@ -76,7 +77,7 @@ describe("executeRequest — mocked requests", () => {
     controller.abort();
 
     const start = Date.now();
-    const result = await executeRequest(request, null, { signal: controller.signal });
+    const result = await executeRequest(request, null, NO_ANCESTORS, { signal: controller.signal });
     expect(Date.now() - start).toBeLessThan(1000);
     expect(result.error).toBe("Request cancelled.");
   });
@@ -93,7 +94,11 @@ describe("executeRequest — every send goes through /api/proxy", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await executeRequest(makeRequest({ url: "https://api.example.com/data" }), null);
+    const result = await executeRequest(
+      makeRequest({ url: "https://api.example.com/data" }),
+      null,
+      NO_ANCESTORS,
+    );
 
     expect(result.status).toBe(200);
     expect(result.error).toBeUndefined();
@@ -108,7 +113,7 @@ describe("executeRequest — every send goes through /api/proxy", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await executeRequest(makeRequest({ url: "/health" }), null);
+    await executeRequest(makeRequest({ url: "/health" }), null, NO_ANCESTORS);
 
     const init = fetchMock.mock.calls[0][1]!;
     expect(new Headers(init.headers).get(PROXY_TARGET_HEADER)).toBe("https://app.reqlo.dev/health");
@@ -123,7 +128,11 @@ describe("executeRequest — every send goes through /api/proxy", () => {
       vi.fn(async () => new Response("<!doctype html>", { status: 200 })),
     );
 
-    const result = await executeRequest(makeRequest({ url: "https://api.example.com/data" }), null);
+    const result = await executeRequest(
+      makeRequest({ url: "https://api.example.com/data" }),
+      null,
+      NO_ANCESTORS,
+    );
 
     expect(result.status).toBeNull();
     expect(result.error).toContain("no server behind it");
@@ -142,7 +151,11 @@ describe("executeRequest — every send goes through /api/proxy", () => {
       }),
     );
 
-    const result = await executeRequest(makeRequest({ url: "https://api.example.com/data" }), null);
+    const result = await executeRequest(
+      makeRequest({ url: "https://api.example.com/data" }),
+      null,
+      NO_ANCESTORS,
+    );
 
     expect(result.error).toContain("Couldn't reach reqlo's own server");
     expect(result.error).not.toContain("CORS");
@@ -157,7 +170,11 @@ describe("executeRequest — every send goes through /api/proxy", () => {
       }),
     );
 
-    const result = await executeRequest(makeRequest({ url: "https://api.example.com" }), null);
+    const result = await executeRequest(
+      makeRequest({ url: "https://api.example.com" }),
+      null,
+      NO_ANCESTORS,
+    );
 
     expect(result.error).toBe(
       "Couldn't send — this browser is currently offline, so nothing went out.",
@@ -177,6 +194,7 @@ describe("executeRequest — every send goes through /api/proxy", () => {
       const result = await executeRequest(
         makeRequest({ url: "https://api.example.com/data", method: method as HttpMethod }),
         null,
+        NO_ANCESTORS,
       );
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -202,6 +220,7 @@ describe("executeRequest — every send goes through /api/proxy", () => {
         },
       }),
       null,
+      NO_ANCESTORS,
     );
 
     expect(result.mocked).toBe(true);
@@ -253,7 +272,7 @@ describe("executeRequest — streaming responses", () => {
     );
     const onStreamChunk = vi.fn();
     const request = makeRequest({ url: "https://api.example.com/events" });
-    const result = await executeRequest(request, null, { onStreamChunk });
+    const result = await executeRequest(request, null, NO_ANCESTORS, { onStreamChunk });
 
     expect(result.responseKind).toBe("stream");
     expect(result.body).toBe("data: hello\n\ndata: world\n\n");
@@ -272,7 +291,7 @@ describe("executeRequest — streaming responses", () => {
     );
     const onStreamChunk = vi.fn();
     const request = makeRequest({ url: "https://api.example.com/data" });
-    const result = await executeRequest(request, null, { onStreamChunk });
+    const result = await executeRequest(request, null, NO_ANCESTORS, { onStreamChunk });
 
     expect(result.responseKind).toBe("json");
     expect(result.body).toBe('{"a":1,"b":2}');
@@ -287,7 +306,7 @@ describe("executeRequest — streaming responses", () => {
     );
     const onStreamChunk = vi.fn();
     const request = makeRequest({ url: "https://api.example.com/pic.png" });
-    const result = await executeRequest(request, null, { onStreamChunk });
+    const result = await executeRequest(request, null, NO_ANCESTORS, { onStreamChunk });
 
     expect(result.responseKind).toBe("image");
     expect(result.body).toBe("");
@@ -305,7 +324,7 @@ describe("executeRequest — streaming responses", () => {
       vi.fn(async () => makeStreamedResponse(chunks, { "content-type": "text/plain" })),
     );
     const request = makeRequest({ url: "https://api.example.com/price" });
-    const result = await executeRequest(request, null);
+    const result = await executeRequest(request, null, NO_ANCESTORS);
 
     expect(result.body).toBe("price: €5");
   });
@@ -317,7 +336,7 @@ describe("executeRequest — streaming responses", () => {
       vi.fn(async () => makeStreamedResponse(chunks, { "content-type": "text/plain" })),
     );
     const request = makeRequest({ url: "https://api.example.com/text" });
-    const result = await executeRequest(request, null);
+    const result = await executeRequest(request, null, NO_ANCESTORS);
 
     expect(await result.blob?.text()).toBe("hello world");
   });
@@ -352,7 +371,7 @@ describe("executeRequest — streaming responses", () => {
     );
 
     const request = makeRequest({ url: "https://api.example.com/events" });
-    const pending = executeRequest(request, null, { signal: abortController.signal });
+    const pending = executeRequest(request, null, NO_ANCESTORS, { signal: abortController.signal });
     // Let the first chunk's read resolve before cancelling mid-stream.
     await Promise.resolve();
     await Promise.resolve();
@@ -388,7 +407,7 @@ describe("executeRequest — streaming responses", () => {
     );
     const onStreamChunk = vi.fn();
     const request = makeRequest({ url: "https://api.example.com/huge" });
-    const result = await executeRequest(request, null, { onStreamChunk });
+    const result = await executeRequest(request, null, NO_ANCESTORS, { onStreamChunk });
 
     const lastCallText = onStreamChunk.mock.calls.at(-1)?.[0] as string;
     expect(lastCallText.endsWith("still going")).toBe(true);

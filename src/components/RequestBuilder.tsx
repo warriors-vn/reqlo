@@ -1,11 +1,13 @@
 import { useStore } from "@/stores/useStore";
-import { uid, type ApiRequest, type HttpMethod } from "@/services/db";
+import { uid, type ApiRequest, type HttpMethod, type KV } from "@/services/db";
 import type { ExecutionResult } from "@/services/execution";
 import { parseCurl } from "@/services/curl";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { AdvancedBodyEditor } from "@/features/request-body/components/AdvancedBodyEditor";
 import { RequestAuthEditor } from "@/components/RequestAuthEditor";
+import { useRequestAncestors } from "@/hooks/useRequestAncestors";
+import { inheritedContributions } from "@/services/inheritance";
 import { RequestExtractEditor } from "@/components/RequestExtractEditor";
 import { RequestAssertionEditor } from "@/components/RequestAssertionEditor";
 import { RequestMockEditor } from "@/components/RequestMockEditor";
@@ -49,6 +51,8 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
   const [nameEdit, setNameEdit] = useState(false);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
 
+  const ancestors = useRequestAncestors(request);
+  const inherited = inheritedContributions(ancestors);
   const assertionOutcomes = evaluateAssertions(request.assertions, result);
   const testsCount = request.assertions.filter((rule) => rule.enabled).length;
   const testsBadge = assertionOutcomes.length
@@ -253,14 +257,16 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
         {/* Panel */}
         {!panelCollapsed && (
           <div className="max-h-[40vh] min-h-[140px] overflow-auto px-4 py-3">
-            <TabsContent value="params" className="mt-0">
+            <TabsContent value="params" className="mt-0 space-y-2">
+              <InheritedRows rows={inherited.queryParams} kind="query param" />
               <KVEditor
                 list={request.queryParams}
                 onChange={(queryParams) => updateRequest(request.id, { queryParams })}
                 placeholder={["key", "value"]}
               />
             </TabsContent>
-            <TabsContent value="headers" className="mt-0">
+            <TabsContent value="headers" className="mt-0 space-y-2">
+              <InheritedRows rows={inherited.headers} kind="header" />
               <KVEditor
                 list={request.headers}
                 onChange={(headers) => updateRequest(request.id, { headers })}
@@ -339,6 +345,36 @@ function TimeoutControl({
         />
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * The headers/params a request picks up from its folder and collection, shown
+ * read-only above its own. Without this the inherited ones are invisible: the
+ * request goes out with headers that appear nowhere in its editor, which is
+ * the failure mode that makes inheritance feel like a bug rather than a
+ * feature. Editing happens where they're defined, not here.
+ */
+function InheritedRows({ rows, kind }: { rows: KV[]; kind: string }) {
+  if (!rows.length) return null;
+  return (
+    <div className="rounded-xl border border-dashed border-border/70 bg-muted/20 p-2">
+      <div className="px-1 pb-1.5 text-3xs font-medium uppercase tracking-wide text-muted-foreground">
+        Inherited — edit in the collection or folder settings
+      </div>
+      <ul className="space-y-1">
+        {rows.map((row) => (
+          <li
+            key={`${row.key}-${row.id}`}
+            className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2 rounded-lg bg-background/60 px-2 py-1.5 text-xs"
+            title={`Inherited ${kind}`}
+          >
+            <span className="truncate font-mono text-muted-foreground">{row.key}</span>
+            <span className="truncate font-mono text-muted-foreground/80">{row.value}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

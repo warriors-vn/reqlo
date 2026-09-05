@@ -6,6 +6,7 @@ import {
 import { fetchClientCredentialsToken, refreshOAuth2Token } from "@/services/oauth2";
 import { isTextualResponse, type ExecutionResult, type ResponseKind } from "@/services/execution";
 import { PROXIED_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
+import type { RequestAncestors } from "@/services/inheritance";
 
 export interface ExecuteRequestOptions {
   /** External cancellation source (e.g. a Cancel button) — independent of
@@ -27,9 +28,16 @@ function onAbort(signal: AbortSignal, callback: () => void): void {
   else signal.addEventListener("abort", callback, { once: true });
 }
 
+/**
+ * `ancestors` is positional and required rather than tucked into `options`
+ * for the same reason buildResolvedRequestArtifacts takes it that way: a send
+ * that silently omits its collection's headers/auth is precisely the bug this
+ * feature must not ship.
+ */
 export async function executeRequest(
   req: ApiRequest,
-  environment?: Environment | null,
+  environment: Environment | null | undefined,
+  ancestors: RequestAncestors,
   options?: ExecuteRequestOptions,
 ): Promise<ExecutionResult> {
   if (req.mock.enabled) {
@@ -101,15 +109,21 @@ export async function executeRequest(
     // the environment, in which case it's the only case that needs a second,
     // re-interpolated resolve (avoids doubling body/FormData serialization
     // on every send just to give the script a preview).
-    const initialResolve = buildResolvedRequestArtifacts(effectiveReq, environment);
-    const scriptOutcome = await applyPreRequestScript(effectiveReq, environment, initialResolve, {
-      method: effectiveReq.method,
-      headers: initialResolve.resolvedHeaders,
-      body:
-        typeof initialResolve.serializedBody.body === "string"
-          ? initialResolve.serializedBody.body
-          : null,
-    });
+    const initialResolve = buildResolvedRequestArtifacts(effectiveReq, environment, ancestors);
+    const scriptOutcome = await applyPreRequestScript(
+      effectiveReq,
+      environment,
+      initialResolve,
+      {
+        method: effectiveReq.method,
+        headers: initialResolve.resolvedHeaders,
+        body:
+          typeof initialResolve.serializedBody.body === "string"
+            ? initialResolve.serializedBody.body
+            : null,
+      },
+      ancestors,
+    );
     const { resolved, scriptHeaderPatch } = scriptOutcome;
     scriptEnvironmentPatch = scriptOutcome.scriptEnvironmentPatch;
     scriptError = scriptOutcome.scriptError;

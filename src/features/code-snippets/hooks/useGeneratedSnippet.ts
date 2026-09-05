@@ -4,9 +4,11 @@ import { useCodeSnippetPanelStore } from "@/features/code-snippets/stores/useCod
 import { snippetGeneratorMap } from "@/features/code-snippets/registry";
 import { buildSnippetContext } from "@/features/code-snippets/utils/buildSnippetContext";
 import { generateSnippet } from "@/features/code-snippets/utils/generate-snippet";
+import { useRequestAncestors } from "@/hooks/useRequestAncestors";
 
 export function useGeneratedSnippet(request?: ApiRequest | null, environment?: Environment | null) {
   const language = useCodeSnippetPanelStore((state) => state.selectedLanguage);
+  const ancestors = useRequestAncestors(request);
 
   return useMemo(() => {
     if (!request) {
@@ -19,7 +21,7 @@ export function useGeneratedSnippet(request?: ApiRequest | null, environment?: E
       };
     }
 
-    const context = buildSnippetContext(request, environment);
+    const context = buildSnippetContext(request, environment, ancestors);
     const meta = (snippetGeneratorMap.get(language) ?? snippetGeneratorMap.get("curl"))!.meta;
     return {
       language,
@@ -27,5 +29,5 @@ export function useGeneratedSnippet(request?: ApiRequest | null, environment?: E
       code: generateSnippet(language, context),
       context,
     };
-  }, [environment, language, request]);
+  }, [ancestors, environment, language, request]);
 }

@@ -7,7 +7,9 @@ import {
   type Folder,
   type HistoryEntry,
   type KV,
+  createDefaultRequestDefaults,
 } from "@/services/db";
+import { NO_ANCESTORS } from "@/services/inheritance";
 import { PROXIED_HEADER } from "@/services/proxy-constants";
 import { collectRequestsInTreeOrder, runSingleRequest } from "@/services/runner";
 import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
@@ -69,6 +71,7 @@ describe("collectRequestsInTreeOrder", () => {
     parentFolderId: null,
     name: "A",
     position: 0,
+    defaults: createDefaultRequestDefaults(),
     createdAt: 1,
   };
   const folderB: Folder = {
@@ -78,6 +81,7 @@ describe("collectRequestsInTreeOrder", () => {
     parentFolderId: null,
     name: "B",
     position: 1,
+    defaults: createDefaultRequestDefaults(),
     createdAt: 2,
   };
   const folderA1: Folder = {
@@ -87,6 +91,7 @@ describe("collectRequestsInTreeOrder", () => {
     parentFolderId: "fA",
     name: "A1",
     position: 0,
+    defaults: createDefaultRequestDefaults(),
     createdAt: 3,
   };
   const folders = [folderA, folderB, folderA1];
@@ -152,7 +157,7 @@ describe("runSingleRequest", () => {
     const deps = makeDeps();
     const request = makeRequest({ name: "Get thing" });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.result.status).toBe(200);
     expect(outcome.result.ok).toBe(true);
@@ -173,7 +178,7 @@ describe("runSingleRequest", () => {
       extracts: [{ id: "e1", path: "token", variableName: "authToken", enabled: true }],
     });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.extractedVariables).toEqual(["authToken"]);
     expect(deps.updateEnvironment).toHaveBeenCalledWith("env-1", {
@@ -193,7 +198,7 @@ describe("runSingleRequest", () => {
       extracts: [{ id: "e1", path: "token", variableName: "authToken", enabled: true }],
     });
     const envBefore = makeEnv();
-    await runSingleRequest(requestA, envBefore, deps);
+    await runSingleRequest(requestA, envBefore, NO_ANCESTORS, deps);
 
     // Simulate what the real runner does between iterations: re-read the
     // environment after the update the first request just wrote.
@@ -210,7 +215,7 @@ describe("runSingleRequest", () => {
       name: "Get profile",
       headers: [{ id: "h1", key: "Authorization", value: "Bearer {{authToken}}", enabled: true }],
     });
-    await runSingleRequest(requestB, envAfter, deps);
+    await runSingleRequest(requestB, envAfter, NO_ANCESTORS, deps);
 
     // Read through Headers rather than as a plain object: the send goes out
     // via /api/proxy, and fetchViaProxy rebuilds the init's headers as a
@@ -231,7 +236,7 @@ describe("runSingleRequest", () => {
       },
     });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.result.scriptError).toBeUndefined();
     const [, calledInit] = fetchMock.mock.calls[0];
@@ -253,7 +258,7 @@ describe("runSingleRequest", () => {
       preRequestScript: { enabled: true, source: `return { environment: { nonce: "x" } };` },
     });
 
-    const outcome = await runSingleRequest(request, null, deps);
+    const outcome = await runSingleRequest(request, null, NO_ANCESTORS, deps);
 
     expect(outcome.scriptEnvironmentDropped).toBe(true);
     expect(deps.updateEnvironment).not.toHaveBeenCalled();
@@ -269,7 +274,7 @@ describe("runSingleRequest", () => {
       preRequestScript: { enabled: true, source: `return { headers: { "X-Signature": "x" } };` },
     });
 
-    const outcome = await runSingleRequest(request, null, deps);
+    const outcome = await runSingleRequest(request, null, NO_ANCESTORS, deps);
 
     expect(outcome.scriptEnvironmentDropped).toBe(false);
   });
@@ -284,7 +289,7 @@ describe("runSingleRequest", () => {
       preRequestScript: { enabled: true, source: `throw new Error("bad script");` },
     });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.result.scriptError).toContain("bad script");
     expect(outcome.result.status).toBe(200);
@@ -306,7 +311,7 @@ describe("runSingleRequest", () => {
     const deps = makeDeps();
     const request = makeRequest({ timeoutMs: 50 });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.result.ok).toBe(false);
     expect(outcome.result.status).toBeNull();
@@ -318,7 +323,7 @@ describe("runSingleRequest", () => {
     vi.stubGlobal("fetch", fetchMock);
     const request = makeRequest({ timeoutMs: 0 });
 
-    await runSingleRequest(request, makeEnv(), makeDeps());
+    await runSingleRequest(request, makeEnv(), NO_ANCESTORS, makeDeps());
 
     const [, init] = fetchMock.mock.calls[0];
     expect((init?.signal as AbortSignal).aborted).toBe(false);
@@ -340,7 +345,7 @@ describe("runSingleRequest", () => {
     const controller = new AbortController();
     controller.abort();
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps, {
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps, {
       signal: controller.signal,
     });
 
@@ -360,7 +365,7 @@ describe("runSingleRequest", () => {
       ],
     });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.assertionOutcomes).toHaveLength(1);
     expect(outcome.assertionOutcomes[0].passed).toBe(false);
@@ -393,7 +398,7 @@ describe("runSingleRequest", () => {
       },
     });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.result.ok).toBe(true);
     expect(deps.updateRequest).toHaveBeenCalledTimes(1);
@@ -417,7 +422,7 @@ describe("runSingleRequest", () => {
       extracts: [{ id: "e1", path: "token", variableName: "authToken", enabled: true }],
     });
 
-    const outcome = await runSingleRequest(request, makeEnv(), deps);
+    const outcome = await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
 
     expect(outcome.extractedVariables).toEqual([]);
     expect(outcome.extractFailures).toEqual(["authToken"]);
@@ -434,7 +439,7 @@ describe("runSingleRequest", () => {
       extracts: [{ id: "e1", path: "token", variableName: "authToken", enabled: true }],
     });
 
-    const outcome = await runSingleRequest(request, null, deps);
+    const outcome = await runSingleRequest(request, null, NO_ANCESTORS, deps);
 
     expect(outcome.noActiveEnvironment).toBe(true);
     expect(deps.updateEnvironment).not.toHaveBeenCalled();

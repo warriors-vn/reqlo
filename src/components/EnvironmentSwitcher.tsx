@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { maskPreview } from "@/lib/mask";
 import type { ApiRequest, KV } from "@/services/db";
 import { useStore } from "@/stores/useStore";
+import { useRequestAncestors } from "@/hooks/useRequestAncestors";
 
 const EMPTY_GLOBALS: KV[] = [];
 
@@ -47,12 +48,13 @@ export function EnvironmentSwitcher() {
     [viewingGlobals, selectedEnvironment, globals],
   );
 
+  const ancestors = useRequestAncestors(activeRequest);
   const preview = useMemo(
     () =>
       activeRequest && effectiveEnvironment
-        ? buildResolvedRequestArtifacts(activeRequest, effectiveEnvironment)
+        ? buildResolvedRequestArtifacts(activeRequest, effectiveEnvironment, ancestors)
         : null,
-    [activeRequest, effectiveEnvironment],
+    [activeRequest, effectiveEnvironment, ancestors],
   );
   const templateTokens = useMemo(() => extractTemplateTokens(activeRequest), [activeRequest]);
 

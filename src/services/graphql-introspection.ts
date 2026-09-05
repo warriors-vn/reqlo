@@ -1,5 +1,6 @@
 import type { IntrospectionQuery } from "graphql";
 import type { ApiRequest, Environment } from "@/services/db";
+import type { RequestAncestors } from "@/services/inheritance";
 import { fetchViaProxy, ProxyUnavailableError } from "@/services/executor";
 import { PROXIED_HEADER } from "@/services/proxy-constants";
 import {
@@ -28,8 +29,9 @@ function setJsonContentType(headers: Record<string, string>) {
 export async function fetchIntrospectionSchema(
   request: ApiRequest,
   environment: Environment | null,
+  ancestors: RequestAncestors,
 ): Promise<IntrospectionResult> {
-  const initialResolve = buildResolvedRequestArtifacts(request, environment);
+  const initialResolve = buildResolvedRequestArtifacts(request, environment, ancestors);
   if (!initialResolve.url) return { ok: false, error: "This request has no URL to introspect." };
 
   const { getIntrospectionQuery } = await import("graphql");
@@ -37,11 +39,13 @@ export async function fetchIntrospectionSchema(
 
   const headersForScript = { ...initialResolve.resolvedHeaders };
   setJsonContentType(headersForScript);
-  const scriptOutcome = await applyPreRequestScript(request, environment, initialResolve, {
-    method: "POST",
-    headers: headersForScript,
-    body,
-  });
+  const scriptOutcome = await applyPreRequestScript(
+    request,
+    environment,
+    initialResolve,
+    { method: "POST", headers: headersForScript, body },
+    ancestors,
+  );
   if (scriptOutcome.scriptError) {
     return { ok: false, error: `Pre-request script failed: ${scriptOutcome.scriptError}` };
   }

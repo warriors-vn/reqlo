@@ -7,6 +7,11 @@ import {
   type KV,
   type RequestBodyDrafts,
 } from "@/services/db";
+import {
+  applyInheritedDefaults,
+  collectInheritedVariables,
+  type RequestAncestors,
+} from "@/services/inheritance";
 
 export interface ResolvedRequestArtifacts {
   envMap: Map<string, string>;
@@ -51,6 +56,29 @@ export function mergeGlobalsIntoEnvironment(
     name: environment?.name ?? "Globals",
     createdAt: environment?.createdAt ?? 0,
     variables: [...globals, ...(environment?.variables ?? [])],
+  };
+}
+
+/**
+ * The collection/folder counterpart to mergeGlobalsIntoEnvironment, and it
+ * stacks on top of it: ancestor variables are listed after the globals the
+ * caller already merged in but before the environment's own, so the final
+ * precedence is workspace globals < collection < folders (outer→inner) <
+ * environment — createEnvironmentMap's `new Map(...)` giving later duplicates
+ * precedence is what actually enforces it.
+ */
+export function mergeInheritedVariablesIntoEnvironment(
+  environment: Environment | null,
+  ancestors: RequestAncestors,
+): Environment | null {
+  const inherited = collectInheritedVariables(ancestors);
+  if (!inherited.length) return environment;
+  return {
+    id: environment?.id ?? "__inherited__",
+    workspaceId: environment?.workspaceId ?? "",
+    name: environment?.name ?? "Inherited",
+    createdAt: environment?.createdAt ?? 0,
+    variables: [...inherited, ...(environment?.variables ?? [])],
   };
 }
 
@@ -177,16 +205,31 @@ export function applyResolvedAuth(
       headers.Authorization = `${cached.tokenType} ${cached.accessToken}`;
       return;
     }
+    // applyInheritedDefaults has already turned "inherit" into whatever the
+    // ancestor chain resolved to (or an explicit "none"), so by the time auth
+    // is applied there is nothing left to inherit.
+    case "inherit":
     case "none":
       return;
   }
 }
 
+/**
+ * `ancestors` is required rather than optional on purpose: this is the one
+ * function every send, snippet preview and auth preview goes through, and an
+ * optional parameter is exactly how a call site quietly ends up resolving a
+ * request without the collection headers it will really be sent with. Pass
+ * NO_ANCESTORS for a request that genuinely has none.
+ */
 export function buildResolvedRequestArtifacts(
-  request: ApiRequest,
-  environment?: Environment | null,
+  rawRequest: ApiRequest,
+  environment: Environment | null | undefined,
+  ancestors: RequestAncestors,
 ): ResolvedRequestArtifacts {
-  const envMap = createEnvironmentMap(environment);
+  const request = applyInheritedDefaults(rawRequest, ancestors);
+  const envMap = createEnvironmentMap(
+    mergeInheritedVariablesIntoEnvironment(environment ?? null, ancestors),
+  );
   const unresolved = new Set<string>();
   const resolvedQueryParams = resolveKvList(request.queryParams, envMap, unresolved);
   const headers = Object.fromEntries(
@@ -269,6 +312,7 @@ export async function applyPreRequestScript(
   environment: Environment | null | undefined,
   resolved: ResolvedRequestArtifacts,
   context: { method: string; headers: Record<string, string>; body: string | null },
+  ancestors: RequestAncestors,
 ): Promise<PreRequestScriptOutcome> {
   if (!request.preRequestScript.enabled || !request.preRequestScript.source.trim()) {
     return { resolved };
@@ -298,7 +342,7 @@ export async function applyPreRequestScript(
     const patchedEnvironment = environment
       ? { ...environment, variables: mergeEnvironmentVariables(environment.variables, updates) }
       : environment;
-    nextResolved = buildResolvedRequestArtifacts(request, patchedEnvironment);
+    nextResolved = buildResolvedRequestArtifacts(request, patchedEnvironment, ancestors);
   }
 
   return {

@@ -1,4 +1,5 @@
 import {
+  createDefaultRequestDefaults,
   createDefaultAuth,
   createDefaultBodyDrafts,
   createEmptyFormDataRow,
@@ -109,6 +110,7 @@ export function parsePostmanCollection(
           parentFolderId,
           name: item.name || "Untitled folder",
           position: index,
+          defaults: createDefaultRequestDefaults(),
           createdAt: now,
         };
         folders.push(folder);

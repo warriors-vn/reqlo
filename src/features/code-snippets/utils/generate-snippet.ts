@@ -2,6 +2,7 @@ import { snippetGeneratorMap } from "@/features/code-snippets/registry";
 import { buildSnippetContext } from "@/features/code-snippets/utils/buildSnippetContext";
 import type { SnippetContext, SnippetLanguage } from "@/features/code-snippets/types";
 import type { ApiRequest, Environment } from "@/services/db";
+import type { RequestAncestors } from "@/services/inheritance";
 
 export function generateSnippet(language: SnippetLanguage, context: SnippetContext) {
   return (snippetGeneratorMap.get(language) ?? snippetGeneratorMap.get("curl"))!.generate(context);
@@ -10,7 +11,8 @@ export function generateSnippet(language: SnippetLanguage, context: SnippetConte
 export function generateSnippetFromRequest(
   language: SnippetLanguage,
   request: ApiRequest,
-  environment?: Environment | null,
+  environment: Environment | null | undefined,
+  ancestors: RequestAncestors,
 ) {
-  return generateSnippet(language, buildSnippetContext(request, environment));
+  return generateSnippet(language, buildSnippetContext(request, environment, ancestors));
 }

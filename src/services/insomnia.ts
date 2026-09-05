@@ -1,4 +1,5 @@
 import {
+  createDefaultRequestDefaults,
   createDefaultAuth,
   createDefaultBodyDrafts,
   createEmptyFormDataRow,
@@ -107,6 +108,7 @@ export function parseInsomniaExport(
           parentFolderId: folderId,
           name: child.name || "Untitled folder",
           position: index,
+          defaults: createDefaultRequestDefaults(),
           createdAt: now,
         };
         folders.push(folder);
@@ -155,6 +157,7 @@ export function parseInsomniaExport(
         parentFolderId: null,
         name: named.name || "Untitled workspace",
         position: index,
+        defaults: createDefaultRequestDefaults(),
         createdAt: now,
       };
       folders.push(folder);

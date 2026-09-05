@@ -1,3 +1,4 @@
+import { NO_ANCESTORS } from "@/services/inheritance";
 import { PROXIED_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeApiRequest, uid, type ApiRequest, type Environment } from "@/services/db";
@@ -57,7 +58,7 @@ describe("fetchIntrospectionSchema", () => {
       "fetch",
       vi.fn(async () => jsonResponse({ data: VALID_INTROSPECTION })),
     );
-    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv());
+    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv(), NO_ANCESTORS);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.introspection.__schema.queryType.name).toBe("Query");
   });
@@ -80,7 +81,7 @@ describe("fetchIntrospectionSchema", () => {
       ],
     });
 
-    await fetchIntrospectionSchema(request, environment);
+    await fetchIntrospectionSchema(request, environment, NO_ANCESTORS);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
@@ -100,7 +101,7 @@ describe("fetchIntrospectionSchema", () => {
       "fetch",
       vi.fn(async () => jsonResponse({ data: { user: { id: "1" } } })),
     );
-    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv());
+    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv(), NO_ANCESTORS);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/introspection/i);
   });
@@ -110,7 +111,7 @@ describe("fetchIntrospectionSchema", () => {
       "fetch",
       vi.fn(async () => jsonResponse({ error: "unauthorized" }, 401)),
     );
-    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv());
+    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv(), NO_ANCESTORS);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("401");
   });
@@ -122,7 +123,7 @@ describe("fetchIntrospectionSchema", () => {
         throw new Error("network down");
       }),
     );
-    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv());
+    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv(), NO_ANCESTORS);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("network down");
   });
@@ -138,7 +139,7 @@ describe("fetchIntrospectionSchema", () => {
           }),
       ),
     );
-    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv());
+    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv(), NO_ANCESTORS);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/JSON/i);
   });
@@ -146,7 +147,11 @@ describe("fetchIntrospectionSchema", () => {
   it("reports when the request has no URL", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    const result = await fetchIntrospectionSchema(makeRequest({ url: "" }), makeEnv());
+    const result = await fetchIntrospectionSchema(
+      makeRequest({ url: "" }),
+      makeEnv(),
+      NO_ANCESTORS,
+    );
     expect(result.ok).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -158,7 +163,7 @@ describe("fetchIntrospectionSchema", () => {
         jsonResponse({ errors: [{ message: "GraphQL introspection is not allowed" }] }),
       ),
     );
-    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv());
+    const result = await fetchIntrospectionSchema(makeRequest(), makeEnv(), NO_ANCESTORS);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("GraphQL introspection is not allowed");
   });
@@ -172,7 +177,7 @@ describe("fetchIntrospectionSchema", () => {
       headers: [{ id: "h1", key: "content-type", value: "text/plain", enabled: true }],
     });
 
-    await fetchIntrospectionSchema(request, makeEnv());
+    await fetchIntrospectionSchema(request, makeEnv(), NO_ANCESTORS);
 
     const [, init] = fetchMock.mock.calls[0];
     // Headers collapses case-insensitive duplicates, so a single entry here is
@@ -192,7 +197,7 @@ describe("fetchIntrospectionSchema", () => {
       },
     });
 
-    await fetchIntrospectionSchema(request, makeEnv());
+    await fetchIntrospectionSchema(request, makeEnv(), NO_ANCESTORS);
 
     const [, init] = fetchMock.mock.calls[0];
     expect(new Headers(init?.headers).get("X-Signature")).toBe("computed-POST");
@@ -207,7 +212,7 @@ describe("fetchIntrospectionSchema", () => {
       preRequestScript: { enabled: true, source: `throw new Error("signing key missing");` },
     });
 
-    const result = await fetchIntrospectionSchema(request, makeEnv());
+    const result = await fetchIntrospectionSchema(request, makeEnv(), NO_ANCESTORS);
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("signing key missing");

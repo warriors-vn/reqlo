@@ -1,4 +1,5 @@
 import {
+  createDefaultRequestDefaults,
   createDefaultBodyDrafts,
   createEmptyFormDataRow,
   normalizeApiRequest,
@@ -124,6 +125,7 @@ export function parseHarLog(raw: HarDocument, workspaceId: string): HarImportRes
         parentFolderId: null,
         name: origin,
         position: folderIdByOrigin.size,
+        defaults: createDefaultRequestDefaults(),
         createdAt: now,
       };
       folders.push(folder);

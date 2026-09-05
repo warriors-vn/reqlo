@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useStore } from "@/stores/useStore";
+import { useRequestAncestors } from "@/hooks/useRequestAncestors";
+import { resolveInheritedAuth } from "@/services/inheritance";
 import {
   buildResolvedRequestArtifacts,
   mergeGlobalsIntoEnvironment,
@@ -19,6 +21,7 @@ import {
   type OAuth2Config,
   type RequestAuth,
 } from "@/services/db";
+import { authForType } from "@/lib/auth-type";
 import { cn } from "@/lib/utils";
 import { maskPreview } from "@/lib/mask";
 import { TemplateInput } from "@/components/TemplateInput";
@@ -28,6 +31,11 @@ interface Props {
 }
 
 const AUTH_TYPES: Array<{ value: RequestAuth["type"]; label: string; description: string }> = [
+  {
+    value: "inherit",
+    label: "Inherit",
+    description: "Use the folder's or collection's auth",
+  },
   { value: "none", label: "No Auth", description: "Send the request without authentication" },
   { value: "basic", label: "Basic", description: "Base64 encoded username and password" },
   { value: "bearer", label: "Bearer", description: "Authorization header with a token" },
@@ -48,21 +56,7 @@ export function RequestAuthEditor({ request }: Props) {
   };
 
   const setType = (type: RequestAuth["type"]) => {
-    const next: RequestAuth =
-      type === "api-key"
-        ? {
-            type,
-            key: request.auth.key ?? "",
-            value: request.auth.value ?? "",
-            addTo: request.auth.addTo ?? "header",
-          }
-        : type === "basic"
-          ? { type, username: request.auth.username ?? "", password: request.auth.password ?? "" }
-          : type === "bearer"
-            ? { type, token: request.auth.token ?? "" }
-            : type === "oauth2"
-              ? { type, oauth2: request.auth.oauth2 ?? createDefaultOAuth2Config() }
-              : { type: "none" };
+    const next = authForType(type, request.auth);
     void updateRequest(request.id, { auth: next });
   };
 
@@ -93,10 +87,12 @@ export function RequestAuthEditor({ request }: Props) {
     }
   };
 
+  const ancestors = useRequestAncestors(request);
   const preview = useMemo(
-    () => buildResolvedRequestArtifacts(request, environment),
-    [environment, request],
+    () => buildResolvedRequestArtifacts(request, environment, ancestors),
+    [environment, request, ancestors],
   );
+  const inheritedAuth = resolveInheritedAuth(request.auth, ancestors);
   const authHeader = Object.entries(preview.resolvedHeaders).find(
     ([key]) => key.toLowerCase() === "authorization" || key === request.auth.key,
   );
@@ -107,7 +103,29 @@ export function RequestAuthEditor({ request }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-2 lg:grid-cols-4">
+      {request.auth.type === "inherit" && (
+        <div className="rounded-2xl border border-border/80 bg-muted/30 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+          {inheritedAuth.inheritedFrom ? (
+            <>
+              Inheriting{" "}
+              <strong className="font-medium text-foreground">
+                {AUTH_TYPES.find((item) => item.value === inheritedAuth.auth.type)?.label ??
+                  inheritedAuth.auth.type}
+              </strong>{" "}
+              auth from{" "}
+              <strong className="font-medium text-foreground">{inheritedAuth.inheritedFrom}</strong>
+              . Edit it there, or pick another type here to override it for this request.
+            </>
+          ) : (
+            <>
+              Nothing up the tree configures auth, so this request sends none. Set it on the
+              collection or folder — its ••• menu, then Settings — to apply it to every request
+              inside at once.
+            </>
+          )}
+        </div>
+      )}
+      <div className="grid gap-2 lg:grid-cols-5">
         {AUTH_TYPES.map((authType) => {
           const active = request.auth.type === authType.value;
           return (

@@ -467,7 +467,12 @@ export function registerBuiltInCommands(): () => void {
           state.workspace?.globals ?? [],
         );
         const language = useCodeSnippetPanelStore.getState().selectedLanguage;
-        const snippet = generateSnippetFromRequest(language, request, environment);
+        const snippet = generateSnippetFromRequest(
+          language,
+          request,
+          environment,
+          state.getRequestAncestors(request.id),
+        );
         await copyTextToClipboard(snippet);
         toast.success("Snippet copied", {
           description: `${request.name || "Untitled request"} · ${language}`,
