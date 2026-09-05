@@ -11,19 +11,20 @@ import {
   type KV,
   type RequestAuth,
   type RequestBodyType,
+  type RequestDefaults,
 } from "@/services/db";
 import { looksLikeJson } from "@/services/import-shared";
 
 // Postman Collection Format v2.1 — only the fields this importer reads.
 // https://schema.postman.com/collection/json/v2.1.0/draft-07/collection.json
 
-interface PostmanKV {
+export interface PostmanKV {
   key: string;
   value?: string;
   disabled?: boolean;
 }
 
-interface PostmanUrl {
+export interface PostmanUrl {
   raw?: string;
   protocol?: string;
   host?: string[] | string;
@@ -35,7 +36,7 @@ interface PostmanFormDataEntry extends PostmanKV {
   type?: "text" | "file";
 }
 
-interface PostmanBody {
+export interface PostmanBody {
   mode?: "raw" | "urlencoded" | "formdata" | "file" | "graphql";
   raw?: string;
   urlencoded?: PostmanKV[];
@@ -44,19 +45,19 @@ interface PostmanBody {
   options?: { raw?: { language?: string } };
 }
 
-interface PostmanAuthField {
+export interface PostmanAuthField {
   key: string;
   value?: string;
 }
 
-interface PostmanAuth {
+export interface PostmanAuth {
   type?: string;
   basic?: PostmanAuthField[];
   bearer?: PostmanAuthField[];
   apikey?: PostmanAuthField[];
 }
 
-interface PostmanRequest {
+export interface PostmanRequest {
   method?: string;
   url?: PostmanUrl | string;
   header?: PostmanKV[];
@@ -64,15 +65,19 @@ interface PostmanRequest {
   auth?: PostmanAuth;
 }
 
-interface PostmanItem {
+export interface PostmanItem {
   name?: string;
   item?: PostmanItem[];
   request?: PostmanRequest;
+  /** Postman supports auth on a folder, which maps to reqlo's folder defaults. */
+  auth?: PostmanAuth;
 }
 
-interface PostmanCollection {
+export interface PostmanCollection {
   info?: { name?: string; schema?: string };
   item?: PostmanItem[];
+  /** Collection-level auth, which maps to reqlo's collection defaults. */
+  auth?: PostmanAuth;
 }
 
 export interface PostmanImportResult {
@@ -80,6 +85,10 @@ export interface PostmanImportResult {
   folders: Folder[];
   requests: ApiRequest[];
   warnings: string[];
+  /** Auth declared on the collection itself, for the caller to store as the
+   * new collection's defaults — the counterpart of the folder auth already
+   * carried on each Folder. */
+  collectionDefaults: RequestDefaults;
 }
 
 export function looksLikePostmanCollection(raw: unknown): raw is PostmanCollection {
@@ -110,7 +119,10 @@ export function parsePostmanCollection(
           parentFolderId,
           name: item.name || "Untitled folder",
           position: index,
-          defaults: createDefaultRequestDefaults(),
+          defaults: {
+            ...createDefaultRequestDefaults(),
+            auth: convertAuth(item.auth, warnings, item.name),
+          },
           createdAt: now,
         };
         folders.push(folder);
@@ -130,6 +142,10 @@ export function parsePostmanCollection(
     folders,
     requests,
     warnings,
+    collectionDefaults: {
+      ...createDefaultRequestDefaults(),
+      auth: convertAuth(raw.auth, warnings, raw.info?.name),
+    },
   };
 }
 

@@ -24,6 +24,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuPortal,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -66,6 +70,8 @@ export function Sidebar() {
     exportCollectionById,
     openDefaultsEditor,
     exportCollectionAsFilesById,
+    exportCollectionAsPostman,
+    exportCollectionAsOpenApi,
     reorderCollections,
     setPalette,
     sidebarTree,
@@ -507,12 +513,30 @@ export function Sidebar() {
                       <SlidersHorizontal className="h-3.5 w-3.5" /> Collection settings
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => void exportCollectionById(col.id)}>
-                      <Download className="h-3.5 w-3.5" /> Export collection
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => void exportCollectionAsFilesById(col.id)}>
-                      <FolderGit2 className="h-3.5 w-3.5" /> Export as files (git-friendly)
-                    </DropdownMenuItem>
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <Download className="h-3.5 w-3.5" /> Export as
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuPortal>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuItem onSelect={() => void exportCollectionById(col.id)}>
+                            reqlo JSON
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => void exportCollectionAsFilesById(col.id)}
+                          >
+                            <FolderGit2 className="h-3.5 w-3.5" /> Files (git-friendly)
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onSelect={() => void exportCollectionAsPostman(col.id)}>
+                            Postman v2.1
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => void exportCollectionAsOpenApi(col.id)}>
+                            OpenAPI 3.1
+                          </DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuPortal>
+                    </DropdownMenuSub>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onSelect={() => setPendingDeleteCollectionId(col.id)}

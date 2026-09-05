@@ -15,6 +15,7 @@ Features
 * **Environments** — swap `{{VARIABLE}}` values per environment without touching the request itself, with inline autocomplete as you type.
 * **Import from cURL, Postman, Insomnia, OpenAPI, or HAR** — paste a curl command, or bring a Postman v2.1 collection, an Insomnia export, an OpenAPI spec, or a browser HAR file; anything that can't translate 1:1 surfaces as a clear warning instead of failing silently.
 * **Git-friendly export** — export a collection as a folder of plain files instead of one giant JSON blob, so diffs in version control are actually readable.
+* **Export back out** — a collection also exports as a Postman v2.1 collection or an OpenAPI 3.1 document, and history exports as a HAR file. Whatever the target format can't hold is listed rather than dropped in silence, so reqlo isn't a one-way door.
 * **Request chaining** — extract a value from one response (status, header, JSON path) and feed it into a later request.
 * **Collection Runner** — run every request in a collection or folder sequentially and see pass/fail, timing, and extracted variables for each step.
 * **Pre-request scripting** — run a small JS script before a request goes out, sandboxed via QuickJS-in-Wasm with no ambient `fetch`/DOM/storage access.
