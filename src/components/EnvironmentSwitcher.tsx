@@ -58,14 +58,33 @@ export function EnvironmentSwitcher() {
   );
   const templateTokens = useMemo(() => extractTemplateTokens(activeRequest), [activeRequest]);
 
+  // The active environment as of the last time this panel looked. Something
+  // outside the panel can change it while the panel is closed — the "Create
+  // Environment" command creates an environment, makes it active and opens
+  // this panel in one step — and reopening on the stale selection then puts
+  // the user in front of a *different* environment than the one now in
+  // effect. Variables typed into it land on the wrong environment, and the
+  // send that follows resolves {{VAR}} to nothing with no visible reason.
+  const seenActiveEnvId = useRef<string | null>(null);
+
   useEffect(() => {
     if (!open) {
       setDeleteArmId(null);
       return;
     }
 
+    // Computed outside the updater: an updater must stay pure, or React's
+    // double-invocation in development would consume the change here and
+    // report "unchanged" on the run that matters.
+    const activeChanged = seenActiveEnvId.current !== activeEnvId;
+    seenActiveEnvId.current = activeEnvId;
+
     setViewingGlobals(false);
     setSelectedEnvId((current) => {
+      // Whoever changed the active environment did so deliberately; follow it.
+      if (activeChanged && activeEnvId) return activeEnvId;
+      // Otherwise keep whatever the user was last looking at — selecting a
+      // non-active environment to edit it is a normal thing to do here.
       if (current && environments.some((environment) => environment.id === current)) return current;
       return activeEnvId ?? environments[0]?.id ?? null;
     });

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { FIXTURE_PORT } from "./e2e/fixture";
 
 // A smoke suite, not a full E2E pass — three flows the unit and component
 // test layers structurally can't see: wiring across the real app shell
@@ -11,9 +12,10 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? "github" : "list",
-  // Each spec does 1-2 real network round trips on top of app navigation, so
-  // 30s left no headroom under CI latency — this is a real UI smoke suite,
-  // not a fast unit test, and flakiness-by-timeout is worse than a slow pass.
+  // Each spec does 1-2 real HTTP round trips on top of app navigation. Those
+  // now go to the local fixture server rather than a third-party API, but the
+  // budget stays generous: this is a real UI smoke suite driving a dev server
+  // through a real browser, not a fast unit test.
   timeout: 60_000,
   use: {
     baseURL: "http://localhost:8080",
@@ -25,13 +27,25 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: {
-    command: "npm run dev",
-    url: "http://localhost:8080",
-    reuseExistingServer: !process.env.CI,
-    // A cold CI runner (fresh npm ci, no Vite dep-optimization cache) booting
-    // a dev server for a Monaco/quickjs-heavy app can take a while before its
-    // first compile — 60s was cutting it close.
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: "npm run dev",
+      url: "http://localhost:8080",
+      reuseExistingServer: !process.env.CI,
+      // A cold CI runner (fresh npm ci, no Vite dep-optimization cache) booting
+      // a dev server for a Monaco/quickjs-heavy app can take a while before its
+      // first compile — 60s was cutting it close.
+      timeout: 120_000,
+    },
+    {
+      // The target the specs actually send to. See e2e/fixture.ts — the suite
+      // used to assert on live responses from a public API, which made it fail
+      // whenever that API was slow, rate-limiting, or unreachable.
+      command: `node e2e/fixture-server.mjs`,
+      env: { REQLO_E2E_FIXTURE_PORT: String(FIXTURE_PORT) },
+      url: `http://127.0.0.1:${FIXTURE_PORT}/health`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 15_000,
+    },
+  ],
 });

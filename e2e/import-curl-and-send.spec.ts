@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { FIXTURE_ORIGIN } from "./fixture";
 
 test("importing a cURL command creates a request, and Send returns a real response", async ({
   page,
@@ -10,15 +11,13 @@ test("importing a cURL command creates a request, and Send returns a real respon
   await page.getByRole("menuitem", { name: "Import cURL" }).click();
 
   const dialog = page.getByRole("dialog");
-  await dialog
-    .getByPlaceholder(/curl -X POST/)
-    .fill("curl https://jsonplaceholder.typicode.com/todos/1");
+  await dialog.getByPlaceholder(/curl -X POST/).fill(`curl ${FIXTURE_ORIGIN}/todos/1`);
   await dialog.getByRole("button", { name: "Import" }).click();
 
   // The modal closes into a new tab for the imported request.
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Request URL" })).toHaveValue(
-    "https://jsonplaceholder.typicode.com/todos/1",
+    `${FIXTURE_ORIGIN}/todos/1`,
   );
 
   await page.getByRole("button", { name: "Send" }).click();
