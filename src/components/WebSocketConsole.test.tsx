@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@/test/setup-dom";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { WebSocketConsole } from "@/components/WebSocketConsole";
 import { RequestBuilder } from "@/components/RequestBuilder";
@@ -257,5 +257,54 @@ describe("RequestBuilder — WebSocket mode", () => {
     await user.click(screen.getByRole("tab", { name: /Headers/ }));
 
     expect(screen.getByText(/can't be sent on a WebSocket handshake/)).toBeTruthy();
+  });
+});
+
+describe("WebSocketConsole — recovering from a refused send", () => {
+  // The message said "Connect first". Once the user does exactly that, the
+  // complaint has to go: an error that outlives the condition it describes
+  // leaves the UI blaming someone who already fixed the problem.
+  it("drops the 'Connect first' error once the connection opens", async () => {
+    const user = userEvent.setup();
+    render(<WebSocketConsole request={seed()} />);
+
+    await user.type(screen.getByLabelText("Message to send"), "ping");
+    await user.keyboard("{Meta>}{Enter}{/Meta}");
+    expect(screen.getByRole("alert").textContent).toContain("Connect first");
+
+    useStore.getState().connectWebSocket(REQUEST_ID);
+    socket().open();
+
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("keeps the message in the composer so it can be sent once connected", async () => {
+    const user = userEvent.setup();
+    render(<WebSocketConsole request={seed()} />);
+
+    const composer = screen.getByLabelText("Message to send") as HTMLTextAreaElement;
+    await user.type(composer, "ping");
+    await user.keyboard("{Meta>}{Enter}{/Meta}");
+
+    // A refused send must not eat the text the user typed.
+    expect(composer.value).toBe("ping");
+
+    useStore.getState().connectWebSocket(REQUEST_ID);
+    socket().open();
+    await user.click(await screen.findByRole("button", { name: /^Send$/ }));
+    expect(socket().sent).toEqual(["ping"]);
+  });
+
+  // Telling someone to press a button that is disabled is a dead end: the
+  // console has to name the thing actually blocking them.
+  it("asks for a URL rather than pointing at a disabled Connect button", () => {
+    render(<WebSocketConsole request={seed({ url: "" })} />);
+    expect(screen.getByText(/Enter a WebSocket URL/)).toBeTruthy();
+    expect(screen.queryByText(/Press Connect to open the connection/)).toBeNull();
+  });
+
+  it("still points at Connect once a URL is set", () => {
+    render(<WebSocketConsole request={seed()} />);
+    expect(screen.getByText(/Press Connect to open the connection/)).toBeTruthy();
   });
 });
