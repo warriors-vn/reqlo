@@ -12,16 +12,17 @@ Features
 --------
 
 * **Collections & nested folders** — organize requests in folders nested to any depth; drag-and-drop to reorder or re-parent.
+* **Collection & folder defaults** — set auth, headers, query params and variables once on a collection or folder and let everything under it inherit them, instead of pasting the same bearer token into forty requests. A request set to **Inherit** takes the nearest ancestor that defines one; new requests start there, while existing ones keep their explicit "None", so adding auth to a collection never silently changes what a request that was already working sends.
 * **Environments** — swap `{{VARIABLE}}` values per environment without touching the request itself, with inline autocomplete as you type.
 * **Import from cURL, Postman, Insomnia, OpenAPI, or HAR** — paste a curl command, or bring a Postman v2.1 collection, an Insomnia export, an OpenAPI spec, or a browser HAR file; anything that can't translate 1:1 surfaces as a clear warning instead of failing silently.
 * **Git-friendly export** — export a collection as a folder of plain files instead of one giant JSON blob, so diffs in version control are actually readable.
 * **Export back out** — a collection also exports as a Postman v2.1 collection or an OpenAPI 3.1 document, and history exports as a HAR file. Whatever the target format can't hold is listed rather than dropped in silence, so reqlo isn't a one-way door.
 * **Request chaining** — extract a value from one response (status, header, JSON path) and feed it into a later request.
 * **Collection Runner** — run every request in a collection or folder sequentially and see pass/fail, timing, and extracted variables for each step.
-* **Pre-request scripting** — run a small JS script before a request goes out, sandboxed via QuickJS-in-Wasm with no ambient `fetch`/DOM/storage access.
+* **Scripting, before and after** — run a small JS script before a request goes out and another once the response is in, both sandboxed via QuickJS-in-Wasm with no ambient `fetch`/DOM/storage access. A post-response script gets the `response`, can write environment variables from it, and can declare checks with `test(name, fn)` and `expect()` (`toBe`, `toEqual`, `toContain`, `toBeTruthy`). Those run against a mocked response too — a test that only works against the network is no use for the case mocks exist for.
 * **OAuth2** — authorization-code or client-credentials grants, with expired tokens refreshed automatically before a request is sent instead of going out unauthenticated.
 * **GraphQL introspection** — point at a GraphQL endpoint and pull its schema in for query building.
-* **Assertions** — simple pass/fail checks on status or JSON body — no scripting engine, no `eval`.
+* **Assertions** — declarative pass/fail checks on status or JSON body, no scripting required. These and any script-defined tests count into one total, in the request's Tests badge and in the Collection Runner's summary.
 * **Local mock responses** — flip a request into mock mode and get a saved response back instantly, with zero network calls.
 * **Streaming responses** — `text/event-stream` and other textual responses render live as chunks arrive, instead of waiting for the connection to close; SSE frames render as discrete events rather than raw text.
 * **WebSocket client** — connect to a `ws://`/`wss://` endpoint and get a two-way message console: scrollback with direction and size per frame, a filter, a composer, and message bodies saved on the request for re-sending. See [WebSockets](#websockets).
@@ -117,6 +118,8 @@ Testing
     npm run test:e2e     # playwright (end-to-end smoke)
     npm run build        # production build
     npm run check:bundle-size
+
+`npm run test:e2e` needs no network of its own: Playwright starts the dev server and a small local fixture server (`e2e/fixture-server.mjs`) for the specs to send to, so the suite can't fail because a public API is slow, rate-limiting, or unreachable. The proxy is still exercised for real — the browser calls `/api/proxy`, which performs an actual HTTP request; only the far end is local.
 
 Every PR runs the same checks in CI — `main` only accepts commits that pass all of them.
 

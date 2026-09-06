@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { FIXTURE_ORIGIN } from "./fixture";
 
 test("a variable's value changes what a request resolves to after switching environments", async ({
   page,
@@ -12,7 +13,7 @@ test("a variable's value changes what a request resolves to after switching envi
   const importDialog = page.getByRole("dialog");
   await importDialog
     .getByPlaceholder(/curl -X POST/)
-    .fill("curl 'https://jsonplaceholder.typicode.com/todos/{{TODO_ID}}'");
+    .fill(`curl '${FIXTURE_ORIGIN}/todos/{{TODO_ID}}'`);
   await importDialog.getByRole("button", { name: "Import" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
@@ -31,9 +32,12 @@ test("a variable's value changes what a request resolves to after switching envi
     const envDialog = page.getByRole("dialog", { name: "Manage Environments" });
     await expect(envDialog).toBeVisible();
     await envDialog.getByRole("button", { name: "Add row" }).click();
-    // Scoped with .last(): a previous environment's own (still-rendered)
-    // variable row also matches this placeholder, and the one this "Add
-    // row" click just appended is always the newest in DOM order.
+    // Scoped with .last(): the outgoing environment's row is still in the DOM
+    // for the length of its exit animation and matches this placeholder too.
+    // The row this "Add row" click just appended is always the newest in DOM
+    // order. (It is the *new* environment's grid either way — that the panel
+    // follows the environment the command just made active is covered by
+    // EnvironmentSwitcher.test.tsx.)
     await envDialog.getByPlaceholder("Variable").last().fill("TODO_ID");
     await envDialog.getByPlaceholder("Value").last().fill(todoId);
     await page.keyboard.press("Escape");
