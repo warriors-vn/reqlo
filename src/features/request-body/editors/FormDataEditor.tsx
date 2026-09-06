@@ -104,6 +104,8 @@ interface RowProps {
   onAddRow: () => void;
 }
 
+const fieldLabel = (row: FormDataRow) => row.key.trim() || "unnamed field";
+
 function FormDataEditorRow({
   row,
   onChange,
@@ -134,17 +136,25 @@ function FormDataEditorRow({
       transition={{ duration: 0.16 }}
       className="grid grid-cols-[36px_88px_minmax(120px,1fr)_minmax(180px,1.4fr)_minmax(120px,0.9fr)_100px] items-center gap-2 rounded-[20px] border border-border/70 bg-background/80 p-2 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
     >
-      <button className="grid h-8 w-8 place-items-center rounded-xl text-muted-foreground transition hover:bg-accent/70">
+      {/* Decoration, not a control: it has no action of its own — dragging is
+          handled by the row — so it must not be a focusable button that
+          announces itself and then does nothing when activated. */}
+      <span
+        aria-hidden="true"
+        className="grid h-8 w-8 cursor-grab place-items-center rounded-xl text-muted-foreground transition hover:bg-accent/70"
+      >
         <GripVertical className="h-3.5 w-3.5" />
-      </button>
+      </span>
       <div className="flex items-center gap-2">
         <input
           type="checkbox"
           checked={row.enabled}
           onChange={(event) => onChange({ enabled: event.target.checked })}
+          aria-label={`Include ${fieldLabel(row)}`}
           className="h-4 w-4 rounded accent-[var(--primary)]"
         />
         <button
+          title={`Sending ${fieldLabel(row)} as ${row.kind} — click to switch`}
           onClick={() =>
             onChange({
               kind: row.kind === "text" ? "file" : "text",
@@ -171,6 +181,7 @@ function FormDataEditorRow({
         value={row.key}
         onChange={(key) => onChange({ key })}
         placeholder="field"
+        aria-label="Field name"
         className={cn(
           "h-10 rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",
           !row.enabled && "opacity-55",
@@ -182,6 +193,7 @@ function FormDataEditorRow({
             value={row.value}
             onChange={(value) => onChange({ value })}
             placeholder="value"
+            aria-label={`Value for ${fieldLabel(row)}`}
             className={cn(
               "h-10 w-full rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",
               !row.enabled && "opacity-55",
@@ -232,6 +244,7 @@ function FormDataEditorRow({
         value={row.contentType ?? ""}
         onChange={(event) => onChange({ contentType: event.target.value || undefined })}
         placeholder={row.kind === "file" ? "override type" : "optional"}
+        aria-label={`Content type for ${fieldLabel(row)}`}
         className="h-10 rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background"
       />
       <div className="flex items-center justify-end gap-1">

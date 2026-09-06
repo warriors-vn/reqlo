@@ -120,9 +120,17 @@ describe("RequestBuilder — Params/Headers survive a tab switch", () => {
   // giving the textarea its own local draft state (see `textDraft` in
   // RequestBuilder.tsx's KVEditor) — this test only became possible once the
   // component-test layer landed, after the original fix already shipped.
+  //
+  // `delay: null` is what "fast" means here, and it's also what keeps this
+  // test off the 5s default budget: userEvent's default schedules a
+  // setTimeout(0) between keystrokes, so 78 characters became 78 macrotasks
+  // plus 78 React renders — comfortably under a second alone, but over the
+  // limit when the whole suite runs in parallel on a loaded machine. Skipping
+  // the inter-key delay makes the input strictly faster, which is the
+  // condition the regression is about in the first place.
   it("keeps every line intact through fast multi-line input in text mode", async () => {
     const request = seedRequest();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<Wrapper requestId={request.id} />);
 
     await user.click(screen.getByRole("button", { name: "Edit as text" }));

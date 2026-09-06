@@ -248,12 +248,14 @@ export function RequestHistoryPanel() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search by URL, method, status, environment, response excerpt…"
+              aria-label="Search history"
               className="h-11 w-full rounded-2xl border border-border/80 bg-background/80 pl-10 pr-4 text-sm outline-none transition focus:border-foreground/15"
             />
           </label>
           <div className="flex flex-wrap items-center gap-2">
             <select
               value={method}
+              aria-label="Filter by method"
               onChange={(event) => setMethod(event.target.value as HistoryMethodFilter)}
               className="h-11 rounded-2xl border border-border/80 bg-background/80 px-3 text-xs outline-none"
             >
@@ -265,6 +267,7 @@ export function RequestHistoryPanel() {
             </select>
             <select
               value={status}
+              aria-label="Filter by status"
               onChange={(event) => setStatus(event.target.value as HistoryStatusFilter)}
               className="h-11 rounded-2xl border border-border/80 bg-background/80 px-3 text-xs outline-none"
             >

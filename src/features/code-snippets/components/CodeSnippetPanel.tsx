@@ -297,7 +297,10 @@ function PanelSurface({
 
       <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)]/45 bg-[var(--surface-elevated)]/30 px-4 py-3 backdrop-blur-xl">
         <Select value={selectedLanguage} onValueChange={onSelectLanguage}>
-          <SelectTrigger className="h-10 min-w-[220px] rounded-2xl border-[var(--border)]/60 bg-[var(--surface-elevated)]/75 text-xs shadow-sm">
+          <SelectTrigger
+            aria-label="Snippet language"
+            className="h-10 min-w-[220px] rounded-2xl border-[var(--border)]/60 bg-[var(--surface-elevated)]/75 text-xs shadow-sm"
+          >
             <SelectValue placeholder="Choose language" />
           </SelectTrigger>
           <SelectContent className="rounded-2xl border-[var(--border)]/60 bg-[var(--surface-elevated)]/92 backdrop-blur-2xl">
@@ -379,6 +382,7 @@ function CollapsedRail({
         <button
           type="button"
           onClick={onExpand}
+          aria-label="Expand code snippet panel"
           className="grid h-9 w-9 place-items-center rounded-2xl border border-[var(--border)]/60 bg-[var(--surface-elevated)]/70 text-muted-foreground shadow-sm transition hover:bg-[var(--surface-elevated)] hover:text-foreground"
         >
           <ChevronLeft className="h-4 w-4" />

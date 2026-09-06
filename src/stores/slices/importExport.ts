@@ -66,6 +66,21 @@ export interface ImportExportSlice {
 
 /** Every exporter reports what the target format couldn't hold. Surfacing it
  * is the difference between a lossy export and a silently wrong one. */
+/**
+ * Downloading a file with an empty `item: []` / `paths: {}` looks exactly like
+ * a successful export of real data — the user finds out only when the import
+ * on the other end comes up blank. Exporting history as HAR already refuses
+ * out loud when there is nothing to export; collection exports say so too.
+ * Returns true when the export should stop.
+ */
+function refuseEmptyCollectionExport(name: string, count: number): boolean {
+  if (count > 0) return false;
+  toast.info(`"${name || "This collection"}" has no requests to export`, {
+    description: "Add a request to it first — the file would otherwise be empty.",
+  });
+  return true;
+}
+
 function reportExportWarnings(warnings: string[]) {
   if (!warnings.length) return;
   toast.warning(`Exported with ${warnings.length} note(s)`, {
@@ -459,6 +474,8 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
   exportCollectionAsPostman: async (id) => {
     const col = get().collections.find((c) => c.id === id);
     if (!col) return;
+    const scoped = get().requests.filter((r) => r.collectionId === col.id);
+    if (refuseEmptyCollectionExport(col.name, scoped.length)) return;
     const { collection, warnings } = buildPostmanCollection(col, get().folders, get().requests);
     downloadJSON(collection, `${slugify(col.name)}.postman_collection.json`);
     reportExportWarnings(warnings);
@@ -467,6 +484,8 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
   exportCollectionAsOpenApi: async (id) => {
     const col = get().collections.find((c) => c.id === id);
     if (!col) return;
+    const scoped = get().requests.filter((r) => r.collectionId === col.id);
+    if (refuseEmptyCollectionExport(col.name, scoped.length)) return;
     const { document, warnings } = buildOpenApiDocument(col, get().folders, get().requests);
     downloadJSON(document, `${slugify(col.name)}.openapi.json`);
     reportExportWarnings(warnings);

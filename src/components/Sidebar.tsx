@@ -660,6 +660,7 @@ export function Sidebar() {
                 }
               }}
               placeholder="Collection name"
+              aria-label="Collection name"
               className="h-9 min-w-0 flex-1 rounded-xl border border-border/80 bg-background/80 px-3 text-xs outline-none transition focus:border-foreground/15"
             />
             <button

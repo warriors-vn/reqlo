@@ -31,6 +31,15 @@ export function WebSocketConsole({ request }: { request: ApiRequest }) {
 
   const status = session?.status ?? "idle";
   const isOpen = status === "open";
+
+  // "Connect first" has to stop being shown the moment there *is* a
+  // connection — otherwise the UI goes on blaming a user who already did what
+  // it asked. Keyed on status rather than cleared inside connect(), so a
+  // connection opened from anywhere (the Connect button, ⌘↵, the command
+  // palette) settles it.
+  useEffect(() => {
+    if (isOpen) setSendError(null);
+  }, [isOpen]);
   const events = useMemo(() => session?.events ?? [], [session]);
 
   const visible = useMemo(() => {
@@ -138,6 +147,7 @@ export function WebSocketConsole({ request }: { request: ApiRequest }) {
           total={events.length}
           truncated={session?.truncated ?? false}
           status={status}
+          hasUrl={Boolean(request.url.trim())}
           filtered={visible.length !== events.length}
         />
       </div>
@@ -204,12 +214,14 @@ function EventLog({
   total,
   truncated,
   status,
+  hasUrl,
   filtered,
 }: {
   events: WebSocketEvent[];
   total: number;
   truncated: boolean;
   status: WebSocketStatus;
+  hasUrl: boolean;
   filtered: boolean;
 }) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -230,7 +242,11 @@ function EventLog({
           <p className="text-2xs text-muted-foreground">
             {status === "open"
               ? "Send a message below, or wait for the server to push one."
-              : "Press Connect to open the connection."}
+              : hasUrl
+                ? "Press Connect to open the connection."
+                : // Connect is disabled without a URL, so telling someone to
+                  // press it is a dead end — name the missing thing instead.
+                  "Enter a WebSocket URL above (ws:// or wss://), then press Connect."}
           </p>
         </div>
       </div>

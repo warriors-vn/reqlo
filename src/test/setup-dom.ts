@@ -20,6 +20,27 @@ if (!window.matchMedia) {
     }) as unknown as MediaQueryList;
 }
 
+// Some Node/jsdom combinations leave localStorage undefined (Node prints
+// "localStorage is not available because --localstorage-file was not
+// provided"). zustand's persist middleware reads it at module-evaluation
+// time, so any component whose store persists would throw on import.
+if (!globalThis.localStorage) {
+  const entries = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, value: string) => void entries.set(key, String(value)),
+      removeItem: (key: string) => void entries.delete(key),
+      clear: () => entries.clear(),
+      key: (index: number) => [...entries.keys()][index] ?? null,
+      get length() {
+        return entries.size;
+      },
+    },
+  });
+}
+
 if (!window.ResizeObserver) {
   window.ResizeObserver = class {
     observe() {}
