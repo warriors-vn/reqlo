@@ -14,6 +14,7 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { TabBar } from "@/components/TabBar";
 import { RequestBuilder } from "@/components/RequestBuilder";
 import { ResponseViewer, type StreamingProgress } from "@/components/ResponseViewer";
+import { WebSocketConsole } from "@/components/WebSocketConsole";
 import { LazyCommandPalette } from "@/components/LazyCommandPalette";
 import { LazyImportCurlModal } from "@/components/LazyImportCurlModal";
 import { HistoryDrawer } from "@/components/HistoryDrawer";
@@ -299,12 +300,16 @@ export function Workspace() {
                   result={result}
                 />
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <ResponseViewer
-                    result={result ?? null}
-                    loading={isLoading}
-                    request={activeRequest}
-                    streaming={streamingByRequest[activeRequest.id] ?? null}
-                  />
+                  {activeRequest.protocol === "websocket" ? (
+                    <WebSocketConsole request={activeRequest} />
+                  ) : (
+                    <ResponseViewer
+                      result={result ?? null}
+                      loading={isLoading}
+                      request={activeRequest}
+                      streaming={streamingByRequest[activeRequest.id] ?? null}
+                    />
+                  )}
                 </div>
               </motion.div>
             ) : (

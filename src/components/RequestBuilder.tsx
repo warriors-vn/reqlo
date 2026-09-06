@@ -12,11 +12,23 @@ import { RequestExtractEditor } from "@/components/RequestExtractEditor";
 import { RequestAssertionEditor } from "@/components/RequestAssertionEditor";
 import { RequestMockEditor } from "@/components/RequestMockEditor";
 import { RequestScriptEditor } from "@/components/RequestScriptEditor";
+import { RequestWebSocketEditor } from "@/components/RequestWebSocketEditor";
 import { TemplateInput } from "@/components/TemplateInput";
 import { evaluateAssertions } from "@/services/assertions";
 import { hasBodyContent } from "@/features/request-body/utils/body";
 import { parseKVText, serializeKVText } from "@/features/request-body/utils/kv-text";
-import { Send, Square, Plus, X, ChevronDown, Timer, AlignLeft, Rows3 } from "lucide-react";
+import {
+  Send,
+  Square,
+  Plus,
+  X,
+  ChevronDown,
+  Timer,
+  AlignLeft,
+  Rows3,
+  Plug,
+  Unplug,
+} from "lucide-react";
 import { motion } from "framer-motion";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -46,10 +58,16 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
   const renameRequest = useStore((s) => s.renameRequest);
   const applyCurlToRequest = useStore((s) => s.applyCurlToRequest);
   const [tab, setTab] = useState<
-    "params" | "headers" | "body" | "auth" | "script" | "extract" | "tests" | "mock"
+    "params" | "headers" | "body" | "auth" | "script" | "extract" | "tests" | "mock" | "message"
   >("params");
   const [nameEdit, setNameEdit] = useState(false);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+
+  const isWebSocket = request.protocol === "websocket";
+  const wsStatus = useStore((s) => s.wsSessions[request.id]?.status) ?? "idle";
+  const connectWebSocket = useStore((s) => s.connectWebSocket);
+  const disconnectWebSocket = useStore((s) => s.disconnectWebSocket);
+  const wsConnected = wsStatus === "open" || wsStatus === "connecting";
 
   const ancestors = useRequestAncestors(request);
   const inherited = inheritedContributions(ancestors);
@@ -66,7 +84,7 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
     (request.postResponseScript.enabled && request.postResponseScript.source.trim() ? 1 : 0);
   const testsBadge = ranTotal ? (`${ranPassed}/${ranTotal}` as const) : testsCount || undefined;
 
-  const tabs = [
+  const allTabs = [
     {
       id: "params" as const,
       label: "Params",
@@ -107,7 +125,27 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
       label: "Mock",
       count: request.mock.enabled ? ("ON" as const) : undefined,
     },
+    {
+      id: "message" as const,
+      label: "Message",
+      count: request.websocket.messageDrafts.length || undefined,
+    },
   ];
+
+  // A WebSocket has no request body, nothing to extract from or assert against
+  // a single response, and no mock — those tabs would be controls that do
+  // nothing. Headers stays, because what it has to say (a browser won't let a
+  // page set them on a handshake) is exactly what someone looking for it needs
+  // to read.
+  const WEBSOCKET_TABS = ["params", "message", "auth", "headers"];
+  const tabs = isWebSocket
+    ? WEBSOCKET_TABS.map((id) => allTabs.find((item) => item.id === id)!)
+    : allTabs.filter((item) => item.id !== "message");
+
+  // Switching a request's protocol can strand the open tab on one that no
+  // longer exists, which renders an empty panel with the strip still
+  // highlighting it.
+  const activeTab = tabs.some((item) => item.id === tab) ? tab : "params";
 
   return (
     <div className="flex flex-col border-b border-border bg-[var(--surface-elevated)]">
@@ -145,37 +183,62 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
       {/* URL row */}
       <div className="flex items-center gap-2 px-4 py-3">
         <div className="flex flex-1 items-stretch overflow-hidden rounded-lg border border-border bg-background shadow-sm focus-within:border-foreground/20 focus-within:shadow">
-          <div className="relative">
-            <select
-              value={request.method}
-              onChange={(e) => updateRequest(request.id, { method: e.target.value as HttpMethod })}
-              aria-label="HTTP method"
-              className="h-9 cursor-pointer appearance-none bg-transparent pl-3 pr-7 font-mono text-xs font-semibold uppercase tracking-wider outline-none"
-              style={{ color: `var(--method-${request.method.toLowerCase()})` }}
-            >
-              {METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-            <div
-              className={cn(
-                "pointer-events-none absolute bottom-0 left-2 right-2 h-[2px] rounded-full opacity-80",
-                METHOD_BG[request.method],
-              )}
-            />
-          </div>
+          {isWebSocket ? (
+            // No method selector: a WebSocket handshake is always a GET, so a
+            // dropdown here would offer choices that change nothing.
+            <div className="relative flex items-center">
+              <span
+                className="h-9 select-none px-3 pt-2.5 font-mono text-xs font-semibold uppercase tracking-wider text-primary"
+                title="WebSocket — the handshake is always a GET"
+              >
+                WS
+              </span>
+              <div className="pointer-events-none absolute bottom-0 left-2 right-2 h-[2px] rounded-full bg-primary opacity-80" />
+            </div>
+          ) : (
+            <div className="relative">
+              <select
+                value={request.method}
+                onChange={(e) =>
+                  updateRequest(request.id, { method: e.target.value as HttpMethod })
+                }
+                aria-label="HTTP method"
+                className="h-9 cursor-pointer appearance-none bg-transparent pl-3 pr-7 font-mono text-xs font-semibold uppercase tracking-wider outline-none"
+                style={{ color: `var(--method-${request.method.toLowerCase()})` }}
+              >
+                {METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <div
+                className={cn(
+                  "pointer-events-none absolute bottom-0 left-2 right-2 h-[2px] rounded-full opacity-80",
+                  METHOD_BG[request.method],
+                )}
+              />
+            </div>
+          )}
           <div className="w-px bg-border" />
           <TemplateInput
             type="text"
             value={request.url}
             onChange={(url) => updateRequest(request.id, { url })}
-            placeholder="https://api.example.com/endpoint"
+            placeholder={
+              isWebSocket ? "wss://example.com/socket" : "https://api.example.com/endpoint"
+            }
             aria-label="Request URL"
             spellCheck={false}
             onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") onSend();
+              if (!(e.metaKey || e.ctrlKey) || e.key !== "Enter") return;
+              if (!isWebSocket) {
+                onSend();
+              } else if (wsConnected) {
+                disconnectWebSocket(request.id);
+              } else {
+                connectWebSocket(request.id);
+              }
             }}
             onPaste={(e) => {
               const text = e.clipboardData.getData("text");
@@ -191,7 +254,7 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
             className="h-9 flex-1 bg-transparent px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/60"
           />
         </div>
-        {request.mock.enabled && (
+        {!isWebSocket && request.mock.enabled && (
           <span
             className="flex h-9 shrink-0 items-center rounded-lg border border-[var(--status-warn)]/40 bg-[var(--status-warn)]/10 px-2.5 text-2xs font-semibold uppercase tracking-wide text-[var(--status-warn)]"
             title="Send returns the saved mock response instead of calling the network"
@@ -199,31 +262,54 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
             Mocked
           </span>
         )}
-        <TimeoutControl
-          timeoutMs={request.timeoutMs}
-          onChange={(timeoutMs) => void updateRequest(request.id, { timeoutMs })}
-        />
-        <motion.button
-          whileTap={{ scale: 0.97 }}
-          onClick={sending ? onCancel : onSend}
-          disabled={!sending && !request.url}
-          className={cn(
-            "flex h-9 items-center gap-1.5 rounded-lg px-4 text-xs font-semibold shadow-sm transition disabled:opacity-50 focus-ring",
-            sending
-              ? "bg-destructive text-destructive-foreground hover:opacity-90"
-              : "bg-primary text-primary-foreground hover:opacity-90",
-          )}
-        >
-          {sending ? (
-            <Square className="h-3.5 w-3.5 fill-current" />
-          ) : (
-            <Send className="h-3.5 w-3.5" />
-          )}
-          {sending ? "Cancel" : "Send"}
-        </motion.button>
+        {/* A WebSocket connection stays open until it's closed — there is no
+            single exchange for a send timeout to bound. */}
+        {!isWebSocket && (
+          <TimeoutControl
+            timeoutMs={request.timeoutMs}
+            onChange={(timeoutMs) => void updateRequest(request.id, { timeoutMs })}
+          />
+        )}
+        {isWebSocket ? (
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={() =>
+              wsConnected ? disconnectWebSocket(request.id) : connectWebSocket(request.id)
+            }
+            disabled={!wsConnected && !request.url}
+            className={cn(
+              "flex h-9 items-center gap-1.5 rounded-lg px-4 text-xs font-semibold shadow-sm transition disabled:opacity-50 focus-ring",
+              wsConnected
+                ? "bg-destructive text-destructive-foreground hover:opacity-90"
+                : "bg-primary text-primary-foreground hover:opacity-90",
+            )}
+          >
+            {wsConnected ? <Unplug className="h-3.5 w-3.5" /> : <Plug className="h-3.5 w-3.5" />}
+            {wsStatus === "connecting" ? "Connecting…" : wsConnected ? "Disconnect" : "Connect"}
+          </motion.button>
+        ) : (
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={sending ? onCancel : onSend}
+            disabled={!sending && !request.url}
+            className={cn(
+              "flex h-9 items-center gap-1.5 rounded-lg px-4 text-xs font-semibold shadow-sm transition disabled:opacity-50 focus-ring",
+              sending
+                ? "bg-destructive text-destructive-foreground hover:opacity-90"
+                : "bg-primary text-primary-foreground hover:opacity-90",
+            )}
+          >
+            {sending ? (
+              <Square className="h-3.5 w-3.5 fill-current" />
+            ) : (
+              <Send className="h-3.5 w-3.5" />
+            )}
+            {sending ? "Cancel" : "Send"}
+          </motion.button>
+        )}
       </div>
 
-      <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
+      <Tabs value={activeTab} onValueChange={(value) => setTab(value as typeof tab)}>
         {/* Tab strip */}
         <div className="flex items-center gap-1 border-b border-border px-3">
           <TabsList className="h-9 gap-1 rounded-none bg-transparent p-0">
@@ -237,7 +323,7 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
                 {t.count !== undefined && (
                   <span className="ml-1 text-3xs text-muted-foreground">{t.count}</span>
                 )}
-                {tab === t.id && (
+                {activeTab === t.id && (
                   <motion.div
                     layoutId="reqtab"
                     className="absolute -bottom-px left-1 right-1 h-[2px] rounded-full bg-primary"
@@ -273,17 +359,27 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
               />
             </TabsContent>
             <TabsContent value="headers" className="mt-0 space-y-2">
-              <InheritedRows rows={inherited.headers} kind="header" />
-              <KVEditor
-                list={request.headers}
-                onChange={(headers) => updateRequest(request.id, { headers })}
-                placeholder={["Header", "Value"]}
-              />
+              {isWebSocket ? (
+                <WebSocketHeadersNotice />
+              ) : (
+                <>
+                  <InheritedRows rows={inherited.headers} kind="header" />
+                  <KVEditor
+                    list={request.headers}
+                    onChange={(headers) => updateRequest(request.id, { headers })}
+                    placeholder={["Header", "Value"]}
+                  />
+                </>
+              )}
+            </TabsContent>
+            <TabsContent value="message" className="mt-0">
+              <RequestWebSocketEditor request={request} />
             </TabsContent>
             <TabsContent value="body" className="mt-0">
               <AdvancedBodyEditor request={request} />
             </TabsContent>
-            <TabsContent value="auth" className="mt-0">
+            <TabsContent value="auth" className="mt-0 space-y-2">
+              {isWebSocket && <WebSocketAuthNotice />}
               <RequestAuthEditor request={request} />
             </TabsContent>
             <TabsContent value="script" className="mt-0">
@@ -352,6 +448,46 @@ function TimeoutControl({
         />
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * Browsers give a page no way to set headers on a WebSocket handshake —
+ * `new WebSocket(url, protocols)` takes a URL and a subprotocol list, and
+ * nothing else. Showing an editor here would accept rows that silently never
+ * go out, so the tab says what's actually possible instead.
+ */
+function WebSocketHeadersNotice() {
+  return (
+    <div className="space-y-2 rounded-xl border border-dashed border-border/70 bg-muted/20 p-3">
+      <p className="text-xs font-medium text-foreground/80">
+        Custom headers can&apos;t be sent on a WebSocket handshake.
+      </p>
+      <p className="text-2xs leading-relaxed text-muted-foreground">
+        This is a browser limitation, not a reqlo one: the WebSocket API takes only a URL and a
+        subprotocol list. Servers that need credentials on a WebSocket usually read them from a
+        query parameter, or expect the first message after connecting to carry them.
+      </p>
+      <p className="text-2xs leading-relaxed text-muted-foreground">
+        Use the <span className="font-medium text-foreground/80">Params</span> tab for a query
+        parameter, <span className="font-medium text-foreground/80">Message</span> for a saved auth
+        frame, or <span className="font-medium text-foreground/80">Message</span> &rarr;
+        Subprotocols for <code className="font-mono">Sec-WebSocket-Protocol</code>.
+      </p>
+    </div>
+  );
+}
+
+/** Auth that lands in a header can't reach a WebSocket handshake either — see
+ * WebSocketHeadersNotice. Query-parameter auth does, so the editor stays. */
+function WebSocketAuthNotice() {
+  return (
+    <p className="rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
+      On a WebSocket, only <span className="font-medium text-foreground/80">API key</span> set to
+      &ldquo;Add to: query&rdquo; actually reaches the server — every other type sends an{" "}
+      <code className="font-mono">Authorization</code> header, which a browser won&apos;t attach to
+      a handshake.
+    </p>
   );
 }
 

@@ -76,7 +76,8 @@ export function CodeSnippetPanel({ request, environment }: Props) {
 
   const requestSummary = useMemo(() => {
     if (!request) return "Select a request to generate code";
-    return `${request.method} · ${request.name || "Untitled request"}`;
+    const kind = request.protocol === "websocket" ? "WS" : request.method;
+    return `${kind} · ${request.name || "Untitled request"}`;
   }, [request]);
 
   const handleCopy = async () => {

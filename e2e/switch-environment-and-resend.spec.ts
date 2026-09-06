@@ -25,7 +25,10 @@ test("a variable's value changes what a request resolves to after switching envi
     await page.getByPlaceholder("Search commands, requests…").fill("Create Environment");
     await page.getByRole("option", { name: "Create Environment" }).click();
 
-    const envDialog = page.getByRole("dialog");
+    // Scoped by name, not just by role: the command palette that launched
+    // this is still animating out for a frame or two, so a bare
+    // getByRole("dialog") resolves to two elements and fails strict mode.
+    const envDialog = page.getByRole("dialog", { name: "Manage Environments" });
     await expect(envDialog).toBeVisible();
     await envDialog.getByRole("button", { name: "Add row" }).click();
     // Scoped with .last(): a previous environment's own (still-rendered)
@@ -35,6 +38,9 @@ test("a variable's value changes what a request resolves to after switching envi
     await envDialog.getByPlaceholder("Value").last().fill(todoId);
     await page.keyboard.press("Escape");
     await expect(envDialog).toHaveCount(0);
+    // And wait for the palette to finish leaving too, so the next call to
+    // this helper doesn't race the same two-dialog window.
+    await expect(page.getByRole("dialog")).toHaveCount(0);
   };
 
   // Create an environment with TODO_ID=1, made active automatically.

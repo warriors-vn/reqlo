@@ -143,7 +143,11 @@ export function CommandPalette() {
                         }}
                         className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-xs aria-selected:bg-accent aria-selected:text-accent-foreground"
                       >
-                        <MethodBadge method={r.method} className="w-10 text-right" />
+                        <MethodBadge
+                          method={r.method}
+                          protocol={r.protocol}
+                          className="w-10 text-right"
+                        />
                         <span className="truncate">{r.name}</span>
                         <span className="ml-auto truncate font-mono text-3xs text-muted-foreground">
                           {r.url}

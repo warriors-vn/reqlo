@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import type { HttpMethod } from "@/services/db";
+import type { HttpMethod, RequestProtocol } from "@/services/db";
 
 const COLOR: Record<HttpMethod, string> = {
   GET: "text-[var(--method-get)]",
@@ -11,7 +11,31 @@ const COLOR: Record<HttpMethod, string> = {
   OPTIONS: "text-muted-foreground",
 };
 
-export function MethodBadge({ method, className }: { method: HttpMethod; className?: string }) {
+export function MethodBadge({
+  method,
+  protocol = "http",
+  className,
+}: {
+  method: HttpMethod;
+  /** A WebSocket's `method` is always GET and says nothing useful, so the
+   * badge shows the protocol instead — the sidebar, tab bar and palette all
+   * need to tell the two kinds of request apart at a glance. */
+  protocol?: RequestProtocol;
+  className?: string;
+}) {
+  if (protocol === "websocket") {
+    return (
+      <span
+        className={cn(
+          "font-mono text-3xs font-semibold uppercase tracking-wider text-primary",
+          className,
+        )}
+      >
+        WS
+      </span>
+    );
+  }
+
   // `method` is typed as HttpMethod, but legacy/imported/hand-edited request
   // records can carry a value outside that union at runtime — fall back to a
   // muted placeholder instead of rendering an undefined color/blank label.

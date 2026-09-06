@@ -13,6 +13,7 @@ import type { EnvironmentsSlice } from "@/stores/slices/environments";
 import type { HistorySlice } from "@/stores/slices/history";
 import type { ImportExportSlice } from "@/stores/slices/importExport";
 import type { ViewSlice } from "@/stores/slices/view";
+import type { WebSocketSlice } from "@/stores/slices/websocket";
 
 export interface Tab {
   id: string;
@@ -92,7 +93,8 @@ export type Store = CoreSlice &
   EnvironmentsSlice &
   HistorySlice &
   ImportExportSlice &
-  ViewSlice;
+  ViewSlice &
+  WebSocketSlice;
 
 /** Every slice is a plain (no middleware) creator over the composed store. */
 export type SliceCreator<T> = StateCreator<Store, [], [], T>;

@@ -75,7 +75,11 @@ export function TabBar() {
                     : "border-transparent text-muted-foreground hover:bg-accent/60",
                 )}
               >
-                <MethodBadge method={req.method} className="w-9 text-right" />
+                <MethodBadge
+                  method={req.method}
+                  protocol={req.protocol}
+                  className="w-9 text-right"
+                />
                 <span className="max-w-[140px] truncate">{req.name || "Untitled"}</span>
                 <button
                   onClick={(e) => {

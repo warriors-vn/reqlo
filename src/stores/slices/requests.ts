@@ -8,8 +8,11 @@ import {
   createDefaultMock,
   createDefaultPostResponseScript,
   createDefaultPreRequestScript,
+  createDefaultWebSocketConfig,
+  cloneWebSocketConfig,
   type ApiRequest,
   type HttpMethod,
+  type RequestProtocol,
 } from "@/services/db";
 import { fetchIntrospectionSchema } from "@/services/graphql-introspection";
 import { NO_ANCESTORS, resolveAncestors, type RequestAncestors } from "@/services/inheritance";
@@ -31,7 +34,11 @@ export interface RequestsSlice {
   sendPing: number;
 
   updateRequest: (id: string, patch: Partial<ApiRequest>) => Promise<void>;
-  createRequest: (collectionId: string | null, folderId?: string | null) => Promise<ApiRequest>;
+  createRequest: (
+    collectionId: string | null,
+    folderId?: string | null,
+    protocol?: RequestProtocol,
+  ) => Promise<ApiRequest>;
   deleteRequest: (id: string) => Promise<void>;
   renameRequest: (id: string, name: string) => Promise<void>;
   moveRequestToCollection: (id: string, collectionId: string | null) => Promise<void>;
@@ -66,7 +73,7 @@ export const createRequestsSlice: SliceCreator<RequestsSlice> = (set, get) => ({
     await reportDbWriteFailure(db.requests.update(id, { ...patch, updatedAt }));
   },
 
-  createRequest: async (collectionId, folderId = null) => {
+  createRequest: async (collectionId, folderId = null, protocol = "http") => {
     const ws = get().workspace!;
     const now = Date.now();
     const req: ApiRequest = {
@@ -75,7 +82,10 @@ export const createRequestsSlice: SliceCreator<RequestsSlice> = (set, get) => ({
       collectionId,
       folderId,
       position: getNextRequestPosition(get().requests, collectionId, folderId),
-      name: "Untitled request",
+      name: protocol === "websocket" ? "Untitled WebSocket" : "Untitled request",
+      protocol,
+      // Meaningless for a WebSocket — the handshake is always a GET — but a
+      // valid HttpMethod so nothing downstream has to special-case it.
       method: "GET" as HttpMethod,
       url: "",
       headers: [],
@@ -83,6 +93,7 @@ export const createRequestsSlice: SliceCreator<RequestsSlice> = (set, get) => ({
       body: "",
       bodyType: "none",
       bodyDrafts: createDefaultBodyDrafts(),
+      websocket: createDefaultWebSocketConfig(),
       // New requests start on "inherit" so a collection's auth applies without
       // touching each one; requests that predate this stay on whatever they
       // had. See RequestAuth in services/db.ts.
@@ -104,6 +115,9 @@ export const createRequestsSlice: SliceCreator<RequestsSlice> = (set, get) => ({
 
   deleteRequest: async (id) => {
     const deleted = get().requests.find((r) => r.id === id);
+    // A live socket would otherwise keep receiving into a session nothing can
+    // reach any more — and keep the connection open until the tab closes.
+    get().discardWebSocketSession(id);
     await reportDbWriteFailure(db.requests.delete(id));
     set((s) => {
       const nextTabs = s.tabs.filter((t) => t.requestId !== id);
@@ -117,6 +131,7 @@ export const createRequestsSlice: SliceCreator<RequestsSlice> = (set, get) => ({
             ? null
             : s.sidebarSelection,
         graphqlSchemas: omitKeys(s.graphqlSchemas, [id]),
+        wsSessions: omitKeys(s.wsSessions, [id]),
       };
     });
     persistSession(get);
@@ -243,6 +258,7 @@ export const createRequestsSlice: SliceCreator<RequestsSlice> = (set, get) => ({
       headers: src.headers.map((h) => ({ ...h, id: uid() })),
       queryParams: src.queryParams.map((p) => ({ ...p, id: uid() })),
       bodyDrafts: cloneBodyDrafts(src.bodyDrafts),
+      websocket: cloneWebSocketConfig(src.websocket),
       auth: { ...src.auth },
       extracts: src.extracts.map((rule) => ({ ...rule, id: uid() })),
       assertions: src.assertions.map((rule) => ({ ...rule, id: uid() })),

@@ -1,6 +1,7 @@
 import {
   blobToBase64,
   createDefaultMock,
+  createDefaultWebSocketConfig,
   createDefaultPostResponseScript,
   createDefaultPreRequestScript,
   db,
@@ -204,6 +205,10 @@ async function sanitizeHistoryForExport(history: HistoryEntry): Promise<HistoryE
     body: history.snapshot.body,
     bodyType: history.snapshot.bodyType,
     bodyDrafts: history.snapshot.bodyDrafts,
+    // History only records HTTP sends; a WebSocket connection isn't one
+    // request/response pair, so there is nothing to snapshot.
+    protocol: "http",
+    websocket: createDefaultWebSocketConfig(),
     auth: history.snapshot.auth,
     extracts: [],
     assertions: [],
