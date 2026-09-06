@@ -21,8 +21,22 @@ export function useGeneratedSnippet(request?: ApiRequest | null, environment?: E
       };
     }
 
-    const context = buildSnippetContext(request, environment, ancestors);
     const meta = (snippetGeneratorMap.get(language) ?? snippetGeneratorMap.get("curl"))!.meta;
+
+    // Every generator here emits an HTTP call. None of these clients speaks
+    // WebSocket, and the snippet would be actively misleading: it would show
+    // a GET to a ws:// URL carrying the collection's Authorization header —
+    // a header the handshake can't send at all (see the Headers tab).
+    if (request.protocol === "websocket") {
+      return {
+        language,
+        meta,
+        code: `// ${meta.label} generates an HTTP request, and this is a WebSocket.\n// reqlo has no snippet for it: opening a connection, sending frames and\n// handling incoming ones has no single-call equivalent to copy.\n//\n// URL: ${request.url || "(not set)"}`,
+        context: null,
+      };
+    }
+
+    const context = buildSnippetContext(request, environment, ancestors);
     return {
       language,
       meta,

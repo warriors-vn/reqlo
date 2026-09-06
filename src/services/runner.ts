@@ -242,6 +242,25 @@ export function collectRequestsInTreeOrder(
   return walkTree(collectionId, rootFolderId, requests, folders);
 }
 
+/**
+ * Splits a run's requests into the ones a run can actually perform and the
+ * WebSocket ones it can't. A run is a sequence of one-request/one-response
+ * exchanges with tests against each response; a WebSocket connection is
+ * neither, and running one would mean HTTP-sending a wss:// URL — a guaranteed
+ * failure row that explains nothing. The caller reports `skipped` rather than
+ * letting those requests silently vanish from a collection whose size the user
+ * knows.
+ */
+export function partitionRunnableRequests(requests: ApiRequest[]): {
+  runnable: ApiRequest[];
+  skipped: ApiRequest[];
+} {
+  return {
+    runnable: requests.filter((r) => r.protocol !== "websocket"),
+    skipped: requests.filter((r) => r.protocol === "websocket"),
+  };
+}
+
 function walkTree(
   collectionId: string,
   parentFolderId: string | null,

@@ -23,7 +23,8 @@ Features
 * **GraphQL introspection** — point at a GraphQL endpoint and pull its schema in for query building.
 * **Assertions** — simple pass/fail checks on status or JSON body — no scripting engine, no `eval`.
 * **Local mock responses** — flip a request into mock mode and get a saved response back instantly, with zero network calls.
-* **Streaming responses** — `text/event-stream` and other textual responses render live as chunks arrive, instead of waiting for the connection to close.
+* **Streaming responses** — `text/event-stream` and other textual responses render live as chunks arrive, instead of waiting for the connection to close; SSE frames render as discrete events rather than raw text.
+* **WebSocket client** — connect to a `ws://`/`wss://` endpoint and get a two-way message console: scrollback with direction and size per frame, a filter, a composer, and message bodies saved on the request for re-sending. See [WebSockets](#websockets).
 * **History** — every send is recorded and searchable, with side-by-side comparison.
 * **Installable & offline** — reqlo is a PWA; install it and it keeps working without a network connection.
 * **Durable storage** — asks the browser to treat its IndexedDB data as persistent rather than evictable under disk pressure.
@@ -41,6 +42,18 @@ What follows from that:
 * **`localhost` targets resolve from wherever reqlo's server runs.** Running it directly on your machine, `http://localhost:3000` is your machine. Running it in Docker, `localhost` is the *container* — use `host.docker.internal` (or the host's LAN address) to reach a service on the host.
 * **Cookies aren't forwarded.** `Authorization` and every other header are; `Cookie`, `Origin` and `Referer` are stripped rather than handed to a third-party target.
 * **Private addresses are allowed by default**, because pointing reqlo at your own dev server is the main thing it's for. On a publicly reachable deployment set `REQLO_BLOCK_PRIVATE_TARGETS=1`, which refuses loopback/private/link-local targets (including the `169.254.169.254` cloud metadata endpoint) and stops following redirects into them. The check that the request came from reqlo's own page is always on, regardless.
+
+WebSockets
+----------
+
+A request is either HTTP or a WebSocket — pick "New WebSocket request" from the sidebar's **+** menu, or run `Create WebSocket Request` from the command palette. Send becomes Connect, and the response pane becomes a message console.
+
+`{{VARIABLE}}` templating, query params and collection/folder inheritance all work exactly as they do for HTTP, because a WebSocket URL is resolved through the same path. Two things differ, and reqlo says so in the UI rather than letting them fail quietly:
+
+* **Custom headers can't be sent on a handshake.** `new WebSocket(url, protocols)` takes a URL and a subprotocol list and nothing else — that's the browser's API, not a reqlo limit. The Headers tab explains it instead of offering an editor whose rows would never go out. Auth that lands in a header (Bearer, Basic, OAuth2) can't reach a handshake either; an API key set to "Add to: query" can. Subprotocols live on the Message tab.
+* **The proxy isn't involved.** Unlike every HTTP send (see [Sending](#sending)), a WebSocket goes straight from the browser — `/api/proxy` speaks HTTP and can't tunnel an upgrade. That isn't the CORS problem returning: browsers apply no same-origin rule to `new WebSocket()`, so the server decides for itself whether to accept the handshake. Browsers *do* block a `ws://` connection from an `https://` page as mixed content, which reqlo reports up front rather than letting it surface as an unexplained failure.
+
+The message log is session-only — it's a record of one connection, not a property of the request — and is capped so a chatty feed can't grow unbounded. Saved message drafts *are* stored with the request. Collection runs skip WebSocket requests and say how many, since a run sends one request and checks one response.
 
 Why this name?
 ---------------

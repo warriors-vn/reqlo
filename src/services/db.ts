@@ -137,6 +137,34 @@ export interface ScriptConfig {
 /** @deprecated Kept so the older migrations below still read as written. */
 export type PreRequestScriptConfig = ScriptConfig;
 
+/** What a request talks: plain HTTP, or a WebSocket connection. Separate
+ * from `method`, which stays meaningless for a WebSocket — the handshake is
+ * always a GET and the UI hides the method selector. */
+export type RequestProtocol = "http" | "websocket";
+
+export type WebSocketMessageContentType = "text" | "json";
+
+/** A message body saved on the request so it can be sent again without being
+ * retyped — the WebSocket equivalent of a request body, except a connection
+ * sends many of them. */
+export interface WebSocketMessageDraft {
+  id: string;
+  name: string;
+  contentType: WebSocketMessageContentType;
+  body: string;
+}
+
+export interface WebSocketConfig {
+  /**
+   * Sec-WebSocket-Protocol values offered during the handshake. This is the
+   * one piece of handshake metadata a browser lets a page set — custom
+   * headers are not settable on `new WebSocket()`, which is why the Headers
+   * tab says so instead of accepting rows that would never go out.
+   */
+  subprotocols: string[];
+  messageDrafts: WebSocketMessageDraft[];
+}
+
 export interface MockConfig {
   enabled: boolean;
   status: number;
@@ -197,6 +225,9 @@ export interface ApiRequest {
   folderId: string | null;
   position: number;
   name: string;
+  /** "http" for everything that predates the WebSocket client — backfilled
+   * by the version(14) migration rather than left undefined. */
+  protocol: RequestProtocol;
   method: HttpMethod;
   url: string;
   headers: KV[];
@@ -204,6 +235,9 @@ export interface ApiRequest {
   body: string;
   bodyType: RequestBodyType;
   bodyDrafts: RequestBodyDrafts;
+  /** Only meaningful when `protocol` is "websocket"; carried on every request
+   * so switching protocols never loses what was already typed. */
+  websocket: WebSocketConfig;
   auth: RequestAuth;
   extracts: ExtractRule[];
   assertions: AssertionRule[];
@@ -549,6 +583,31 @@ class ReqloDB extends Dexie {
             }
           });
       });
+    this.version(14)
+      .stores({
+        workspaces: "id, updatedAt",
+        collections: "id, workspaceId, position",
+        folders:
+          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
+        requests:
+          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
+        history:
+          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
+        environments: "id, workspaceId",
+      })
+      .upgrade(async (tx) => {
+        // Every request that existed before the WebSocket client is an HTTP
+        // one. Backfilling both fields here (rather than leaning on
+        // normalizeApiRequest alone) keeps what's in IndexedDB a complete
+        // ApiRequest, so a row read outside the store isn't half-shaped.
+        await tx
+          .table<ApiRequest, string>("requests")
+          .toCollection()
+          .modify((request) => {
+            if (request.protocol === undefined) request.protocol = "http";
+            if (request.websocket === undefined) request.websocket = createDefaultWebSocketConfig();
+          });
+      });
   }
 }
 
@@ -653,6 +712,30 @@ export function createDefaultMock(): MockConfig {
     contentType: "application/json",
     body: "{\n  \n}",
     delayMs: 0,
+  };
+}
+
+export function createDefaultWebSocketConfig(): WebSocketConfig {
+  return { subprotocols: [], messageDrafts: [] };
+}
+
+export function createEmptyWebSocketMessageDraft(name = "Message"): WebSocketMessageDraft {
+  return { id: uid(), name, contentType: "json", body: "" };
+}
+
+export function cloneWebSocketConfig(config: WebSocketConfig): WebSocketConfig {
+  return {
+    subprotocols: [...config.subprotocols],
+    messageDrafts: config.messageDrafts.map((draft) => ({ ...draft, id: uid() })),
+  };
+}
+
+/** Fills in the WebSocket fields for a request that came from outside the
+ * current schema — an import file, or a parser that predates them. */
+export function normalizeWebSocketConfig(config?: Partial<WebSocketConfig>): WebSocketConfig {
+  return {
+    subprotocols: (config?.subprotocols ?? []).filter((value) => typeof value === "string"),
+    messageDrafts: (config?.messageDrafts ?? []).map((draft) => ({ ...draft })),
   };
 }
 
@@ -778,6 +861,8 @@ export function normalizeApiRequest(
     body,
     bodyType: legacyBodyType,
     bodyDrafts: normalizeBodyDrafts(request.bodyDrafts, body, legacyBodyType),
+    protocol: request.protocol ?? "http",
+    websocket: normalizeWebSocketConfig(request.websocket),
     auth: request.auth ?? createDefaultAuth(),
     extracts: request.extracts ?? [],
     assertions: request.assertions ?? [],
@@ -915,6 +1000,8 @@ export async function ensureSeed(): Promise<Workspace> {
       queryParams: [],
       body: "",
       bodyType: "none",
+      protocol: "http",
+      websocket: createDefaultWebSocketConfig(),
       bodyDrafts: createDefaultBodyDrafts(),
       auth: createDefaultAuth(),
       extracts: [],
@@ -947,6 +1034,8 @@ export async function ensureSeed(): Promise<Workspace> {
           2,
         ),
       },
+      protocol: "http",
+      websocket: createDefaultWebSocketConfig(),
       auth: createDefaultAuth(),
       extracts: [],
       assertions: [],
@@ -970,6 +1059,8 @@ export async function ensureSeed(): Promise<Workspace> {
       queryParams: [],
       body: "",
       bodyType: "none",
+      protocol: "http",
+      websocket: createDefaultWebSocketConfig(),
       bodyDrafts: createDefaultBodyDrafts(),
       auth: createDefaultAuth(),
       extracts: [],

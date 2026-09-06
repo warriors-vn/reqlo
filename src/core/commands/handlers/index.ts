@@ -1,5 +1,6 @@
 import {
   Plus,
+  Plug,
   FolderPlus,
   Send,
   Copy,
@@ -70,6 +71,17 @@ export function registerBuiltInCommands(): () => void {
       },
     },
     {
+      id: "request.create.websocket",
+      title: "Create WebSocket Request",
+      description: "New WebSocket connection",
+      category: "requests",
+      icon: Plug,
+      keywords: ["new", "ws", "websocket", "socket"],
+      run: () => {
+        s().createRequest(s().collections[0]?.id ?? null, null, "websocket");
+      },
+    },
+    {
       id: "request.send",
       title: "Send Request",
       description: "Execute the active request",
@@ -77,7 +89,19 @@ export function registerBuiltInCommands(): () => void {
       icon: Send,
       shortcut: "mod+enter",
       when: (c) => c.hasActiveRequest,
-      run: () => s().requestSend(),
+      run: () => {
+        // Same key, different verb: there is nothing to "send" on a WebSocket
+        // request until a connection exists, and routing this through
+        // requestSend() would HTTP-send a wss:// URL.
+        const request = s().getActiveRequest();
+        if (request?.protocol !== "websocket") {
+          s().requestSend();
+          return;
+        }
+        const status = s().wsSessions[request.id]?.status;
+        if (status === "open" || status === "connecting") s().disconnectWebSocket(request.id);
+        else s().connectWebSocket(request.id);
+      },
     },
     {
       id: "request.duplicate",

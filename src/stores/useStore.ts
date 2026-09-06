@@ -20,6 +20,7 @@ import { createEnvironmentsSlice } from "@/stores/slices/environments";
 import { createHistorySlice } from "@/stores/slices/history";
 import { createImportExportSlice } from "@/stores/slices/importExport";
 import { createViewSlice } from "@/stores/slices/view";
+import { createWebSocketSlice } from "@/stores/slices/websocket";
 import type { Store } from "@/stores/types";
 
 export const useStore = create<Store>((...args) => ({
@@ -35,6 +36,7 @@ export const useStore = create<Store>((...args) => ({
   ...createHistorySlice(...args),
   ...createImportExportSlice(...args),
   ...createViewSlice(...args),
+  ...createWebSocketSlice(...args),
 }));
 
 // Re-export so consumers can `import { pickFile }` cleanly

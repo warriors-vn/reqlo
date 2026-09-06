@@ -52,6 +52,7 @@ export function RequestList({
   items: Array<{
     id: string;
     method: Parameters<typeof MethodBadge>[0]["method"];
+    protocol?: Parameters<typeof MethodBadge>[0]["protocol"];
     name: string;
     favorite?: boolean;
     collectionId?: string | null;
@@ -184,7 +185,11 @@ export function RequestList({
               aria-current={activeRequestId === request.id ? "true" : undefined}
               className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-ring"
             >
-              <MethodBadge method={request.method} className="w-10 shrink-0 text-right" />
+              <MethodBadge
+                method={request.method}
+                protocol={request.protocol}
+                className="w-10 shrink-0 text-right"
+              />
               <span className="truncate text-xs">{request.name || "Untitled"}</span>
             </button>
             <div className="ml-auto flex items-center gap-0.5 opacity-100 md:opacity-0 md:transition md:group-hover:opacity-100">

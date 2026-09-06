@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
+  Plug,
   Search,
   FolderClosed,
   Trash2,
@@ -261,13 +262,29 @@ export function Sidebar() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <button
-            onClick={() => createRequest(activeCollectionId, activeFolderId)}
-            className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
-            title="New request"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
+                title="New request"
+                aria-label="New request"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem
+                onSelect={() => void createRequest(activeCollectionId, activeFolderId)}
+              >
+                <Plus className="h-3.5 w-3.5" /> New HTTP request
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => void createRequest(activeCollectionId, activeFolderId, "websocket")}
+              >
+                <Plug className="h-3.5 w-3.5" /> New WebSocket request
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -491,6 +508,11 @@ export function Sidebar() {
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => void createRequest(col.id)}>
                       <Plus className="h-3.5 w-3.5" /> New request in collection
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => void createRequest(col.id, null, "websocket")}
+                    >
+                      <Plug className="h-3.5 w-3.5" /> New WebSocket request
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => void createFolderInline(col.id, null)}>
                       <FolderClosed className="h-3.5 w-3.5" /> New folder

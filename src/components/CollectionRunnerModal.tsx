@@ -4,6 +4,7 @@ import { Overlay } from "@/components/Overlay";
 import { useStore } from "@/stores/useStore";
 import {
   collectRequestsInTreeOrder,
+  partitionRunnableRequests,
   runSingleRequest,
   type RunSingleRequestOutcome,
   type RunTarget,
@@ -80,6 +81,7 @@ export function CollectionRunnerModal() {
   const lastToken = useRef(0);
   const [rows, setRows] = useState<RunRow[]>([]);
   const [targetLabel, setTargetLabel] = useState("");
+  const [skippedWebSockets, setSkippedWebSockets] = useState(0);
 
   const runNow = async (target: RunTarget, token: number, signal: AbortSignal) => {
     const initial = useStore.getState();
@@ -89,7 +91,10 @@ export function CollectionRunnerModal() {
         : (initial.folders.find((f) => f.id === target.id)?.name ?? "Folder");
     setTargetLabel(label);
 
-    const orderedRequests = collectRequestsInTreeOrder(target, initial.requests, initial.folders);
+    const { runnable: orderedRequests, skipped } = partitionRunnableRequests(
+      collectRequestsInTreeOrder(target, initial.requests, initial.folders),
+    );
+    setSkippedWebSockets(skipped.length);
     setRows(
       orderedRequests.map((r) => ({
         requestId: r.id,
@@ -198,6 +203,15 @@ export function CollectionRunnerModal() {
               </span>
             )}
           </div>
+        )}
+
+        {skippedWebSockets > 0 && (
+          <p className="rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-2xs text-muted-foreground">
+            {skippedWebSockets} WebSocket request
+            {skippedWebSockets > 1 ? "s were" : " was"} skipped — a run sends one request and checks
+            one response, which a connection isn&apos;t. Open{" "}
+            {skippedWebSockets > 1 ? "them" : "it"} to connect.
+          </p>
         )}
 
         <div className="max-h-[50vh] space-y-1.5 overflow-auto">

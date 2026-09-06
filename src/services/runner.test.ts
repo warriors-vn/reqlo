@@ -11,7 +11,11 @@ import {
 } from "@/services/db";
 import { NO_ANCESTORS } from "@/services/inheritance";
 import { PROXIED_HEADER } from "@/services/proxy-constants";
-import { collectRequestsInTreeOrder, runSingleRequest } from "@/services/runner";
+import {
+  collectRequestsInTreeOrder,
+  partitionRunnableRequests,
+  runSingleRequest,
+} from "@/services/runner";
 import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
 
 function makeRequest(overrides: Partial<ApiRequest> = {}): ApiRequest {
@@ -443,5 +447,38 @@ describe("runSingleRequest", () => {
 
     expect(outcome.noActiveEnvironment).toBe(true);
     expect(deps.updateEnvironment).not.toHaveBeenCalled();
+  });
+});
+
+describe("partitionRunnableRequests", () => {
+  const http = (name: string) => makeRequest({ name, protocol: "http" });
+  const ws = (name: string) =>
+    makeRequest({ name, protocol: "websocket", url: "wss://example.com/socket" });
+
+  // A run sends one request and tests one response. Letting a WebSocket
+  // through would HTTP-send a wss:// URL — a failure row that tells the user
+  // nothing about their collection.
+  it("keeps HTTP requests and holds WebSocket ones back", () => {
+    const { runnable, skipped } = partitionRunnableRequests([http("a"), ws("b"), http("c")]);
+
+    expect(runnable.map((r) => r.name)).toEqual(["a", "c"]);
+    expect(skipped.map((r) => r.name)).toEqual(["b"]);
+  });
+
+  it("preserves the tree order it was given", () => {
+    const { runnable } = partitionRunnableRequests([http("c"), http("a"), http("b")]);
+    expect(runnable.map((r) => r.name)).toEqual(["c", "a", "b"]);
+  });
+
+  it("returns everything for a collection with no WebSocket requests", () => {
+    const { runnable, skipped } = partitionRunnableRequests([http("a"), http("b")]);
+    expect(runnable).toHaveLength(2);
+    expect(skipped).toEqual([]);
+  });
+
+  it("returns nothing runnable for a collection of only WebSocket requests", () => {
+    const { runnable, skipped } = partitionRunnableRequests([ws("a"), ws("b")]);
+    expect(runnable).toEqual([]);
+    expect(skipped).toHaveLength(2);
   });
 });
