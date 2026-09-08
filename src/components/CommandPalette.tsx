@@ -74,7 +74,17 @@ export function CommandPalette() {
             aria-modal="true"
             aria-label="Command palette"
           >
-            <Command className="flex flex-col" loop shouldFilter={false}>
+            {/* cmdk's <Command> always renders a visually-hidden <label> wired to
+                Command.Input via aria-labelledby, which then always wins over
+                any aria-label placed on the input itself. The label prop
+                belongs here, on the root — not on Command.Input, where it
+                would be silently overridden. */}
+            <Command
+              className="flex flex-col"
+              loop
+              shouldFilter={false}
+              label="Search commands and requests"
+            >
               <div className="flex items-center gap-2 border-b border-border px-4">
                 <Search className="h-4 w-4 text-muted-foreground" />
                 <Command.Input
@@ -82,7 +92,6 @@ export function CommandPalette() {
                   value={query}
                   onValueChange={setQuery}
                   placeholder="Search commands, requests…"
-                  aria-label="Search commands and requests"
                   className="h-12 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
                 <kbd className="rounded border border-border bg-[var(--surface)] px-1.5 py-0.5 font-mono text-3xs text-muted-foreground">
