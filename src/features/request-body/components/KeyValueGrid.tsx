@@ -134,6 +134,7 @@ export function KeyValueGrid({
                   value={row.key}
                   onChange={(event) => updateRow(row.id, { key: event.target.value })}
                   placeholder={keyLabel}
+                  aria-label={keyLabel}
                   className={cn(
                     "h-10 rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",
                     !row.enabled && "opacity-55",
@@ -166,6 +167,7 @@ export function KeyValueGrid({
                     value={row.value}
                     onChange={(event) => updateRow(row.id, { value: event.target.value })}
                     placeholder={valueLabel}
+                    aria-label={valueLabel}
                     autoComplete="off"
                     className={cn(
                       "h-10 w-full rounded-xl border border-transparent bg-muted/40 px-3 font-mono text-xs outline-none transition focus:border-border focus:bg-background",

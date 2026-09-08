@@ -276,6 +276,7 @@ export function EnvironmentSwitcher() {
                 }
               }}
               placeholder="Environment name"
+              aria-label="New environment name"
               className="mt-2 h-10 w-full rounded-2xl border border-border/80 bg-background/80 px-3 text-sm outline-none transition focus:border-foreground/15"
             />
             <button

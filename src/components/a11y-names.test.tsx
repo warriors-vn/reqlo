@@ -14,6 +14,12 @@ import { CodeSnippetPanel } from "@/features/code-snippets/components/CodeSnippe
 import { AdvancedBodyEditor } from "@/features/request-body/components/AdvancedBodyEditor";
 import { HistoryDrawer } from "@/components/HistoryDrawer";
 import { Sidebar } from "@/components/Sidebar";
+import { CommandPalette } from "@/components/CommandPalette";
+import { ImportCurlModal } from "@/components/ImportCurlModal";
+import { SettingsModal } from "@/components/SettingsModal";
+import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
+import { EnvironmentSwitcher } from "@/components/EnvironmentSwitcher";
+import { registerBuiltInCommands } from "@/core/commands/handlers";
 import { useStore } from "@/stores/useStore";
 import {
   createDefaultRequestDefaults,
@@ -47,6 +53,14 @@ vi.mock("@/features/request-body/editors/LazyTextCodeEditor", () => ({
  * "button", which tells the user nothing about what pressing it does — the
  * single most common a11y defect in an icon-dense UI like this one, and the
  * thing this sweep is looking for across the surfaces v1.5.0 added.
+ *
+ * role="option"/"checkbox"/"switch"/"combobox" and <summary> were added
+ * after v1.5.1's audit found the original list missed everywhere this app
+ * actually uses those roles (TemplateInput's autocomplete listbox, for one).
+ * A role="option" reached only by roving/virtual focus (no explicit
+ * tabindex, or tabindex="-1") is excluded below by the same tabIndex check
+ * that already excludes it — the widened list only ever adds coverage, it
+ * doesn't relax the "must be reachable" requirement.
  */
 const FOCUSABLE = [
   "button:not([disabled])",
@@ -54,9 +68,14 @@ const FOCUSABLE = [
   "input:not([type=hidden])",
   "select",
   "textarea",
+  "summary",
   '[role="button"]',
   '[role="tab"]',
   '[role="menuitem"]',
+  '[role="option"]',
+  '[role="checkbox"]',
+  '[role="switch"]',
+  '[role="combobox"]',
 ].join(",");
 
 function unnamedControls(container: HTMLElement): string[] {
@@ -268,5 +287,76 @@ describe("accessible names — v1.5.0 surfaces", () => {
     const { container, baseElement } = render(<HistoryDrawer />);
     void container;
     expect(unnamedControls(baseElement as HTMLElement)).toEqual([]);
+  });
+
+  // The five cases below cover the overlays the original sweep never
+  // rendered — only "runner" and "collection-settings" of OverlayKey's eight
+  // members were exercised above. Probing these live (v1.5.1) found three
+  // unnamed controls on the first pass: the palette's search box, the
+  // Import cURL textarea, and the "new environment" name field — none of
+  // them icon-only, all of them relying on a placeholder that disappears
+  // the moment someone types.
+  describe("overlays outside the original sweep", () => {
+    it("names every control in the command palette", () => {
+      const dispose = registerBuiltInCommands();
+      seedRequest();
+      useStore.getState().openOverlay("palette");
+      const { baseElement } = render(<CommandPalette />);
+      expect(unnamedControls(baseElement as HTMLElement)).toEqual([]);
+      dispose();
+    });
+
+    it("names every control in the Import cURL modal", async () => {
+      useStore.getState().openOverlay("import-curl");
+      render(<ImportCurlModal />);
+      const dialog = await screen.findByRole("dialog");
+      expect(unnamedControls(dialog as HTMLElement)).toEqual([]);
+    });
+
+    it("names every control in Settings", async () => {
+      seedRequest();
+      useStore.setState({ environments: [] });
+      useStore.getState().openOverlay("settings");
+      render(<SettingsModal />);
+      const dialog = await screen.findByRole("dialog");
+      expect(unnamedControls(dialog as HTMLElement)).toEqual([]);
+    });
+
+    it("names every control in the keyboard shortcuts modal", async () => {
+      const dispose = registerBuiltInCommands();
+      useStore.getState().openOverlay("shortcuts");
+      render(<KeyboardShortcutsModal />);
+      const dialog = await screen.findByRole("dialog");
+      expect(unnamedControls(dialog as HTMLElement)).toEqual([]);
+      dispose();
+    });
+
+    it("names every control in Manage Environments", async () => {
+      useStore.setState({
+        workspace: { id: "w", name: "W", globals: [], createdAt: 0, updatedAt: 0 } as Workspace,
+        requests: [],
+        collections: [],
+        folders: [],
+        environments: [
+          {
+            id: "env-1",
+            workspaceId: "w",
+            name: "Development",
+            variables: [{ id: "v1", key: "TODO_ID", value: "1", enabled: true }],
+            createdAt: 0,
+          },
+        ],
+        activeEnvId: "env-1",
+      });
+      useStore.getState().openOverlay("env-switcher");
+      render(<EnvironmentSwitcher />);
+      const dialog = await screen.findByRole("dialog", { name: "Manage Environments" });
+
+      // Both panels the dialog can show — the selected environment and Globals —
+      // since each renders a distinct set of fields.
+      expect(unnamedControls(dialog as HTMLElement)).toEqual([]);
+      await userEvent.setup().click(screen.getByRole("button", { name: /Globals/ }));
+      expect(unnamedControls(dialog as HTMLElement)).toEqual([]);
+    });
   });
 });

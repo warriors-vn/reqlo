@@ -43,6 +43,7 @@ export function ImportCurlModal() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={PLACEHOLDER}
+          aria-label="cURL command"
           spellCheck={false}
           className="block h-40 w-full resize-none rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed outline-none focus:border-foreground/20"
         />
