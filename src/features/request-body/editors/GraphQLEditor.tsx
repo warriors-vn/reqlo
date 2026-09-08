@@ -33,7 +33,11 @@ export function GraphQLEditor({ request, value, onChange, validationDetail }: Pr
   // schema config is correct; clearing it on switch/idle prevents a
   // previously-fetched schema from silently applying to a different request.
   // Depends on primitives (status + fetchedAt), not the schemaState object
-  // itself, so it doesn't re-run on every unrelated render.
+  // itself, so it doesn't re-run on every unrelated render. Safe to omit
+  // `schemaState.introspection` from the deps: the store only ever sets
+  // status "ready" together with a fresh introspection and fetchedAt in one
+  // object literal (slices/requests.ts), so introspection can't change
+  // without fetchedAt changing too — reviewed as part of v1.5.1 Track C4.
   const readyFetchedAt = schemaState.status === "ready" ? schemaState.fetchedAt : null;
   useEffect(() => {
     let cancelled = false;

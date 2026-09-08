@@ -252,13 +252,19 @@ export function Workspace() {
     controllersRef.current[activeRequest.id]?.abort();
   };
 
+  // `send` closes over `activeRequest`/`workspace` and is recreated every
+  // render, so the ping effect below reads it through a ref — otherwise it
+  // would fire whatever `send` closure was captured when the effect last ran,
+  // which is stale if `sendPing` changes without an intervening render.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+
   // The "request.send" command bumps sendPing — execute here so we own response state.
   useEffect(() => {
     if (sendPing && sendPing !== lastPing.current) {
       lastPing.current = sendPing;
-      void send();
+      void sendRef.current();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sendPing]);
 
   if (!ready) {

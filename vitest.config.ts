@@ -22,5 +22,19 @@ export default defineConfig({
     // are repeated here since setting `exclude` replaces them rather than
     // adding to them.
     exclude: ["**/node_modules/**", "**/.git/**", "e2e/**"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html"],
+      // Floor set at today's measured numbers (52.51/47.6/47.18/53.83 —
+      // rounded down so a fraction-of-a-percent fluctuation doesn't fail CI
+      // on its own) so this can only go up from here, per v1.5.1 Track C5.
+      // No prior coverage number existed to preserve; these are the first.
+      thresholds: {
+        statements: 52,
+        branches: 47,
+        functions: 47,
+        lines: 53,
+      },
+    },
   },
 });
