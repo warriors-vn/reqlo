@@ -1,4 +1,17 @@
-import * as monaco from "monaco-editor";
+// The barrel `monaco-editor` entry point (editor.main.js) pulls in the CSS,
+// HTML and TypeScript language *services* alongside the editor core, and
+// none of the three are ever used here (see below). Importing the core
+// directly and registering only what this app actually needs — the basic
+// (Monarch) tokenizers, used for the script/body editors' plain syntax
+// highlighting, and the JSON language service, used for JSON body/schema
+// editing — drops the three unused services' own chunks (cssMode, htmlMode,
+// tsMode) from the build entirely. The bulk of the remaining monaco.contribution
+// chunk is the editor core itself plus the 82 basic-language registrations,
+// not those three services, so this trims the build's chunk count and dead
+// weight rather than shrinking that one chunk's size.
+import * as monaco from "monaco-editor/esm/vs/editor/edcore.main.js";
+import "monaco-editor/esm/vs/basic-languages/monaco.contribution.js";
+import "monaco-editor/esm/vs/language/json/monaco.contribution.js";
 import { loader } from "@monaco-editor/react";
 
 declare global {
