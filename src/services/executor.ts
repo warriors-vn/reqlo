@@ -312,7 +312,10 @@ function describeSendFailure(e: unknown): string {
   if (e instanceof ProxyUnavailableError) return e.message;
 
   if (globalThis.navigator?.onLine === false) {
-    return "Couldn't send — this browser is currently offline, so nothing went out.";
+    return (
+      "Couldn't send — this browser is currently offline, so nothing went out. " +
+      "Your saved requests, collections, and history are stored locally and still work."
+    );
   }
 
   // The only fetch this function ever describes now is the same-origin one to
