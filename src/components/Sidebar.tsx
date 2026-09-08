@@ -1,37 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Plus,
-  Plug,
-  Search,
-  FolderClosed,
-  Trash2,
-  Heart,
-  Inbox,
-  MoreHorizontal,
-  Download,
-  Pencil,
-  CopyPlus,
-  FolderGit2,
-  Play,
-  Upload,
-  Terminal,
-  SlidersHorizontal,
-} from "lucide-react";
+import { Search, FolderClosed, Heart, Inbox } from "lucide-react";
 import { useStore } from "@/stores/useStore";
-import { runCommand } from "@/hooks/useCommandSystem";
-import { LazyConfirmDeleteDialog as ConfirmDeleteDialog } from "./LazyConfirmDeleteDialog";
-import { collectDescendantFolderIds } from "@/services/tree-move";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuPortal,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { CollectionsEmptyState } from "./sidebar/CollectionsEmptyState";
 import { DropIndicator } from "./sidebar/DropIndicator";
 import { FolderTree } from "./sidebar/FolderTree";
@@ -39,7 +8,10 @@ import { OnboardingChecklist } from "./sidebar/OnboardingChecklist";
 import { RequestList } from "./sidebar/RequestList";
 import { SidebarSection } from "./sidebar/SidebarSection";
 import { SidebarStat } from "./sidebar/SidebarStat";
-import { ThemeSwitch } from "./sidebar/ThemeSwitch";
+import { SidebarBrandRow } from "./sidebar/SidebarBrandRow";
+import { NewCollectionForm } from "./sidebar/NewCollectionForm";
+import { SidebarDeleteDialogs } from "./sidebar/SidebarDeleteDialogs";
+import { CollectionActionsMenu } from "./sidebar/CollectionActionsMenu";
 
 export function Sidebar() {
   const {
@@ -222,71 +194,11 @@ export function Sidebar() {
       className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-[var(--surface)]"
     >
       {/* Brand */}
-      <div className="flex h-12 items-center justify-between px-4">
-        <div className="flex items-center gap-2">
-          <div className="grid h-6 w-6 place-items-center rounded-md bg-primary text-3xs font-bold text-primary-foreground">
-            R
-          </div>
-          <span className="text-sm font-semibold tracking-tight">Reqlo</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <ThemeSwitch />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
-                title="Import"
-              >
-                <Upload className="h-4 w-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => runCommand("import.curl")}>
-                <Terminal className="h-3.5 w-3.5" /> Import cURL
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => runCommand("import.collection")}>
-                <Upload className="h-3.5 w-3.5" /> Import Collection
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => runCommand("import.postman")}>
-                <Upload className="h-3.5 w-3.5" /> Import Postman Collection
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => runCommand("import.insomnia")}>
-                <Upload className="h-3.5 w-3.5" /> Import Insomnia Export
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => runCommand("import.har")}>
-                <Upload className="h-3.5 w-3.5" /> Import HAR File
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => runCommand("import.openapi")}>
-                <Upload className="h-3.5 w-3.5" /> Import OpenAPI Spec
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
-                title="New request"
-                aria-label="New request"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem
-                onSelect={() => void createRequest(activeCollectionId, activeFolderId)}
-              >
-                <Plus className="h-3.5 w-3.5" /> New HTTP request
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => void createRequest(activeCollectionId, activeFolderId, "websocket")}
-              >
-                <Plug className="h-3.5 w-3.5" /> New WebSocket request
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
+      <SidebarBrandRow
+        onCreateRequest={(protocol) =>
+          void createRequest(activeCollectionId, activeFolderId, protocol)
+        }
+      />
 
       {/* Search */}
       <div className="space-y-2 px-3 pb-2">
@@ -487,87 +399,19 @@ export function Sidebar() {
                 ) : null
               }
               actions={
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={(event) => event.stopPropagation()}
-                      className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
-                      title={`${col.name} actions`}
-                    >
-                      <MoreHorizontal className="h-3.5 w-3.5" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        startCollectionRename(col.id, col.name);
-                      }}
-                    >
-                      <Pencil className="h-3.5 w-3.5" /> Rename collection
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => void createRequest(col.id)}>
-                      <Plus className="h-3.5 w-3.5" /> New request in collection
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={() => void createRequest(col.id, null, "websocket")}
-                    >
-                      <Plug className="h-3.5 w-3.5" /> New WebSocket request
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => void createFolderInline(col.id, null)}>
-                      <FolderClosed className="h-3.5 w-3.5" /> New folder
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => void duplicateCollection(col.id)}>
-                      <CopyPlus className="h-3.5 w-3.5" /> Duplicate collection
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onSelect={() =>
-                        useStore.getState().startRun({ type: "collection", id: col.id })
-                      }
-                    >
-                      <Play className="h-3.5 w-3.5" /> Run all requests
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onSelect={() => openDefaultsEditor({ type: "collection", id: col.id })}
-                    >
-                      <SlidersHorizontal className="h-3.5 w-3.5" /> Collection settings
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <Download className="h-3.5 w-3.5" /> Export as
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuPortal>
-                        <DropdownMenuSubContent>
-                          <DropdownMenuItem onSelect={() => void exportCollectionById(col.id)}>
-                            reqlo JSON
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={() => void exportCollectionAsFilesById(col.id)}
-                          >
-                            <FolderGit2 className="h-3.5 w-3.5" /> Files (git-friendly)
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onSelect={() => void exportCollectionAsPostman(col.id)}>
-                            Postman v2.1
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => void exportCollectionAsOpenApi(col.id)}>
-                            OpenAPI 3.1
-                          </DropdownMenuItem>
-                        </DropdownMenuSubContent>
-                      </DropdownMenuPortal>
-                    </DropdownMenuSub>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onSelect={() => setPendingDeleteCollectionId(col.id)}
-                      className="text-destructive focus:text-destructive"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" /> Delete collection
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <CollectionActionsMenu
+                  collection={col}
+                  onRename={() => startCollectionRename(col.id, col.name)}
+                  onCreateRequest={(protocol) => void createRequest(col.id, null, protocol)}
+                  onCreateFolder={() => void createFolderInline(col.id, null)}
+                  onDuplicate={() => void duplicateCollection(col.id)}
+                  onOpenSettings={() => openDefaultsEditor({ type: "collection", id: col.id })}
+                  onExportJson={() => void exportCollectionById(col.id)}
+                  onExportFiles={() => void exportCollectionAsFilesById(col.id)}
+                  onExportPostman={() => void exportCollectionAsPostman(col.id)}
+                  onExportOpenApi={() => void exportCollectionAsOpenApi(col.id)}
+                  onDelete={() => setPendingDeleteCollectionId(col.id)}
+                />
               }
             >
               <FolderTree
@@ -645,93 +489,37 @@ export function Sidebar() {
 
         {collections.length === 0 && !q ? <CollectionsEmptyState /> : null}
 
-        <div className="mt-3 rounded-2xl border border-border/80 bg-background/50 p-2">
-          <div className="mb-2 flex items-center gap-2 px-1 text-2xs font-medium text-muted-foreground">
-            <Plus className="h-3.5 w-3.5" /> New collection
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              value={newCollectionName}
-              onChange={(event) => setNewCollectionName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void createCollectionInline();
-                }
-              }}
-              placeholder="Collection name"
-              aria-label="Collection name"
-              className="h-9 min-w-0 flex-1 rounded-xl border border-border/80 bg-background/80 px-3 text-xs outline-none transition focus:border-foreground/15"
-            />
-            <button
-              type="button"
-              onClick={() => void createCollectionInline()}
-              disabled={!newCollectionName.trim()}
-              className="inline-flex h-9 items-center rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 disabled:opacity-40"
-            >
-              Add
-            </button>
-          </div>
-        </div>
+        <NewCollectionForm
+          value={newCollectionName}
+          onChange={setNewCollectionName}
+          onSubmit={() => void createCollectionInline()}
+        />
       </nav>
 
       <div className="border-t border-border px-4 py-2 text-3xs text-muted-foreground/70">
         Local-first · {requests.length} requests
       </div>
 
-      <ConfirmDeleteDialog
-        open={pendingDeleteRequestId !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDeleteRequestId(null);
-        }}
-        title="Delete request"
-        description={
-          pendingDeleteRequestId
-            ? `"${requests.find((request) => request.id === pendingDeleteRequestId)?.name ?? "This request"}" will be deleted. You can undo this from the toast for a few seconds afterward.`
-            : ""
-        }
-        onConfirm={() => {
-          if (pendingDeleteRequestId) void deleteRequest(pendingDeleteRequestId);
+      <SidebarDeleteDialogs
+        requests={requests}
+        collections={collections}
+        folders={folders}
+        pendingDeleteRequestId={pendingDeleteRequestId}
+        pendingDeleteCollectionId={pendingDeleteCollectionId}
+        pendingDeleteFolderId={pendingDeleteFolderId}
+        onCancelDeleteRequest={() => setPendingDeleteRequestId(null)}
+        onCancelDeleteCollection={() => setPendingDeleteCollectionId(null)}
+        onCancelDeleteFolder={() => setPendingDeleteFolderId(null)}
+        onConfirmDeleteRequest={(id) => {
+          void deleteRequest(id);
           setPendingDeleteRequestId(null);
         }}
-      />
-
-      <ConfirmDeleteDialog
-        open={pendingDeleteCollectionId !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDeleteCollectionId(null);
-        }}
-        title="Delete collection"
-        description={(() => {
-          const collection = collections.find((c) => c.id === pendingDeleteCollectionId);
-          if (!collection) return "";
-          const count = requests.filter((r) => r.collectionId === collection.id).length;
-          return `"${collection.name}" and its ${count} request${count === 1 ? "" : "s"} will be permanently deleted. This can't be undone.`;
-        })()}
-        onConfirm={() => {
-          if (pendingDeleteCollectionId) void deleteCollection(pendingDeleteCollectionId);
+        onConfirmDeleteCollection={(id) => {
+          void deleteCollection(id);
           setPendingDeleteCollectionId(null);
         }}
-      />
-
-      <ConfirmDeleteDialog
-        open={pendingDeleteFolderId !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDeleteFolderId(null);
-        }}
-        title="Delete folder"
-        description={(() => {
-          const folder = folders.find((f) => f.id === pendingDeleteFolderId);
-          if (!folder) return "";
-          const descendantFolderIds = new Set(collectDescendantFolderIds(folders, folder.id));
-          descendantFolderIds.add(folder.id);
-          const count = requests.filter(
-            (r) => !!r.folderId && descendantFolderIds.has(r.folderId),
-          ).length;
-          return `"${folder.name}" and everything inside it (${count} request${count === 1 ? "" : "s"}) will be permanently deleted. This can't be undone.`;
-        })()}
-        onConfirm={() => {
-          if (pendingDeleteFolderId) void deleteFolder(pendingDeleteFolderId);
+        onConfirmDeleteFolder={(id) => {
+          void deleteFolder(id);
           setPendingDeleteFolderId(null);
         }}
       />
