@@ -177,7 +177,8 @@ describe("executeRequest — every send goes through /api/proxy", () => {
     );
 
     expect(result.error).toBe(
-      "Couldn't send — this browser is currently offline, so nothing went out.",
+      "Couldn't send — this browser is currently offline, so nothing went out. " +
+        "Your saved requests, collections, and history are stored locally and still work.",
     );
   });
 
