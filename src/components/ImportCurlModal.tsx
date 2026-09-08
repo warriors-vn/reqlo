@@ -16,10 +16,19 @@ export function ImportCurlModal() {
   const importCurl = useStore((s) => s.importCurl);
 
   const [text, setText] = useState("");
-  const preview =
-    workspace && text.trim().toLowerCase().startsWith("curl")
-      ? parseCurl(text, workspace.id, null)
-      : null;
+  const trimmed = text.trim();
+  const looksLikeCurl = trimmed.toLowerCase().startsWith("curl");
+  const preview = workspace && looksLikeCurl ? parseCurl(text, workspace.id, null) : null;
+
+  // Import silently disables itself when nothing parses — say why, so pasting
+  // something malformed doesn't look like the button is simply broken.
+  const blockedReason = !trimmed
+    ? null
+    : !looksLikeCurl
+      ? "Doesn't look like a cURL command — paste one starting with curl."
+      : !preview?.url
+        ? "Couldn't find a URL in this command."
+        : null;
 
   const submit = async () => {
     const r = await importCurl(text);
@@ -87,6 +96,12 @@ export function ImportCurlModal() {
               </div>
             )}
           </div>
+        )}
+
+        {blockedReason && (
+          <p role="alert" className="text-2xs text-muted-foreground">
+            {blockedReason}
+          </p>
         )}
 
         <div className="flex items-center justify-end gap-2 pt-1">
