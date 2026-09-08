@@ -1,5 +1,7 @@
 import Dexie, { type Table } from "dexie";
 import type { ResponseKind } from "@/services/execution";
+import { registerMigrations } from "./db-migrations";
+import { ensureSeed as ensureSeedImpl } from "./db-seed";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 export type RequestBodyType =
@@ -303,7 +305,7 @@ export interface Environment {
   createdAt: number;
 }
 
-class ReqloDB extends Dexie {
+export class ReqloDB extends Dexie {
   workspaces!: Table<Workspace, string>;
   collections!: Table<Collection, string>;
   folders!: Table<Folder, string>;
@@ -313,301 +315,15 @@ class ReqloDB extends Dexie {
 
   constructor() {
     super("reqlo");
-    this.version(1).stores({
-      workspaces: "id, updatedAt",
-      collections: "id, workspaceId, position",
-      requests: "id, workspaceId, collectionId, updatedAt",
-      history: "id, workspaceId, requestId, executedAt",
+    registerMigrations(this, {
+      normalizeApiRequest,
+      normalizeHistoryEntry,
+      createDefaultMock,
+      createDefaultPreRequestScript,
+      createDefaultPostResponseScript,
+      createDefaultRequestDefaults,
+      createDefaultWebSocketConfig,
     });
-    this.version(2).stores({
-      workspaces: "id, updatedAt",
-      collections: "id, workspaceId, position",
-      requests: "id, workspaceId, collectionId, updatedAt",
-      history: "id, workspaceId, requestId, executedAt",
-      environments: "id, workspaceId",
-    });
-    this.version(3)
-      .stores({
-        workspaces: "id, updatedAt",
-        collections: "id, workspaceId, position",
-        requests: "id, workspaceId, collectionId, updatedAt, method, bodyType, favorite",
-        history:
-          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
-        environments: "id, workspaceId",
-      })
-      .upgrade(async (tx) => {
-        await tx
-          .table<ApiRequest, string>("requests")
-          .toCollection()
-          .modify((request) => {
-            Object.assign(request, normalizeApiRequest(request));
-          });
-        await tx
-          .table<HistoryEntry, string>("history")
-          .toCollection()
-          .modify((entry) => {
-            Object.assign(entry, normalizeHistoryEntry(entry));
-          });
-      });
-    this.version(4)
-      .stores({
-        workspaces: "id, updatedAt",
-        collections: "id, workspaceId, position",
-        requests:
-          "id, workspaceId, collectionId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
-        history:
-          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
-        environments: "id, workspaceId",
-      })
-      .upgrade(async (tx) => {
-        const requests = await tx.table<ApiRequest, string>("requests").toArray();
-        const byCollection = new Map<string, ApiRequest[]>();
-
-        requests.forEach((request) => {
-          const key = request.collectionId ?? "__unfiled__";
-          const items = byCollection.get(key) ?? [];
-          items.push(request);
-          byCollection.set(key, items);
-        });
-
-        await Promise.all(
-          [...byCollection.values()].flatMap((items) =>
-            items
-              .sort((left, right) => left.createdAt - right.createdAt)
-              .map((request, index) =>
-                tx.table<ApiRequest, string>("requests").update(request.id, { position: index }),
-              ),
-          ),
-        );
-      });
-    this.version(5)
-      .stores({
-        workspaces: "id, updatedAt",
-        collections: "id, workspaceId, position",
-        folders:
-          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
-        requests:
-          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
-        history:
-          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
-        environments: "id, workspaceId",
-      })
-      .upgrade(async (tx) => {
-        await tx
-          .table<ApiRequest, string>("requests")
-          .toCollection()
-          .modify((request) => {
-            if (request.folderId === undefined) request.folderId = null;
-          });
-      });
-    this.version(6)
-      .stores({
-        workspaces: "id, updatedAt",
-        collections: "id, workspaceId, position",
-        folders:
-          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
-        requests:
-          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
-        history:
-          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
-        environments: "id, workspaceId",
-      })
-      .upgrade(async (tx) => {
-        await tx
-          .table<ApiRequest, string>("requests")
-          .toCollection()
-          .modify((request) => {
-            if (request.extracts === undefined) request.extracts = [];
-          });
-      });
-    this.version(7)
-      .stores({
-        workspaces: "id, updatedAt",
-        collections: "id, workspaceId, position",
-        folders:
-          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
-        requests:
-          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
-        history:
-          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
-        environments: "id, workspaceId",
-      })
-      .upgrade(async (tx) => {
-        await tx
-          .table<ApiRequest, string>("requests")
-          .toCollection()
-          .modify((request) => {
-            if (request.assertions === undefined) request.assertions = [];
-          });
-      });
-    this.version(8)
-      .stores({
-        workspaces: "id, updatedAt",
-        collections: "id, workspaceId, position",
-        folders:
-          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
-        requests:
-          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
-        history:
-          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
-        environments: "id, workspaceId",
-      })
-      .upgrade(async (tx) => {
-        await tx
-          .table<ApiRequest, string>("requests")
-          .toCollection()
-          .modify((request) => {
-            if (request.mock === undefined) request.mock = createDefaultMock();
-          });
-      });
-    this.version(9)
-      .stores({
-        workspaces: "id, updatedAt",
-        collections: "id, workspaceId, position",
-        folders:
-          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
-        requests:
-          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
-        history:
-          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
-        environments: "id, workspaceId",
-      })
-      .upgrade(async (tx) => {
-        await tx
-          .table<ApiRequest, string>("requests")
-          .toCollection()
-          .modify((request) => {
-            if (request.preRequestScript === undefined) {
-              request.preRequestScript = createDefaultPreRequestScript();
-            }
-          });
-      });
-    this.version(10)
-      .stores({
-        workspaces: "id, updatedAt",
-        collections: "id, workspaceId, position",
-        folders:
-          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
-        requests:
-          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
-        history:
-          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
-        environments: "id, workspaceId",
-      })
-      .upgrade(async (tx) => {
-        await tx
-          .table<ApiRequest, string>("requests")
-          .toCollection()
-          .modify((request) => {
-            if (request.timeoutMs === undefined) {
-              request.timeoutMs = 0;
-            }
-          });
-      });
-    this.version(11)
-      .stores({
-        workspaces: "id, updatedAt",
-        collections: "id, workspaceId, position",
-        folders:
-          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
-        requests:
-          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
-        history:
-          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
-        environments: "id, workspaceId",
-      })
-      .upgrade(async (tx) => {
-        await tx
-          .table<Workspace, string>("workspaces")
-          .toCollection()
-          .modify((workspace) => {
-            if (workspace.globals === undefined) {
-              workspace.globals = [];
-            }
-          });
-      });
-    this.version(12)
-      .stores({
-        workspaces: "id, updatedAt",
-        collections: "id, workspaceId, position",
-        folders:
-          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
-        requests:
-          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
-        history:
-          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
-        environments: "id, workspaceId",
-      })
-      .upgrade(async (tx) => {
-        // Collection/folder-level defaults. Existing requests are deliberately
-        // left on whatever auth they already had (including "none") rather
-        // than migrated to "inherit" — see RequestAuth's comment: a request
-        // that sends no auth today must keep sending none after someone adds
-        // a token to its collection.
-        await tx
-          .table<Collection, string>("collections")
-          .toCollection()
-          .modify((collection) => {
-            if (collection.defaults === undefined) {
-              collection.defaults = createDefaultRequestDefaults();
-            }
-          });
-        await tx
-          .table<Folder, string>("folders")
-          .toCollection()
-          .modify((folder) => {
-            if (folder.defaults === undefined) {
-              folder.defaults = createDefaultRequestDefaults();
-            }
-          });
-      });
-    this.version(13)
-      .stores({
-        workspaces: "id, updatedAt",
-        collections: "id, workspaceId, position",
-        folders:
-          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
-        requests:
-          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
-        history:
-          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
-        environments: "id, workspaceId",
-      })
-      .upgrade(async (tx) => {
-        await tx
-          .table<ApiRequest, string>("requests")
-          .toCollection()
-          .modify((request) => {
-            if (request.postResponseScript === undefined) {
-              request.postResponseScript = createDefaultPostResponseScript();
-            }
-          });
-      });
-    this.version(14)
-      .stores({
-        workspaces: "id, updatedAt",
-        collections: "id, workspaceId, position",
-        folders:
-          "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
-        requests:
-          "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
-        history:
-          "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
-        environments: "id, workspaceId",
-      })
-      .upgrade(async (tx) => {
-        // Every request that existed before the WebSocket client is an HTTP
-        // one. Backfilling both fields here (rather than leaning on
-        // normalizeApiRequest alone) keeps what's in IndexedDB a complete
-        // ApiRequest, so a row read outside the store isn't half-shaped.
-        await tx
-          .table<ApiRequest, string>("requests")
-          .toCollection()
-          .modify((request) => {
-            if (request.protocol === undefined) request.protocol = "http";
-            if (request.websocket === undefined) request.websocket = createDefaultWebSocketConfig();
-          });
-      });
   }
 }
 
@@ -963,127 +679,16 @@ export function normalizeHistoryEntry(
 }
 
 export async function ensureSeed(): Promise<Workspace> {
-  const existing = await db.workspaces.toArray();
-  if (existing.length) return existing[0];
-
-  const now = Date.now();
-  const ws: Workspace = {
-    id: uid(),
-    name: "Personal",
-    globals: [],
-    createdAt: now,
-    updatedAt: now,
-  };
-  await db.workspaces.add(ws);
-
-  const col: Collection = {
-    id: uid(),
-    workspaceId: ws.id,
-    name: "Getting Started",
-    position: 0,
-    defaults: createDefaultRequestDefaults(),
-    createdAt: now,
-  };
-  await db.collections.add(col);
-
-  const sampleRequests: ApiRequest[] = [
-    {
-      id: uid(),
-      workspaceId: ws.id,
-      collectionId: col.id,
-      folderId: null,
-      position: 0,
-      name: "List users",
-      method: "GET",
-      url: "https://jsonplaceholder.typicode.com/users",
-      headers: [],
-      queryParams: [],
-      body: "",
-      bodyType: "none",
-      protocol: "http",
-      websocket: createDefaultWebSocketConfig(),
-      bodyDrafts: createDefaultBodyDrafts(),
-      auth: createDefaultAuth(),
-      extracts: [],
-      assertions: [],
-      mock: createDefaultMock(),
-      preRequestScript: createDefaultPreRequestScript(),
-      postResponseScript: createDefaultPostResponseScript(),
-      timeoutMs: 0,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: uid(),
-      workspaceId: ws.id,
-      collectionId: col.id,
-      folderId: null,
-      position: 1,
-      name: "Create post",
-      method: "POST",
-      url: "https://jsonplaceholder.typicode.com/posts",
-      headers: [{ id: uid(), key: "Content-Type", value: "application/json", enabled: true }],
-      queryParams: [],
-      body: JSON.stringify({ title: "Hello from Reqlo", body: "Local-first.", userId: 1 }, null, 2),
-      bodyType: "json",
-      bodyDrafts: {
-        ...createDefaultBodyDrafts(),
-        json: JSON.stringify(
-          { title: "Hello from Reqlo", body: "Local-first.", userId: 1 },
-          null,
-          2,
-        ),
-      },
-      protocol: "http",
-      websocket: createDefaultWebSocketConfig(),
-      auth: createDefaultAuth(),
-      extracts: [],
-      assertions: [],
-      mock: createDefaultMock(),
-      preRequestScript: createDefaultPreRequestScript(),
-      postResponseScript: createDefaultPostResponseScript(),
-      timeoutMs: 0,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: uid(),
-      workspaceId: ws.id,
-      collectionId: col.id,
-      folderId: null,
-      position: 2,
-      name: "Get single todo",
-      method: "GET",
-      url: "https://jsonplaceholder.typicode.com/todos/1",
-      headers: [],
-      queryParams: [],
-      body: "",
-      bodyType: "none",
-      protocol: "http",
-      websocket: createDefaultWebSocketConfig(),
-      bodyDrafts: createDefaultBodyDrafts(),
-      auth: createDefaultAuth(),
-      extracts: [],
-      assertions: [],
-      mock: createDefaultMock(),
-      preRequestScript: createDefaultPreRequestScript(),
-      postResponseScript: createDefaultPostResponseScript(),
-      timeoutMs: 0,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
-  await db.requests.bulkAdd(sampleRequests);
-
-  const defaultEnv: Environment = {
-    id: uid(),
-    workspaceId: ws.id,
-    name: "Local",
-    variables: [{ id: uid(), key: "BASE_URL", value: "http://localhost:3000", enabled: true }],
-    createdAt: now,
-  };
-  await db.environments.add(defaultEnv);
-  return ws;
+  return ensureSeedImpl(db, {
+    uid,
+    createDefaultRequestDefaults,
+    createDefaultWebSocketConfig,
+    createDefaultBodyDrafts,
+    createDefaultAuth,
+    createDefaultMock,
+    createDefaultPreRequestScript,
+    createDefaultPostResponseScript,
+  });
 }
 
 /**
