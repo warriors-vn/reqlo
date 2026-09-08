@@ -14,14 +14,16 @@ export const BUDGET_BYTES = 1024 * 1024; // 1 MB raw, per non-exempt chunk
 // Matched against the chunk's *stable* name (see stableName below) — Monaco's
 // own core bundle, the workers it spins up, and the language-mode chunks it
 // lazy-loads on demand are all legitimately this size; nothing else should be.
+//
+// tsMode/cssMode/htmlMode used to be exempted here too, but monaco-setup.ts no
+// longer imports the barrel that pulled those language services in — they no
+// longer exist in the build at all, so an exemption for them would be dead
+// weight that could hide the barrel import coming back unnoticed.
 export const EXEMPT_PREFIXES = [
   "monaco.contribution",
   "monaco-setup",
   "json.worker",
-  "tsMode",
   "jsonMode",
-  "cssMode",
-  "htmlMode",
   "graphqlMode",
   "printSchema",
   "emscripten-module",
