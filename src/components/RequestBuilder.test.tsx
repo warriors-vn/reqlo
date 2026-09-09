@@ -157,3 +157,58 @@ describe("RequestBuilder — Params/Headers survive a tab switch", () => {
     ]);
   });
 });
+
+describe("RequestBuilder — collapsed panel", () => {
+  afterEach(() => {
+    cleanup();
+    useStore.setState({ requestPanelCollapsed: false });
+  });
+
+  // v1.5.1 audit: collapsing the panel and then clicking a tab moved the
+  // underline but left the panel closed — the tab's content simply never
+  // appeared, with no way back short of the collapse button itself.
+  it("expands the panel when a tab is clicked while collapsed", async () => {
+    const request = seedRequest();
+    const user = userEvent.setup();
+    render(<Wrapper requestId={request.id} />);
+
+    await user.click(screen.getByTitle(/Collapse request panel/));
+    expect(screen.queryByPlaceholderText("key")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /^Headers/ }));
+    expect(screen.getByPlaceholderText("Header")).toBeInTheDocument();
+    expect(useStore.getState().requestPanelCollapsed).toBe(false);
+  });
+
+  // v1.5.1 audit: panelCollapsed used to be local component state, but
+  // Workspace.tsx remounts RequestBuilder on every request switch
+  // (key={activeRequest.id}) — so collapsing the panel to see a response
+  // forgot that choice the instant a different request tab was opened.
+  it("stays collapsed across a request switch (component remount)", async () => {
+    const requestA = seedRequest();
+    const user = userEvent.setup();
+    const { unmount } = render(<Wrapper requestId={requestA.id} />);
+
+    await user.click(screen.getByTitle(/Collapse request panel/));
+    expect(useStore.getState().requestPanelCollapsed).toBe(true);
+    unmount();
+
+    const now = Date.now();
+    const requestB = normalizeApiRequest({
+      id: uid(),
+      workspaceId: "ws-1",
+      name: "Req B",
+      method: "GET",
+      url: "https://api.example.com/b",
+      queryParams: [createEmptyKV()],
+      headers: [createEmptyKV()],
+      createdAt: now,
+      updatedAt: now,
+    });
+    useStore.setState({ requests: [requestB] });
+    render(<Wrapper requestId={requestB.id} />);
+
+    expect(screen.getByTitle(/Expand request panel/)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("key")).not.toBeInTheDocument();
+  });
+});

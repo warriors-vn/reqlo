@@ -5,19 +5,33 @@ export interface ViewSlice {
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   sidebarTree: SidebarTreeState;
+  requestPanelCollapsed: boolean;
 
   toggleSidebar: () => void;
   setSidebarWidth: (px: number) => void;
   setSidebarTreeOpen: (section: keyof SidebarTreeState | string, open: boolean) => void;
+  toggleRequestPanel: () => void;
+  setRequestPanelCollapsed: (collapsed: boolean) => void;
 }
 
 export const createViewSlice: SliceCreator<ViewSlice> = (set, get) => ({
   sidebarCollapsed: false,
   sidebarWidth: 288,
   sidebarTree: { ...DEFAULT_SIDEBAR_TREE, collections: {} },
+  requestPanelCollapsed: false,
 
   toggleSidebar: () => {
     set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed }));
+    persistSession(get);
+  },
+
+  toggleRequestPanel: () => {
+    set((s) => ({ requestPanelCollapsed: !s.requestPanelCollapsed }));
+    persistSession(get);
+  },
+
+  setRequestPanelCollapsed: (collapsed) => {
+    set({ requestPanelCollapsed: collapsed });
     persistSession(get);
   },
 
