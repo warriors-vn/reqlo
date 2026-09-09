@@ -133,7 +133,15 @@ export async function commitImportedCollection(
 }
 
 export function persistSession(get: () => Store) {
-  const { tabs, activeTabId, activeEnvId, sidebarCollapsed, sidebarWidth, sidebarTree } = get();
+  const {
+    tabs,
+    activeTabId,
+    activeEnvId,
+    sidebarCollapsed,
+    sidebarWidth,
+    sidebarTree,
+    requestPanelCollapsed,
+  } = get();
   try {
     localStorage.setItem(
       "reqlo:session",
@@ -144,6 +152,7 @@ export function persistSession(get: () => Store) {
         sidebarCollapsed,
         sidebarWidth,
         sidebarTree,
+        requestPanelCollapsed,
       }),
     );
   } catch {

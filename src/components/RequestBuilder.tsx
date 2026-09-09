@@ -55,7 +55,13 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
     "params" | "headers" | "body" | "auth" | "script" | "extract" | "tests" | "mock" | "message"
   >("params");
   const [nameEdit, setNameEdit] = useState(false);
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // Lives in the store (persisted, like sidebarCollapsed) rather than local
+  // state: this component remounts on every request switch (Workspace.tsx
+  // keys it by activeRequest.id), so local state would forget the collapsed
+  // choice the moment the user opened a different request.
+  const panelCollapsed = useStore((s) => s.requestPanelCollapsed);
+  const toggleRequestPanel = useStore((s) => s.toggleRequestPanel);
+  const setRequestPanelCollapsed = useStore((s) => s.setRequestPanelCollapsed);
 
   const isWebSocket = request.protocol === "websocket";
   const wsStatus = useStore((s) => s.wsSessions[request.id]?.status) ?? "idle";
@@ -306,7 +312,18 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
       <Tabs value={activeTab} onValueChange={(value) => setTab(value as typeof tab)}>
         {/* Tab strip */}
         <div className="flex items-center gap-1 border-b border-border px-3">
-          <TabsList className="h-9 gap-1 rounded-none bg-transparent p-0">
+          <TabsList
+            className="h-9 gap-1 rounded-none bg-transparent p-0"
+            // Clicking a tab is a request to see its content — if the panel
+            // is collapsed, expand it too, rather than just moving the
+            // underline over a panel that stays hidden. Handled here (not in
+            // onValueChange above) so re-clicking the tab that's already
+            // active still expands it, since Radix only fires onValueChange
+            // on an actual value change.
+            onClick={() => {
+              if (panelCollapsed) setRequestPanelCollapsed(false);
+            }}
+          >
             {tabs.map((t) => (
               <TabsTrigger
                 key={t.id}
@@ -327,7 +344,8 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
             ))}
           </TabsList>
           <button
-            onClick={() => setPanelCollapsed((v) => !v)}
+            onClick={toggleRequestPanel}
+            aria-expanded={!panelCollapsed}
             className="ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-ring"
             title={
               panelCollapsed

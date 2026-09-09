@@ -73,6 +73,7 @@ export const createCoreSlice: SliceCreator<CoreSlice> = (set) => ({
     let sidebarCollapsed = false;
     let sidebarWidth = 288;
     let sidebarTree = { ...DEFAULT_SIDEBAR_TREE, collections: {} };
+    let requestPanelCollapsed = false;
     try {
       const raw = localStorage.getItem("reqlo:session");
       if (raw) {
@@ -83,6 +84,7 @@ export const createCoreSlice: SliceCreator<CoreSlice> = (set) => ({
           sidebarCollapsed?: boolean;
           sidebarWidth?: number;
           sidebarTree?: SidebarTreeState;
+          requestPanelCollapsed?: boolean;
         };
         const validIds = new Set(requests.map((r) => r.id));
         tabs = (parsed.tabs ?? []).filter((t) => validIds.has(t.requestId));
@@ -96,6 +98,7 @@ export const createCoreSlice: SliceCreator<CoreSlice> = (set) => ({
         if (typeof parsed.sidebarWidth === "number")
           sidebarWidth = Math.min(480, Math.max(220, Math.round(parsed.sidebarWidth)));
         sidebarTree = setSidebarTreeDefaults(parsed.sidebarTree);
+        requestPanelCollapsed = !!parsed.requestPanelCollapsed;
       }
     } catch {
       // Ignore invalid persisted session state and fall back to defaults.
@@ -121,6 +124,7 @@ export const createCoreSlice: SliceCreator<CoreSlice> = (set) => ({
       sidebarCollapsed,
       sidebarWidth,
       sidebarTree,
+      requestPanelCollapsed,
     });
   },
 });
