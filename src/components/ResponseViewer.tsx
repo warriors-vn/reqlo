@@ -1,18 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { copyTextToClipboard } from "@/features/code-snippets/utils/clipboard";
-import {
-  Check,
-  Copy,
-  Download,
-  ExternalLink,
-  Eye,
-  FileJson2,
-  FileText,
-  Radio,
-  Save,
-} from "lucide-react";
+import { Check, Copy, Download, ExternalLink, Save } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStore } from "@/stores/useStore";
@@ -30,11 +19,16 @@ import {
   truncateForRender,
 } from "@/lib/response-body-view";
 import { buildMockFromResponse } from "@/services/mock-from-response";
-import { parseSseEvents } from "@/lib/sse";
 import { LazyConfirmDeleteDialog as ConfirmDeleteDialog } from "@/components/LazyConfirmDeleteDialog";
+import { MetaPill } from "./response-viewer/MetaPill";
+import { ResponsePreview } from "./response-viewer/ResponsePreview";
+import { SseEventList } from "./response-viewer/SseEventList";
+import { downloadResponse } from "./response-viewer/download-response";
+import { getDefaultBodyView, renderBodyViewTabs } from "./response-viewer/body-views";
+import { useObjectUrl } from "./response-viewer/useObjectUrl";
+import type { BodyView } from "./response-viewer/types";
 
 type PrimaryTab = "body" | "headers";
-type BodyView = "pretty" | "raw" | "preview";
 
 /** Live progress for an in-flight send, before a final `ExecutionResult`
  * exists — see `ExecuteRequestOptions.onStreamChunk`. `contentType` decides
@@ -384,248 +378,4 @@ export function ResponseViewer({
       />
     </div>
   );
-}
-
-function MetaPill({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-2.5 py-1">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={cn("font-mono font-medium text-foreground/90", tone)}>{value}</span>
-    </div>
-  );
-}
-
-function renderBodyViewTabs(
-  result: ExecutionResult,
-  bodyView: BodyView,
-  setBodyView: (value: BodyView) => void,
-) {
-  const views = getBodyViews(result);
-  if (views.length <= 1) return null;
-
-  return (
-    <div className="border-b border-border/70 px-4 py-3">
-      <Tabs value={bodyView} onValueChange={(value) => setBodyView(value as BodyView)}>
-        <TabsList className="h-10 rounded-xl bg-background/80">
-          {views.map((view) => (
-            <TabsTrigger key={view.id} value={view.id} className="gap-1 rounded-lg px-3 text-xs">
-              {view.icon}
-              {view.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-    </div>
-  );
-}
-
-function ResponsePreview({
-  result,
-  previewUrl,
-}: {
-  result: ExecutionResult;
-  previewUrl: string | null;
-}) {
-  if (result.responseKind === "html" && result.body.length <= MAX_RESPONSE_RENDER_LENGTH) {
-    return (
-      <iframe
-        title="HTML preview"
-        srcDoc={result.body}
-        className="h-full w-full border-0 bg-white"
-        sandbox="allow-same-origin"
-      />
-    );
-  }
-
-  if (result.responseKind === "html") {
-    return (
-      <PreviewUnavailable
-        result={result}
-        message="This response is too large to preview safely. Use download, or switch to Raw for a capped view."
-      />
-    );
-  }
-
-  if (result.responseKind === "image" && previewUrl) {
-    return (
-      <ScrollArea className="h-full">
-        <div className="flex min-h-full items-start justify-center p-6">
-          <img
-            src={previewUrl}
-            alt="Response preview"
-            className="max-h-[70vh] max-w-full rounded-2xl border border-border/70 bg-background shadow-sm"
-          />
-        </div>
-      </ScrollArea>
-    );
-  }
-
-  if (result.responseKind === "pdf" && previewUrl) {
-    return (
-      <iframe
-        title="PDF preview"
-        src={previewUrl}
-        className="h-full w-full border-0 bg-background"
-      />
-    );
-  }
-
-  return <PreviewUnavailable result={result} />;
-}
-
-function PreviewUnavailable({
-  result,
-  message = "This response type does not support inline preview yet. Use download to inspect the full payload.",
-}: {
-  result: ExecutionResult;
-  message?: string;
-}) {
-  return (
-    <div className="grid h-full min-h-[260px] place-items-center p-6">
-      <div className="max-w-md rounded-[24px] border border-dashed border-border bg-background/70 px-5 py-6 text-center">
-        <div className="text-sm font-semibold tracking-tight">Preview unavailable</div>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">{message}</p>
-        <div className="mt-3 text-2xs font-mono text-muted-foreground">
-          {formatResponseKindLabel(result.responseKind)} · {formatBytes(result.sizeBytes)}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function getBodyViews(result: ExecutionResult) {
-  const views: Array<{ id: BodyView; label: string; icon: React.ReactNode }> = [];
-
-  if (result.responseKind === "json") {
-    views.push({ id: "pretty", label: "Pretty", icon: <FileJson2 className="h-3.5 w-3.5" /> });
-    views.push({ id: "raw", label: "Raw", icon: <FileText className="h-3.5 w-3.5" /> });
-    return views;
-  }
-
-  if (result.responseKind === "stream") {
-    views.push({ id: "pretty", label: "Events", icon: <Radio className="h-3.5 w-3.5" /> });
-    views.push({ id: "raw", label: "Raw", icon: <FileText className="h-3.5 w-3.5" /> });
-    return views;
-  }
-
-  if (result.responseKind === "html") {
-    views.push({ id: "preview", label: "Preview", icon: <Eye className="h-3.5 w-3.5" /> });
-    views.push({ id: "raw", label: "Raw", icon: <FileText className="h-3.5 w-3.5" /> });
-    return views;
-  }
-
-  if (result.responseKind === "image" || result.responseKind === "pdf") {
-    views.push({ id: "preview", label: "Preview", icon: <Eye className="h-3.5 w-3.5" /> });
-    return views;
-  }
-
-  if (result.responseKind === "binary") {
-    views.push({ id: "preview", label: "Summary", icon: <Eye className="h-3.5 w-3.5" /> });
-    return views;
-  }
-
-  views.push({ id: "raw", label: "Raw", icon: <FileText className="h-3.5 w-3.5" /> });
-  return views;
-}
-
-function getDefaultBodyView(result: ExecutionResult | null): BodyView {
-  if (!result) return "pretty";
-  if (result.responseKind === "json" || result.responseKind === "stream") return "pretty";
-  if (result.responseKind === "text") return "raw";
-  return "preview";
-}
-
-function SseEventList({ text }: { text: string }) {
-  const events = useMemo(() => parseSseEvents(text), [text]);
-
-  if (events.length === 0) {
-    return (
-      <div className="grid h-full min-h-[160px] place-items-center p-6 text-center text-sm text-muted-foreground">
-        No events yet.
-      </div>
-    );
-  }
-
-  return (
-    <div className="divide-y divide-border/70">
-      {events.map((event, index) => (
-        <div key={index} className="space-y-1.5 p-4">
-          <div className="flex flex-wrap items-center gap-2 text-2xs text-muted-foreground">
-            <span className="rounded-full bg-muted px-2 py-0.5 font-mono">#{index + 1}</span>
-            {event.event && (
-              <span className="rounded-full bg-accent px-2 py-0.5 font-mono text-foreground/80">
-                {event.event}
-              </span>
-            )}
-            {event.id && <span className="font-mono">id: {event.id}</span>}
-          </div>
-          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground/90">
-            {prettyPrintMaybeJson(event.data)}
-          </pre>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function prettyPrintMaybeJson(data: string): string {
-  try {
-    return JSON.stringify(JSON.parse(data), null, 2);
-  } catch {
-    return data;
-  }
-}
-
-function downloadResponse(result: ExecutionResult) {
-  const blob = result.blob ?? new Blob([result.body], { type: result.contentType || "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = result.fileName ?? buildFallbackFilename(result);
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function buildFallbackFilename(result: ExecutionResult) {
-  const extension =
-    result.responseKind === "json"
-      ? "json"
-      : result.responseKind === "html"
-        ? "html"
-        : result.responseKind === "text" || result.responseKind === "stream"
-          ? "txt"
-          : result.responseKind === "image"
-            ? inferImageExtension(result.contentType)
-            : result.responseKind === "pdf"
-              ? "pdf"
-              : "bin";
-  return `response.${extension}`;
-}
-
-function inferImageExtension(contentType: string) {
-  if (contentType.includes("png")) return "png";
-  if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg";
-  if (contentType.includes("gif")) return "gif";
-  if (contentType.includes("webp")) return "webp";
-  if (contentType.includes("svg")) return "svg";
-  return "img";
-}
-
-function useObjectUrl(blob: Blob | null) {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!blob) {
-      setUrl(null);
-      return;
-    }
-
-    const objectUrl = URL.createObjectURL(blob);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [blob]);
-
-  return url;
 }
