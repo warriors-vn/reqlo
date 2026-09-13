@@ -1,5 +1,9 @@
 import { db, type Collection, type Folder } from "@/services/db";
-import { sanitizeRequestForExport } from "@/services/portability";
+import {
+  sanitizeCollectionForExport,
+  sanitizeFolderForExport,
+  sanitizeRequestForExport,
+} from "@/services/portability";
 import { buildZip } from "@/services/zip";
 
 export interface GitExportFile {
@@ -39,6 +43,7 @@ export async function buildCollectionFileTree(collection: Collection): Promise<G
   folders.sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
   rawRequests.sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
   const requests = await Promise.all(rawRequests.map(sanitizeRequestForExport));
+  const sanitizedCollection = sanitizeCollectionForExport(collection);
 
   const files: GitExportFile[] = [
     {
@@ -46,10 +51,11 @@ export async function buildCollectionFileTree(collection: Collection): Promise<G
       content:
         JSON.stringify(
           {
-            id: collection.id,
-            name: collection.name,
-            position: collection.position,
-            createdAt: collection.createdAt,
+            id: sanitizedCollection.id,
+            name: sanitizedCollection.name,
+            position: sanitizedCollection.position,
+            createdAt: sanitizedCollection.createdAt,
+            defaults: sanitizedCollection.defaults,
           },
           null,
           2,
@@ -76,15 +82,17 @@ export async function buildCollectionFileTree(collection: Collection): Promise<G
       used.add(name);
       const dirPath = parentPath ? `${parentPath}/${name}` : name;
       dirPathById.set(folder.id, dirPath);
+      const sanitizedFolder = sanitizeFolderForExport(folder);
       files.push({
         path: `${dirPath}/_folder.json`,
         content:
           JSON.stringify(
             {
-              id: folder.id,
-              name: folder.name,
-              position: folder.position,
-              createdAt: folder.createdAt,
+              id: sanitizedFolder.id,
+              name: sanitizedFolder.name,
+              position: sanitizedFolder.position,
+              createdAt: sanitizedFolder.createdAt,
+              defaults: sanitizedFolder.defaults,
             },
             null,
             2,

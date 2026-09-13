@@ -224,7 +224,19 @@ describe("exportCollection / exportWorkspace round-trips", () => {
       workspaceId,
       name: "My Collection",
       position: 0,
-      defaults: createDefaultRequestDefaults(),
+      defaults: {
+        ...createDefaultRequestDefaults(),
+        variables: [
+          {
+            id: "cv1",
+            key: "COLLECTION_TOKEN",
+            value: "collection-secret",
+            enabled: true,
+            secret: true,
+          },
+          { id: "cv2", key: "BASE_URL", value: "https://api.example.com", enabled: true },
+        ],
+      },
       createdAt: Date.now(),
     };
     await db.collections.add(collection);
@@ -236,7 +248,12 @@ describe("exportCollection / exportWorkspace round-trips", () => {
       parentFolderId: null,
       name: "Folder A",
       position: 0,
-      defaults: createDefaultRequestDefaults(),
+      defaults: {
+        ...createDefaultRequestDefaults(),
+        variables: [
+          { id: "fv1", key: "FOLDER_TOKEN", value: "folder-secret", enabled: true, secret: true },
+        ],
+      },
       createdAt: Date.now(),
     };
     await db.folders.add(folder);
@@ -261,6 +278,27 @@ describe("exportCollection / exportWorkspace round-trips", () => {
     expect(result.collection.id).toBe(collection.id);
     expect(result.folders?.map((f) => f.id)).toEqual([folder.id]);
     expect(result.requests.map((r) => r.name)).toEqual(["First", "Second"]);
+
+    // Secret variables in collection/folder defaults are blanked, same as
+    // environment and workspace-global secrets.
+    expect(
+      result.collection.defaults.variables.find((v) => v.key === "COLLECTION_TOKEN")?.value,
+    ).toBe("");
+    expect(result.collection.defaults.variables.find((v) => v.key === "BASE_URL")?.value).toBe(
+      "https://api.example.com",
+    );
+    expect(
+      result.folders?.[0].defaults.variables.find((v) => v.key === "FOLDER_TOKEN")?.value,
+    ).toBe("");
+    // The live store/DB value itself is never mutated by exporting.
+    const liveCollection = await db.collections.get(collection.id);
+    expect(
+      liveCollection?.defaults.variables.find((v) => v.key === "COLLECTION_TOKEN")?.value,
+    ).toBe("collection-secret");
+    const liveFolder = await db.folders.get(folder.id);
+    expect(liveFolder?.defaults.variables.find((v) => v.key === "FOLDER_TOKEN")?.value).toBe(
+      "folder-secret",
+    );
   });
 
   it("exports a full workspace with sorted requests, environments, and history", async () => {
@@ -287,7 +325,18 @@ describe("exportCollection / exportWorkspace round-trips", () => {
       workspaceId: workspace.id,
       name: "C",
       position: 0,
-      defaults: createDefaultRequestDefaults(),
+      defaults: {
+        ...createDefaultRequestDefaults(),
+        variables: [
+          {
+            id: "cv1",
+            key: "COLLECTION_TOKEN",
+            value: "collection-secret",
+            enabled: true,
+            secret: true,
+          },
+        ],
+      },
       createdAt: Date.now(),
     };
     await db.collections.add(collection);
@@ -365,6 +414,15 @@ describe("exportCollection / exportWorkspace round-trips", () => {
     expect(liveWorkspace?.globals.find((v) => v.key === "GLOBAL_TOKEN")?.value).toBe(
       "super-secret-global",
     );
+
+    // Secret variables in a collection's defaults are blanked the same way.
+    expect(
+      result.collections[0].defaults.variables.find((v) => v.key === "COLLECTION_TOKEN")?.value,
+    ).toBe("");
+    const liveCollection = await db.collections.get(collection.id);
+    expect(
+      liveCollection?.defaults.variables.find((v) => v.key === "COLLECTION_TOKEN")?.value,
+    ).toBe("collection-secret");
 
     // validateWorkspaceExport should accept its own output.
     expect(validateWorkspaceExport(result)).toBe(true);

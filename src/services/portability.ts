@@ -10,6 +10,7 @@ import {
   type Environment,
   type Folder,
   type HistoryEntry,
+  type RequestDefaults,
   type StoredFileBlob,
   type Workspace,
 } from "@/services/db";
@@ -54,8 +55,8 @@ export async function exportCollection(collection: Collection): Promise<Collecti
     schema: "reqlo.collection",
     version: SCHEMA_VERSION,
     exportedAt: Date.now(),
-    collection,
-    folders,
+    collection: sanitizeCollectionForExport(collection),
+    folders: folders.map(sanitizeFolderForExport),
     requests: await Promise.all(requests.map(sanitizeRequestForExport)),
   };
 }
@@ -85,8 +86,8 @@ export async function exportWorkspace(workspace: Workspace): Promise<WorkspaceEx
     version: SCHEMA_VERSION,
     exportedAt: Date.now(),
     workspace: sanitizeWorkspaceForExport(workspace),
-    collections,
-    folders,
+    collections: collections.map(sanitizeCollectionForExport),
+    folders: folders.map(sanitizeFolderForExport),
     requests: await Promise.all(requests.map(sanitizeRequestForExport)),
     environments: environments.map(sanitizeEnvironmentForExport),
     history: await Promise.all(history.map(sanitizeHistoryForExport)),
@@ -162,6 +163,28 @@ export function sanitizeWorkspaceForExport(workspace: Workspace): Workspace {
       variable.secret ? { ...variable, value: "" } : variable,
     ),
   };
+}
+
+/** Blanks secret variables in a collection/folder's `defaults` — the same
+ * treatment `sanitizeEnvironmentForExport`/`sanitizeWorkspaceForExport` give
+ * environment and global variables. `defaults.auth` is left as-is: a
+ * request's own auth is already exported in full today, and changing that is
+ * a separate decision from closing this specific leak. */
+export function sanitizeRequestDefaultsForExport(defaults: RequestDefaults): RequestDefaults {
+  return {
+    ...defaults,
+    variables: defaults.variables.map((variable) =>
+      variable.secret ? { ...variable, value: "" } : variable,
+    ),
+  };
+}
+
+export function sanitizeCollectionForExport(collection: Collection): Collection {
+  return { ...collection, defaults: sanitizeRequestDefaultsForExport(collection.defaults) };
+}
+
+export function sanitizeFolderForExport(folder: Folder): Folder {
+  return { ...folder, defaults: sanitizeRequestDefaultsForExport(folder.defaults) };
 }
 
 async function exportStoredFile(file: StoredFileBlob): Promise<StoredFileBlob> {

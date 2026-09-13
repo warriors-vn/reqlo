@@ -78,6 +78,8 @@ export interface PostmanCollection {
   item?: PostmanItem[];
   /** Collection-level auth, which maps to reqlo's collection defaults. */
   auth?: PostmanAuth;
+  /** Collection-level variables — Postman has no folder-level equivalent. */
+  variable?: PostmanKV[];
 }
 
 export interface PostmanImportResult {
@@ -145,6 +147,9 @@ export function parsePostmanCollection(
     collectionDefaults: {
       ...createDefaultRequestDefaults(),
       auth: convertAuth(raw.auth, warnings, raw.info?.name),
+      variables: (raw.variable ?? [])
+        .filter((v) => v.key)
+        .map((v) => ({ id: uid(), key: v.key, value: v.value ?? "", enabled: !v.disabled })),
     },
   };
 }

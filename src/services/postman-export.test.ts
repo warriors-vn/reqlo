@@ -338,4 +338,45 @@ describe("buildPostmanCollection — what it says it cannot carry", () => {
     expect(JSON.stringify(collection)).not.toContain("test(");
     expect(warnings.join(" ")).toContain("script wasn't exported");
   });
+
+  it("round-trips collection variables, blanking secret ones", () => {
+    const collection = makeCollection({
+      defaults: {
+        ...createDefaultRequestDefaults(),
+        variables: [
+          { id: "v1", key: "BASE_URL", value: "https://api.example.com", enabled: true },
+          { id: "v2", key: "API_TOKEN", value: "shh", enabled: true, secret: true },
+        ],
+      },
+    });
+
+    const { collection: exported } = buildPostmanCollection(collection, [], []);
+    expect(exported.variable).toEqual([
+      { key: "BASE_URL", value: "https://api.example.com" },
+      { key: "API_TOKEN", value: "" },
+    ]);
+
+    const back = parsePostmanCollection(exported, "ws-2");
+    expect(back.collectionDefaults.variables.map((v) => [v.key, v.value])).toEqual([
+      ["BASE_URL", "https://api.example.com"],
+      ["API_TOKEN", ""],
+    ]);
+  });
+
+  it("warns that a folder's own variables weren't exported — Postman has no folder-level equivalent", () => {
+    const folder = makeFolder({
+      id: "f-1",
+      name: "Admin",
+      defaults: {
+        ...createDefaultRequestDefaults(),
+        variables: [{ id: "v1", key: "ADMIN_KEY", value: "x", enabled: true }],
+      },
+    });
+    const request = makeRequest({ name: "Req", folderId: "f-1" });
+
+    const { collection, warnings } = buildPostmanCollection(makeCollection(), [folder], [request]);
+
+    expect(JSON.stringify(collection)).not.toContain("ADMIN_KEY");
+    expect(warnings.join(" ")).toContain("folder-level variable");
+  });
 });
