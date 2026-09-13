@@ -9,8 +9,7 @@ import {
 } from "@/features/code-snippets/utils/request-resolver";
 
 export type IntrospectionResult =
-  | { ok: true; introspection: IntrospectionQuery }
-  | { ok: false; error: string };
+  { ok: true; introspection: IntrospectionQuery } | { ok: false; error: string };
 
 function setJsonContentType(headers: Record<string, string>) {
   Object.keys(headers).forEach((key) => {

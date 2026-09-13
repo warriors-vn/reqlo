@@ -2,14 +2,7 @@ import type { OAuth2CachedToken } from "@/services/db";
 import type { ScriptTestResult } from "@/services/scripting";
 
 export type ResponseKind =
-  | "empty"
-  | "json"
-  | "text"
-  | "html"
-  | "stream"
-  | "image"
-  | "pdf"
-  | "binary";
+  "empty" | "json" | "text" | "html" | "stream" | "image" | "pdf" | "binary";
 
 export interface ExecutionResult {
   status: number | null;

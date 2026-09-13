@@ -7,16 +7,7 @@ import type {
 } from "@/services/db";
 
 export type SnippetLanguage =
-  | "curl"
-  | "fetch"
-  | "axios"
-  | "node"
-  | "python"
-  | "go"
-  | "java"
-  | "csharp"
-  | "php"
-  | "rust";
+  "curl" | "fetch" | "axios" | "node" | "python" | "go" | "java" | "csharp" | "php" | "rust";
 
 export type SnippetFamily = "cli" | "frontend" | "backend";
 
