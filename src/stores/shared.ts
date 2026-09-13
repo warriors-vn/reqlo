@@ -231,6 +231,34 @@ export function omitKeys<T>(record: Record<string, T>, ids: readonly string[]): 
   return Object.fromEntries(Object.entries(record).filter(([key]) => !doomed.has(key)));
 }
 
+/** The cleanup a set of requests needs once they're gone from the DB, whether
+ * from deleting the request itself or as part of a bulk folder/collection
+ * delete: closing any live WebSocket session for each (so it doesn't keep
+ * receiving into a session nothing can reach any more), dropping their
+ * graphql schema and ws session state, fixing up `tabs`/`activeTabId` so
+ * neither references a deleted request, and clearing `sidebarSelection` if it
+ * pointed at one of them. */
+export function cleanupDeletedRequests(
+  get: () => Store,
+  doomedRequestIds: readonly string[],
+): Pick<Store, "tabs" | "activeTabId" | "wsSessions" | "graphqlSchemas" | "sidebarSelection"> {
+  const doomed = new Set(doomedRequestIds);
+  for (const id of doomed) get().discardWebSocketSession(id);
+  const { tabs, activeTabId, wsSessions, graphqlSchemas, sidebarSelection } = get();
+  const nextTabs = tabs.filter((tab) => !doomed.has(tab.requestId));
+  const activeTabStillExists = !!nextTabs.find((tab) => tab.id === activeTabId);
+  return {
+    tabs: nextTabs,
+    activeTabId: activeTabStillExists ? activeTabId : (nextTabs[0]?.id ?? null),
+    wsSessions: omitKeys(wsSessions, doomedRequestIds),
+    graphqlSchemas: omitKeys(graphqlSchemas, doomedRequestIds),
+    sidebarSelection:
+      sidebarSelection?.type === "request" && doomed.has(sidebarSelection.id)
+        ? null
+        : sidebarSelection,
+  };
+}
+
 export function remapKvIds<T extends { id: string }>(list: T[]) {
   return list.map((item) => ({ ...item, id: uid() }));
 }

@@ -11,7 +11,7 @@ import {
   reorderByIndex,
   wouldCreateCycle,
 } from "@/services/tree-move";
-import { omitKeys, persistSession, reportDbWriteFailure } from "@/stores/shared";
+import { cleanupDeletedRequests, persistSession, reportDbWriteFailure } from "@/stores/shared";
 import type { SliceCreator } from "@/stores/types";
 
 export interface FoldersSlice {
@@ -78,15 +78,11 @@ export const createFoldersSlice: SliceCreator<FoldersSlice> = (set, get) => ({
         await db.folders.bulkDelete([...doomedFolderIds]);
       }),
     );
+    const cleanup = cleanupDeletedRequests(get, doomedRequestIds);
     set((s) => ({
       folders: s.folders.filter((folder) => !doomedFolderIds.has(folder.id)),
       requests: s.requests.filter((request) => !doomedRequestIds.includes(request.id)),
-      tabs: s.tabs.filter((tab) => !doomedRequestIds.includes(tab.requestId)),
-      sidebarSelection:
-        s.sidebarSelection?.type === "collection" && doomedFolderIds.has(s.sidebarSelection.id)
-          ? null
-          : s.sidebarSelection,
-      graphqlSchemas: omitKeys(s.graphqlSchemas, doomedRequestIds),
+      ...cleanup,
     }));
     persistSession(get);
   },
