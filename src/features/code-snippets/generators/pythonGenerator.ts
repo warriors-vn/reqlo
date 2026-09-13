@@ -16,7 +16,7 @@ export const pythonGenerator: SnippetGenerator = {
     monacoLanguage: "python",
   },
   generate: (context) => {
-    const sections = ["import requests"];
+    const imports = ["import requests"];
     const bodyLines: string[] = [];
     let requestArgument = "";
 
@@ -33,7 +33,11 @@ export const pythonGenerator: SnippetGenerator = {
         case "text":
           if (context.body.text) {
             if (isJsonContentType(context.body.contentType)) {
-              bodyLines.push(`payload = ${context.body.text}`);
+              // The body is JSON *text*, not Python source — pasting it in
+              // verbatim breaks on `true`/`false`/`null`, which aren't valid
+              // Python names. json.loads() parses the same text at runtime.
+              imports.push("import json");
+              bodyLines.push(`payload = json.loads(${JSON.stringify(context.body.text)})`);
               requestArgument = "json=payload,";
             } else {
               bodyLines.push(`payload = ${JSON.stringify(context.body.text)}`);
@@ -102,6 +106,6 @@ export const pythonGenerator: SnippetGenerator = {
       .filter(Boolean)
       .join("\n");
 
-    return joinSections(bodyLines.join("\n\n"), requestLines);
+    return joinSections(imports.join("\n"), bodyLines.join("\n\n"), requestLines);
   },
 };

@@ -24,11 +24,17 @@ export const fetchGenerator: SnippetGenerator = {
       switch (context.body.kind) {
         case "text":
           if (context.body.text) {
-            const bodyValue = isJsonContentType(context.body.contentType)
-              ? context.body.text
-              : quoteBacktick(context.body.text);
-            setup.push(`const body = ${bodyValue};`);
-            bodyProperty = "body,";
+            if (isJsonContentType(context.body.contentType)) {
+              // fetch's `body` has to be a string — passing the object
+              // literal itself sends the literal text "[object Object]"
+              // instead of the JSON. The object literal stays for
+              // readability; JSON.stringify happens where it's sent.
+              setup.push(`const body = ${context.body.text};`);
+              bodyProperty = "body: JSON.stringify(body),";
+            } else {
+              setup.push(`const body = ${quoteBacktick(context.body.text)};`);
+              bodyProperty = "body,";
+            }
           }
           break;
         case "urlencoded":
