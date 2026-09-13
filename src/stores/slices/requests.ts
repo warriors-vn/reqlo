@@ -23,7 +23,12 @@ import {
   resequenceRequests,
   sortRequestsForCollection,
 } from "@/services/tree-move";
-import { omitKeys, persistSession, reportDbWriteFailure, UNDO_GRACE_MS } from "@/stores/shared";
+import {
+  cleanupDeletedRequests,
+  persistSession,
+  reportDbWriteFailure,
+  UNDO_GRACE_MS,
+} from "@/stores/shared";
 import type { SliceCreator } from "@/stores/types";
 
 const recentlyDeletedRequests = new Map<string, ApiRequest>();
@@ -115,25 +120,12 @@ export const createRequestsSlice: SliceCreator<RequestsSlice> = (set, get) => ({
 
   deleteRequest: async (id) => {
     const deleted = get().requests.find((r) => r.id === id);
-    // A live socket would otherwise keep receiving into a session nothing can
-    // reach any more — and keep the connection open until the tab closes.
-    get().discardWebSocketSession(id);
     await reportDbWriteFailure(db.requests.delete(id));
-    set((s) => {
-      const nextTabs = s.tabs.filter((t) => t.requestId !== id);
-      const activeTabStillExists = !!nextTabs.find((tab) => tab.id === s.activeTabId);
-      return {
-        requests: s.requests.filter((r) => r.id !== id),
-        tabs: nextTabs,
-        activeTabId: activeTabStillExists ? s.activeTabId : (nextTabs[0]?.id ?? null),
-        sidebarSelection:
-          s.sidebarSelection?.type === "request" && s.sidebarSelection.id === id
-            ? null
-            : s.sidebarSelection,
-        graphqlSchemas: omitKeys(s.graphqlSchemas, [id]),
-        wsSessions: omitKeys(s.wsSessions, [id]),
-      };
-    });
+    const cleanup = cleanupDeletedRequests(get, [id]);
+    set((s) => ({
+      requests: s.requests.filter((r) => r.id !== id),
+      ...cleanup,
+    }));
     persistSession(get);
 
     if (!deleted) return;

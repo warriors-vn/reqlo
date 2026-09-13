@@ -10,7 +10,7 @@ import {
   type Folder,
 } from "@/services/db";
 import { getNextCollectionPosition, reorderByIndex } from "@/services/tree-move";
-import { omitKeys, persistSession, reportDbWriteFailure } from "@/stores/shared";
+import { cleanupDeletedRequests, persistSession, reportDbWriteFailure } from "@/stores/shared";
 import type { SliceCreator } from "@/stores/types";
 
 export interface CollectionsSlice {
@@ -149,26 +149,24 @@ export const createCollectionsSlice: SliceCreator<CollectionsSlice> = (set, get)
   deleteCollection: async (id) => {
     const reqs = get().requests.filter((r) => r.collectionId === id);
     const folders = get().folders.filter((f) => f.collectionId === id);
+    const doomedRequestIds = reqs.map((r) => r.id);
     await reportDbWriteFailure(
       db.transaction("rw", db.collections, db.folders, db.requests, async () => {
-        await db.requests.bulkDelete(reqs.map((r) => r.id));
+        await db.requests.bulkDelete(doomedRequestIds);
         await db.folders.bulkDelete(folders.map((f) => f.id));
         await db.collections.delete(id);
       }),
     );
+    const cleanup = cleanupDeletedRequests(get, doomedRequestIds);
     set((s) => ({
       collections: s.collections.filter((c) => c.id !== id),
       folders: s.folders.filter((f) => f.collectionId !== id),
       requests: s.requests.filter((r) => r.collectionId !== id),
-      tabs: s.tabs.filter((t) => !reqs.find((r) => r.id === t.requestId)),
+      ...cleanup,
       sidebarSelection:
-        s.sidebarSelection?.type === "collection" && s.sidebarSelection.id === id
+        cleanup.sidebarSelection?.type === "collection" && cleanup.sidebarSelection.id === id
           ? null
-          : s.sidebarSelection,
-      graphqlSchemas: omitKeys(
-        s.graphqlSchemas,
-        reqs.map((r) => r.id),
-      ),
+          : cleanup.sidebarSelection,
     }));
     persistSession(get);
   },
