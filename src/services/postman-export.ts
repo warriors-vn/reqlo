@@ -21,6 +21,7 @@ import type {
   PostmanRequest,
 } from "@/services/postman";
 import { inheritedContributions, resolveAncestors } from "@/services/inheritance";
+import { sanitizeRequestDefaultsForExport } from "@/services/portability";
 
 export interface PostmanExportResult {
   collection: PostmanCollection;
@@ -42,6 +43,14 @@ export function buildPostmanCollection(
 
   const byPosition = <T extends { position: number; createdAt: number }>(a: T, b: T) =>
     a.position - b.position || a.createdAt - b.createdAt;
+
+  for (const folder of scoped.folders) {
+    if (folder.defaults.variables.length > 0) {
+      warnings.push(
+        `"${folder.name}": its ${folder.defaults.variables.length} folder-level variable(s) weren't exported — Postman has no folder-level variables, only collection-level ones.`,
+      );
+    }
+  }
 
   function itemsFor(parentFolderId: string | null): PostmanItem[] {
     const childFolders = scoped.folders
@@ -66,6 +75,8 @@ export function buildPostmanCollection(
     return [...childFolders, ...childRequests];
   }
 
+  const sanitizedVariables = sanitizeRequestDefaultsForExport(collection.defaults).variables;
+
   return {
     collection: {
       info: {
@@ -74,6 +85,7 @@ export function buildPostmanCollection(
       },
       item: itemsFor(null),
       ...authItemFields(collection.defaults.auth),
+      ...(sanitizedVariables.length ? { variable: toPostmanKV(sanitizedVariables) } : {}),
     },
     warnings,
   };
