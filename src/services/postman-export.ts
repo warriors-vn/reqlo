@@ -56,16 +56,14 @@ export function buildPostmanCollection(
     const childFolders = scoped.folders
       .filter((folder) => folder.parentFolderId === parentFolderId)
       .sort(byPosition)
-      .map(
-        (folder): PostmanItem => ({
-          name: folder.name,
-          // Always an array, even when empty: an item WITHOUT `item` is a
-          // request to the importer, so an empty folder must still carry one
-          // or it comes back as a nameless request.
-          item: itemsFor(folder.id),
-          ...authItemFields(folder.defaults.auth),
-        }),
-      );
+      .map((folder): PostmanItem => ({
+        name: folder.name,
+        // Always an array, even when empty: an item WITHOUT `item` is a
+        // request to the importer, so an empty folder must still carry one
+        // or it comes back as a nameless request.
+        item: itemsFor(folder.id),
+        ...authItemFields(folder.defaults.auth),
+      }));
 
     const childRequests = scoped.requests
       .filter((request) => (request.folderId ?? null) === parentFolderId)

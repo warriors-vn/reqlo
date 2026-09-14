@@ -171,9 +171,7 @@ export async function beginAuthorizationCodeFlow(
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       const data = event.data as
-        | { source?: string; code?: string; state?: string; error?: string }
-        | null
-        | undefined;
+        { source?: string; code?: string; state?: string; error?: string } | null | undefined;
       if (!data || data.source !== POPUP_MESSAGE_SOURCE) return;
       settled = true;
       cleanup();

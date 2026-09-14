@@ -5,14 +5,7 @@ import { ensureSeed as ensureSeedImpl } from "./db-seed";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 export type RequestBodyType =
-  | "none"
-  | "json"
-  | "raw"
-  | "xml"
-  | "form-data"
-  | "x-www-form-urlencoded"
-  | "binary"
-  | "graphql";
+  "none" | "json" | "raw" | "xml" | "form-data" | "x-www-form-urlencoded" | "binary" | "graphql";
 
 export interface KV {
   id: string;

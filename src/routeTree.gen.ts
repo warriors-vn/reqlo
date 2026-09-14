@@ -10,22 +10,22 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as OauthCallbackRouteImport } from './routes/oauth.callback'
 import { Route as ApiProxyRouteImport } from './routes/api.proxy'
+import { Route as OauthCallbackRouteImport } from './routes/oauth.callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OauthCallbackRoute = OauthCallbackRouteImport.update({
-  id: '/oauth/callback',
-  path: '/oauth/callback',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiProxyRoute = ApiProxyRouteImport.update({
   id: '/api/proxy',
   path: '/api/proxy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OauthCallbackRoute = OauthCallbackRouteImport.update({
+  id: '/oauth/callback',
+  path: '/oauth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -68,18 +68,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/oauth/callback': {
-      id: '/oauth/callback'
-      path: '/oauth/callback'
-      fullPath: '/oauth/callback'
-      preLoaderRoute: typeof OauthCallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/proxy': {
       id: '/api/proxy'
       path: '/api/proxy'
       fullPath: '/api/proxy'
       preLoaderRoute: typeof ApiProxyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth/callback': {
+      id: '/oauth/callback'
+      path: '/oauth/callback'
+      fullPath: '/oauth/callback'
+      preLoaderRoute: typeof OauthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
