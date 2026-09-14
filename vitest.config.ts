@@ -25,15 +25,16 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      // Floor set at today's measured numbers (52.51/47.6/47.18/53.83 —
+      // Raised to today's measured numbers (61.97/55.55/55.01/63.72 —
       // rounded down so a fraction-of-a-percent fluctuation doesn't fail CI
-      // on its own) so this can only go up from here, per v1.5.1 Track C5.
-      // No prior coverage number existed to preserve; these are the first.
+      // on its own), per v1.5.2 Track C4. The jump from the v1.5.1 floor
+      // reflects both new tests (compare.ts, fuzzy.ts, download-response.ts)
+      // and the removal of dead UI scaffolding that carried no coverage.
       thresholds: {
-        statements: 52,
-        branches: 47,
-        functions: 47,
-        lines: 53,
+        statements: 61,
+        branches: 55,
+        functions: 55,
+        lines: 63,
       },
     },
   },
