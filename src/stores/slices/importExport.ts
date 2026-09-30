@@ -17,7 +17,7 @@ import { parseCurl } from "@/services/curl";
 import { looksLikePostmanCollection, parsePostmanCollection } from "@/services/postman";
 import { looksLikeInsomniaExport, parseInsomniaExport } from "@/services/insomnia";
 import { looksLikeHarLog, parseHarLog } from "@/services/har";
-import { looksLikeOpenApiDocument, parseOpenApiDocument } from "@/services/openapi";
+import { looksLikeOpenApiDocument, parseOpenApiDocument, parseSpecText } from "@/services/openapi";
 import { createSafetyBackup, restoreSafetyBackup } from "@/services/backups";
 import {
   exportCollection as buildCollectionExport,
@@ -316,17 +316,7 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
   importOpenApiText: async (text) => {
     const ws = get().workspace;
     if (!ws) return null;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      try {
-        const yaml = await import("js-yaml");
-        parsed = yaml.load(text);
-      } catch {
-        return null;
-      }
-    }
+    const parsed = await parseSpecText(text);
     if (!looksLikeOpenApiDocument(parsed)) return null;
     return commitImportedCollection(parseOpenApiDocument(parsed, ws.id), ws, set, get);
   },

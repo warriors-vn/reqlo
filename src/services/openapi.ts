@@ -10,6 +10,7 @@ import {
   type HttpMethod,
   type KV,
   type RequestAuth,
+  type RequestDefaults,
   type RequestBodyType,
 } from "@/services/db";
 
@@ -77,7 +78,10 @@ type OpenApiPathItem = { parameters?: OpenApiParameter[]; $ref?: string } & Part
 interface OpenApiDocument {
   openapi?: string;
   info?: { title?: string };
-  servers?: { url?: string }[];
+  servers?: {
+    url?: string;
+    variables?: Record<string, { default?: unknown }>;
+  }[];
   paths?: Record<string, OpenApiPathItem>;
   components?: {
     schemas?: Record<string, JsonSchemaLike>;
@@ -91,6 +95,36 @@ export interface OpenApiImportResult {
   folders: Folder[];
   requests: ApiRequest[];
   warnings: string[];
+  /** `baseUrl` from the server block, plus any path parameter the spec gives
+   * an example for, so a fresh import sends something real. */
+  collectionDefaults: RequestDefaults;
+}
+
+/** JSON first, then YAML — the two forms a spec file comes in. undefined when
+ * it's neither. */
+export async function parseSpecText(text: string): Promise<unknown> {
+  try {
+    return JSON.parse(text);
+  } catch {
+    try {
+      const yaml = await import("js-yaml");
+      return yaml.load(text);
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+/** Why a file that isn't an OpenAPI 3 document was turned away — a Swagger 2.0
+ * file is a common, fixable case and deserves better than "unrecognized". */
+export function describeRejectedSpec(raw: unknown): string {
+  if (raw === undefined || raw === null || typeof raw !== "object") {
+    return "Couldn't read this file as JSON or YAML.";
+  }
+  if ((raw as { swagger?: unknown }).swagger !== undefined) {
+    return "This is a Swagger 2.0 document, and reqlo imports OpenAPI 3.x. Convert it first — Swagger Editor's Edit → Convert to OpenAPI 3, or the swagger2openapi tool — then import the result.";
+  }
+  return "Not a recognized OpenAPI 3.0/3.1 document.";
 }
 
 export function looksLikeOpenApiDocument(raw: unknown): raw is OpenApiDocument {
@@ -201,6 +235,34 @@ export function parseOpenApiDocument(
     return template.replace(/\{([^}]+)\}/g, (_, name: string) => `{{${name}}}`);
   }
 
+  /**
+   * The first server, with `{name}` filled from that server's variable
+   * defaults. Kept out of every request URL and put in a `baseUrl` variable
+   * instead: a relative or missing server used to leave `/v1/users`, which
+   * fetch aims at reqlo's own origin, and a templated one left `{{region}}`
+   * with nothing defining it. Empty (and warned about) unless it is absolute.
+   */
+  function resolveServerUrl(): string {
+    const server = doc.servers?.[0];
+    if (!server?.url) {
+      warnings.push(
+        "This spec declares no server, so {{baseUrl}} was left empty — set it in your environment or the collection's variables.",
+      );
+      return "";
+    }
+    const url = server.url.replace(/\{([^}]+)\}/g, (_, name: string) => {
+      const fallback = server.variables?.[name]?.default;
+      return fallback === undefined || fallback === null ? `{{${name}}}` : String(fallback);
+    });
+    if (!/^https?:\/\//i.test(url)) {
+      warnings.push(
+        `The server "${server.url}" isn't an absolute URL, so {{baseUrl}} was left empty — set it to the full address, e.g. https://host${url.startsWith("/") ? url : `/${url}`}.`,
+      );
+      return "";
+    }
+    return url;
+  }
+
   function buildBody(
     requestBody: OpenApiRequestBody | undefined,
     requestName: string,
@@ -299,6 +361,8 @@ export function parseOpenApiDocument(
 
   const folders: Folder[] = [];
   const requests: ApiRequest[] = [];
+  const pathParamVariables = new Map<string, string>();
+  const baseUrl = resolveServerUrl();
   const tagFolderIds = new Map<string, string>();
   const positionCounters = new Map<string | null, number>();
 
@@ -338,7 +402,11 @@ export function parseOpenApiDocument(
     const name = operation.summary || operation.operationId || `${method} ${path}`;
     const mergedParams = mergeParameters(sharedParams, operation.parameters ?? []);
     const urlPath = convertPathParams(path);
-    const baseUrl = convertPathParams(doc.servers?.[0]?.url ?? "");
+    for (const param of mergedParams) {
+      if (param.in !== "path" || pathParamVariables.has(param.name)) continue;
+      const value = paramValue(param);
+      if (value) pathParamVariables.set(param.name, value);
+    }
     const { queryParams, headers } = paramsToQueryAndHeaders(mergedParams);
     const { bodyType, body, bodyDrafts } = buildBody(operation.requestBody, name);
     const auth = resolveAuth(operation.security, name);
@@ -352,7 +420,7 @@ export function parseOpenApiDocument(
       position,
       name,
       method,
-      url: `${baseUrl}${urlPath}`,
+      url: `{{baseUrl}}${urlPath}`,
       headers,
       queryParams,
       body,
@@ -386,11 +454,18 @@ export function parseOpenApiDocument(
     }
   }
 
+  const variables: KV[] = [];
+  if (baseUrl) variables.push({ id: uid(), key: "baseUrl", value: baseUrl, enabled: true });
+  for (const [key, value] of pathParamVariables) {
+    if (key !== "baseUrl") variables.push({ id: uid(), key, value, enabled: true });
+  }
+
   return {
     collectionName: doc.info?.title || "Imported from OpenAPI",
     folders,
     requests,
     warnings,
+    collectionDefaults: { ...createDefaultRequestDefaults(), variables },
   };
 }
 

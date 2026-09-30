@@ -108,3 +108,25 @@ describe("restoring a workspace backup", () => {
     expect(await db.requests.count()).toBe(1);
   });
 });
+
+describe("importing an OpenAPI spec", () => {
+  it("carries the server into the new collection as {{baseUrl}}", async () => {
+    await seedCurrentWorkspace();
+    const col = await useStore.getState().importOpenApiText(
+      JSON.stringify({
+        openapi: "3.0.3",
+        servers: [{ url: "https://api.example.com" }],
+        paths: { "/users/{id}": { get: { parameters: [{ name: "id", in: "path", example: 7 }] } } },
+      }),
+    );
+
+    expect(col).not.toBeNull();
+    const stored = await db.collections.get(col!.id);
+    expect(stored?.defaults.variables.map((v) => [v.key, v.value])).toEqual([
+      ["baseUrl", "https://api.example.com"],
+      ["id", "7"],
+    ]);
+    const requests = await db.requests.where("collectionId").equals(col!.id).toArray();
+    expect(requests[0].url).toBe("{{baseUrl}}/users/{{id}}");
+  });
+});
