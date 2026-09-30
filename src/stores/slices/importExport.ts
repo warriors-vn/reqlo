@@ -18,11 +18,13 @@ import { looksLikePostmanCollection, parsePostmanCollection } from "@/services/p
 import { looksLikeInsomniaExport, parseInsomniaExport } from "@/services/insomnia";
 import { looksLikeHarLog, parseHarLog } from "@/services/har";
 import { looksLikeOpenApiDocument, parseOpenApiDocument } from "@/services/openapi";
+import { createSafetyBackup, restoreSafetyBackup } from "@/services/backups";
 import {
   exportCollection as buildCollectionExport,
   exportWorkspace as buildWorkspaceExport,
   countCredentialsLeftOut,
   downloadJSON,
+  pickFile,
   redactHistoryCredentials,
   redactRequestCredentials,
   sanitizeCollectionForExport,
@@ -61,6 +63,12 @@ export interface ImportExportSlice {
   importHarLogJSON: (text: string) => Promise<Collection | null>;
   importOpenApiText: (text: string) => Promise<Collection | null>;
   importWorkspaceJSON: (text: string) => Promise<Workspace | null>;
+  /** The safety copy the latest restore took of what it replaced, for undo. */
+  lastRestoreBackupId: string | null;
+  /** The whole restore flow — confirm, pick a file, restore, report, offer
+   * undo — so the command palette and Settings share one path. */
+  restoreWorkspaceBackup: () => Promise<void>;
+  undoWorkspaceRestore: (backupId: string) => Promise<void>;
   exportCollectionById: (id: string) => Promise<void>;
   exportCollectionAsFilesById: (id: string) => Promise<void>;
   exportCollectionAsPostman: (id: string) => Promise<void>;
@@ -118,6 +126,8 @@ function collectionCredentialSources(
 }
 
 export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, get) => ({
+  lastRestoreBackupId: null,
+
   importCurl: async (text) => {
     const ws = get().workspace;
     if (!ws) return null;
@@ -437,10 +447,22 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
       // work fixed, just via a different door.
       .slice(0, HISTORY_RETENTION);
 
+    // Taken in the same transaction as the wipe: if the copy can't be made
+    // nothing is cleared, and if the restore fails the copy isn't kept either.
+    let safetyBackupId: string | null = null;
     await db.transaction(
       "rw",
-      [db.history, db.requests, db.folders, db.collections, db.environments, db.workspaces],
+      [
+        db.history,
+        db.requests,
+        db.folders,
+        db.collections,
+        db.environments,
+        db.workspaces,
+        db.backups,
+      ],
       async () => {
+        if (get().workspace) safetyBackupId = (await createSafetyBackup()).id;
         await db.history.clear();
         await db.requests.clear();
         await db.folders.clear();
@@ -478,7 +500,65 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
       },
     }));
     persistSession(get);
+    set({ lastRestoreBackupId: safetyBackupId });
     return workspace;
+  },
+
+  restoreWorkspaceBackup: async () => {
+    const confirmed = await get().requestConfirm({
+      title: "Restore a workspace backup?",
+      description:
+        "This replaces the current local workspace. A copy of it is kept so you can undo.",
+      confirmLabel: "Choose backup file",
+    });
+    if (!confirmed) return;
+    const text = await pickFile("application/json,.json");
+    if (!text) return;
+
+    let workspace: Workspace | null;
+    try {
+      workspace = await get().importWorkspaceJSON(text);
+    } catch {
+      toast.error("Restore failed", {
+        description: "Nothing was changed — your current workspace is still intact.",
+      });
+      return;
+    }
+    if (!workspace) {
+      toast.error("Restore failed", {
+        description: "The selected file is not a valid Reqlo workspace export.",
+      });
+      return;
+    }
+
+    const state = get();
+    const backupId = state.lastRestoreBackupId;
+    toast.success("Workspace restored", {
+      description: `${workspace.name} · ${state.requests.length} requests · ${state.environments.length} environments · ${state.history.length} history entries`,
+      duration: 15_000,
+      action: backupId
+        ? { label: "Undo", onClick: () => void get().undoWorkspaceRestore(backupId) }
+        : undefined,
+    });
+  },
+
+  undoWorkspaceRestore: async (backupId) => {
+    try {
+      if (!(await restoreSafetyBackup(backupId))) {
+        toast.error("Couldn't undo the restore", {
+          description: "The saved copy is no longer available.",
+        });
+        return;
+      }
+    } catch {
+      toast.error("Couldn't undo the restore", {
+        description: "Nothing was changed — the restored workspace is still in place.",
+      });
+      return;
+    }
+    resetPersistedSession();
+    await get().init();
+    toast.success("Restore undone", { description: "Your previous workspace is back." });
   },
 
   exportCollectionById: async (id) => {

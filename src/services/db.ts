@@ -298,6 +298,28 @@ export interface Environment {
   createdAt: number;
 }
 
+/**
+ * A raw copy of every table, taken before a restore wipes them. Raw rather
+ * than an export on purpose: exports blank credentials, and a safety copy
+ * that can't put back the tokens it replaced isn't one. It never leaves
+ * this browser.
+ */
+export interface WorkspaceBackup {
+  id: string;
+  createdAt: number;
+  reason: "before-restore";
+  workspaceName: string;
+  requestCount: number;
+  data: {
+    workspaces: Workspace[];
+    collections: Collection[];
+    folders: Folder[];
+    requests: ApiRequest[];
+    history: HistoryEntry[];
+    environments: Environment[];
+  };
+}
+
 export class ReqloDB extends Dexie {
   workspaces!: Table<Workspace, string>;
   collections!: Table<Collection, string>;
@@ -305,6 +327,7 @@ export class ReqloDB extends Dexie {
   requests!: Table<ApiRequest, string>;
   history!: Table<HistoryEntry, string>;
   environments!: Table<Environment, string>;
+  backups!: Table<WorkspaceBackup, string>;
 
   constructor() {
     super("reqlo");
@@ -699,5 +722,25 @@ export async function requestPersistentStorage(): Promise<boolean> {
     return await navigator.storage.persist();
   } catch {
     return false;
+  }
+}
+
+export interface StorageStatus {
+  /** null when the browser can't say. */
+  persistent: boolean | null;
+  usageBytes?: number;
+  quotaBytes?: number;
+}
+
+/** Whether the browser has promised not to evict this data — the difference
+ * between "local-first" and "cleared next time the disk fills up". */
+export async function getStorageStatus(): Promise<StorageStatus> {
+  if (typeof navigator === "undefined" || !navigator.storage) return { persistent: null };
+  try {
+    const persistent = navigator.storage.persisted ? await navigator.storage.persisted() : null;
+    const estimate = navigator.storage.estimate ? await navigator.storage.estimate() : undefined;
+    return { persistent, usageBytes: estimate?.usage, quotaBytes: estimate?.quota };
+  } catch {
+    return { persistent: null };
   }
 }

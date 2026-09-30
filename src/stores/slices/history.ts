@@ -83,9 +83,11 @@ export const createHistorySlice: SliceCreator<HistorySlice> = (set, get) => ({
       const tab = { id: uid(), requestId: restored.id };
       set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }));
     } else {
-      const confirmed = window.confirm(
-        `Restore this snapshot into "${existing.name}"? Its current contents will be overwritten.`,
-      );
+      const confirmed = await get().requestConfirm({
+        title: `Restore this snapshot into "${existing.name}"?`,
+        description: "Its current contents will be overwritten.",
+        confirmLabel: "Restore",
+      });
       if (!confirmed) return;
 
       const nextCollectionId = snapshot.collectionId;
