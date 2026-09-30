@@ -374,4 +374,19 @@ describe("handleProxyRequest", () => {
     expect(res.status).toBe(502);
     expect(res.headers.get(PROXIED_HEADER)).toBe("1");
   });
+
+  it("forwards the incoming request's abort signal to the upstream fetch", async () => {
+    const fetchMock = vi.fn(async (_url: URL, _init?: RequestInit) => new Response("ok"));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    const request = makeRequest("https://api.example.com", { signal: controller.signal });
+
+    await handleProxyRequest({ request });
+
+    const upstreamSignal = fetchMock.mock.calls[0][1]?.signal;
+    expect(upstreamSignal).toBeDefined();
+    expect(upstreamSignal?.aborted).toBe(false);
+    controller.abort();
+    expect(upstreamSignal?.aborted).toBe(true);
+  });
 });

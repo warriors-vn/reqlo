@@ -536,3 +536,73 @@ describe("executeRequest — streaming responses", () => {
     expect(result.body.endsWith("still going")).toBe(true);
   });
 });
+
+describe("executeRequest — what a failure is blamed on", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function proxied(body: string, headers: Record<string, string> = {}) {
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": "application/json", [PROXIED_HEADER]: "1", ...headers },
+    });
+  }
+
+  it("names an unparseable URL instead of claiming reqlo's server is down", async () => {
+    const fetchMock = vi.fn(async () => proxied("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeRequest(makeRequest({ url: "http://" }), null, NO_ANCESTORS);
+
+    expect(result.error).toContain("isn't a valid URL");
+    expect(result.error).not.toContain("reqlo's own server");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps a successful response when Content-Disposition has a malformed filename*", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        proxied("{}", { "content-disposition": "attachment; filename*=UTF-8''bad%E0%A4%A" }),
+      ),
+    );
+
+    const result = await executeRequest(makeRequest(), null, NO_ANCESTORS);
+
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(200);
+  });
+
+  it("doesn't tell the user to check reqlo is running for a non-network error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new RangeError("boom");
+      }),
+    );
+
+    const result = await executeRequest(makeRequest(), null, NO_ANCESTORS);
+
+    expect(result.error).toBe("Couldn't send this request: boom");
+  });
+
+  it("reports the response time without the post-response script's own run time", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => proxied("{}")),
+    );
+    const request = makeRequest({
+      postResponseScript: {
+        enabled: true,
+        // Burns time inside the sandbox, after the response has arrived.
+        source: "const end = Date.now() + 150; while (Date.now() < end) {}",
+      },
+    });
+
+    const result = await executeRequest(request, null, NO_ANCESTORS);
+
+    expect(result.postScriptError).toBeUndefined();
+    expect(result.durationMs).toBeLessThan(150);
+  });
+});

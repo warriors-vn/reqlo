@@ -91,7 +91,16 @@ function sendFile(res, path, info, { immutable }) {
 
 /** Node's IncomingMessage → a WHATWG Request, so the proxy handler stays the
  * exact same code the TanStack route and its unit tests use. */
-function toWebRequest(req) {
+function toWebRequest(req, res) {
+  // Aborts when the client goes away before the response is finished — a
+  // Cancel in the UI, a request timeout, a closed tab. The proxy handler
+  // forwards this signal to its upstream fetch, so the target connection is
+  // dropped too instead of running on with nobody listening.
+  const controller = new AbortController();
+  res.on("close", () => {
+    if (!res.writableFinished) controller.abort();
+  });
+
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   return new Request(url, {
@@ -103,6 +112,7 @@ function toWebRequest(req) {
     ),
     body: hasBody ? Readable.toWeb(req) : undefined,
     duplex: "half",
+    signal: controller.signal,
   });
 }
 
@@ -116,7 +126,11 @@ async function sendWebResponse(res, webResponse) {
     res.end();
     return;
   }
-  Readable.fromWeb(webResponse.body).pipe(res);
+  Readable.fromWeb(webResponse.body)
+    // An aborted upstream (see toWebRequest) errors this stream mid-body. An
+    // unhandled stream error would take the whole server down with it.
+    .on("error", () => res.destroy())
+    .pipe(res);
 }
 
 const server = createServer((req, res) => {
@@ -125,7 +139,7 @@ const server = createServer((req, res) => {
 
     if (path === "/api/proxy") {
       try {
-        await sendWebResponse(res, await handleProxyRequest({ request: toWebRequest(req) }));
+        await sendWebResponse(res, await handleProxyRequest({ request: toWebRequest(req, res) }));
       } catch (error) {
         console.error(error);
         res.writeHead(500, { "content-type": "application/json" });
