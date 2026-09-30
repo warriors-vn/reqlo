@@ -243,6 +243,9 @@ export interface ApiRequest {
   postResponseScript: ScriptConfig;
   /** Milliseconds before Send auto-aborts an in-flight request. 0 = no timeout. */
   timeoutMs: number;
+  /** Whether a 3xx is followed on send. Absent means yes; only an explicit
+   * `false` hands the redirect itself back. */
+  followRedirects?: boolean;
   favorite?: boolean;
   createdAt: number;
   updatedAt: number;

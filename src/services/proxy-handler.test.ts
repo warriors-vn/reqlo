@@ -5,6 +5,7 @@ import {
   encodeUpstreamHeaders,
   PROXIED_HEADER,
   PROXY_ERROR_HEADER,
+  PROXY_FOLLOW_REDIRECTS_HEADER,
   PROXY_TARGET_HEADER,
   UPSTREAM_HEADERS_HEADER,
 } from "@/services/proxy-constants";
@@ -206,6 +207,36 @@ describe("handleProxyRequest", () => {
     expect(seen).toEqual(["https://api.example.com/", "https://api.example.com/moved"]);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("final");
+  });
+
+  it("hands the 3xx back untouched when told not to follow", async () => {
+    const seen: string[] = [];
+    const forwarded: Headers[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        seen.push(url.toString());
+        forwarded.push(new Headers(init?.headers));
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://api.example.com/moved" },
+        });
+      }),
+    );
+
+    const res = await handleProxyRequest({
+      request: makeRequest("https://api.example.com", {
+        headers: { [PROXY_FOLLOW_REDIRECTS_HEADER]: "0" },
+      }),
+    });
+
+    expect(seen).toEqual(["https://api.example.com/"]);
+    expect(res.status).toBe(302);
+    expect(decodeUpstreamHeaders(res.headers.get(UPSTREAM_HEADERS_HEADER))?.location).toBe(
+      "https://api.example.com/moved",
+    );
+    // The control header is for the proxy, not the target.
+    expect(forwarded[0].has(PROXY_FOLLOW_REDIRECTS_HEADER)).toBe(false);
   });
 
   it("refuses to follow a redirect into a private address when hardening is on", async () => {

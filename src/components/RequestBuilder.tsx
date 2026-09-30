@@ -20,6 +20,7 @@ import { Send, Square, ChevronDown, Plug, Unplug } from "lucide-react";
 import { motion } from "framer-motion";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { TimeoutControl } from "@/components/request-builder/TimeoutControl";
+import { FollowRedirectsControl } from "@/components/request-builder/FollowRedirectsControl";
 import {
   WebSocketHeadersNotice,
   WebSocketAuthNotice,
@@ -264,6 +265,12 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
         )}
         {/* A WebSocket connection stays open until it's closed — there is no
             single exchange for a send timeout to bound. */}
+        {!isWebSocket && (
+          <FollowRedirectsControl
+            follow={request.followRedirects !== false}
+            onChange={(follow) => void updateRequest(request.id, { followRedirects: follow })}
+          />
+        )}
         {!isWebSocket && (
           <TimeoutControl
             timeoutMs={request.timeoutMs}
