@@ -593,6 +593,36 @@ describe("executeRequest — what a failure is blamed on", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("refuses to send when a missing {{baseUrl}} would aim the request at reqlo itself", async () => {
+    const fetchMock = vi.fn(async () => proxied("<html>reqlo 404</html>"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeRequest(
+      makeRequest({ url: "{{baseUrl}}/users" }),
+      null,
+      NO_ANCESTORS,
+    );
+
+    expect(result.error).toContain("{{baseUrl}}");
+    expect(result.error).toContain("no host");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("still sends when a variable is missing from the path, not the host", async () => {
+    const fetchMock = vi.fn(async () => proxied("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeRequest(
+      makeRequest({ url: "https://api.example.com/users/{{id}}" }),
+      null,
+      NO_ANCESTORS,
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalled();
+    expect(result.unresolvedVariables).toEqual(["id"]);
+  });
+
   it("keeps a successful response when Content-Disposition has a malformed filename*", async () => {
     vi.stubGlobal(
       "fetch",

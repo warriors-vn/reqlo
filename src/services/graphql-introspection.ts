@@ -6,6 +6,8 @@ import { PROXIED_HEADER } from "@/services/proxy-constants";
 import {
   applyPreRequestScript,
   buildResolvedRequestArtifacts,
+  findMissingHostVariables,
+  setHeader,
 } from "@/features/code-snippets/utils/request-resolver";
 
 export type IntrospectionResult =
@@ -51,10 +53,23 @@ export async function fetchIntrospectionSchema(
 
   const { resolved, scriptHeaderPatch } = scriptOutcome;
   if (!resolved.url) return { ok: false, error: "This request has no URL to introspect." };
+  const missingHost = findMissingHostVariables(
+    request.url,
+    resolved.url,
+    resolved.unresolvedVariables,
+  );
+  if (missingHost.length) {
+    return {
+      ok: false,
+      error: `${missingHost.map((name) => `{{${name}}}`).join(", ")} isn't defined, so this request has no host to send to.`,
+    };
+  }
 
   const headers = { ...resolved.resolvedHeaders };
   setJsonContentType(headers);
-  if (scriptHeaderPatch) Object.assign(headers, scriptHeaderPatch);
+  if (scriptHeaderPatch) {
+    for (const [name, value] of Object.entries(scriptHeaderPatch)) setHeader(headers, name, value);
+  }
 
   // Through reqlo's own proxy, exactly like a normal send (executor.ts) — an
   // introspection call is a cross-origin POST like any other, and pointing it

@@ -63,6 +63,8 @@ function isBlockedIpv4(h: string): boolean {
   if (a === 10) return true; // 10.0.0.0/8
   if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
   if (a === 192 && b === 168) return true; // 192.168.0.0/16
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 (CGNAT: Tailscale, some VPCs)
+  if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 (benchmarking)
   return false;
 }
 
@@ -117,6 +119,48 @@ export function isPrivateHost(hostname: string): boolean {
   if (/^f[cd][0-9a-f]{2}:/.test(h)) return true; // fc00::/7
 
   return false;
+}
+
+const DEFAULT_MAX_BODY_BYTES = 50 * 1024 * 1024;
+
+/** REQLO_MAX_BODY_BYTES, or 50 MB. The body is buffered whole (see below), so
+ * without a cap a public deployment can be made to hold whatever it's sent. */
+function maxBodyBytes(): number {
+  const raw = typeof process !== "undefined" ? process.env?.REQLO_MAX_BODY_BYTES : undefined;
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_MAX_BODY_BYTES;
+}
+
+class BodyTooLargeError extends Error {}
+
+/** Reads the request body, giving up as soon as it passes `limit` — a declared
+ * Content-Length is checked first, but it can be absent or wrong, so the count
+ * is enforced while reading too. */
+async function readBodyCapped(request: Request, limit: number): Promise<ArrayBuffer> {
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > limit) throw new BodyTooLargeError();
+  if (!request.body) return new ArrayBuffer(0);
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel().catch(() => {});
+      throw new BodyTooLargeError();
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out.buffer;
 }
 
 function isBlockedHost(hostname: string): boolean {
@@ -222,9 +266,16 @@ export async function handleProxyRequest({ request }: { request: Request }): Pro
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   let body: ArrayBuffer | undefined;
   if (hasBody) {
+    const limit = maxBodyBytes();
     try {
-      body = await request.arrayBuffer();
+      body = await readBodyCapped(request, limit);
     } catch (error) {
+      if (error instanceof BodyTooLargeError) {
+        return proxyErrorResponse(
+          413,
+          `The request body is larger than this server accepts (${Math.round(limit / (1024 * 1024))} MB). Raise REQLO_MAX_BODY_BYTES to allow more.`,
+        );
+      }
       const message = error instanceof Error ? error.message : String(error);
       return proxyErrorResponse(400, `Couldn't read the request body: ${message}`);
     }
