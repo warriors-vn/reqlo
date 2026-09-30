@@ -405,7 +405,9 @@ export function ResponseViewer({
                       className="grid gap-2 px-4 py-3 font-mono text-2xs md:grid-cols-[220px_1fr]"
                     >
                       <span className="truncate text-muted-foreground">{key}</span>
-                      <span className="break-all text-foreground/90">{value}</span>
+                      <span className="whitespace-pre-line break-all text-foreground/90">
+                        {value}
+                      </span>
                     </div>
                   ))}
                 </div>

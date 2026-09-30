@@ -3,7 +3,13 @@ import { NO_ANCESTORS } from "@/services/inheritance";
 import { executeRequest } from "@/services/executor";
 import { normalizeApiRequest, uid, type ApiRequest, type HttpMethod } from "@/services/db";
 import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
-import { PROXIED_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
+import {
+  encodeUpstreamHeaders,
+  PROXIED_HEADER,
+  PROXY_ERROR_HEADER,
+  PROXY_TARGET_HEADER,
+  UPSTREAM_HEADERS_HEADER,
+} from "@/services/proxy-constants";
 
 function makeRequest(overrides: Partial<ApiRequest> = {}): ApiRequest {
   const now = Date.now();
@@ -604,5 +610,85 @@ describe("executeRequest — what a failure is blamed on", () => {
 
     expect(result.postScriptError).toBeUndefined();
     expect(result.durationMs).toBeLessThan(150);
+  });
+});
+
+describe("executeRequest — the proxy's answer vs. the target's", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reports a proxy-made error as a failed send, not as an HTTP 502 response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: "Couldn't connect to nope.invalid: DNS." }), {
+            status: 502,
+            headers: {
+              "content-type": "application/json",
+              [PROXIED_HEADER]: "1",
+              [PROXY_ERROR_HEADER]: "1",
+            },
+          }),
+      ),
+    );
+
+    const result = await executeRequest(makeRequest(), null, NO_ANCESTORS);
+
+    expect(result.status).toBeNull();
+    expect(result.error).toBe("Couldn't connect to nope.invalid: DNS.");
+    expect(result.body).toBe("");
+  });
+
+  it("still shows a 502 the target itself returned as a normal response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("bad gateway", {
+            status: 502,
+            headers: { "content-type": "text/plain", [PROXIED_HEADER]: "1" },
+          }),
+      ),
+    );
+
+    const result = await executeRequest(makeRequest(), null, NO_ANCESTORS);
+
+    expect(result.status).toBe(502);
+    expect(result.error).toBeUndefined();
+    expect(result.body).toBe("bad gateway");
+  });
+
+  it("shows the target's own headers rather than the proxy hop's", async () => {
+    const upstream = new Headers({
+      "content-type": "application/json",
+      "cache-control": "max-age=60",
+    });
+    upstream.append("set-cookie", "sid=1");
+    upstream.append("set-cookie", "theme=dark");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("{}", {
+            headers: {
+              "content-type": "application/json",
+              "cache-control": "no-store",
+              vary: "Origin",
+              [PROXIED_HEADER]: "1",
+              [UPSTREAM_HEADERS_HEADER]: encodeUpstreamHeaders(upstream) ?? "",
+            },
+          }),
+      ),
+    );
+
+    const result = await executeRequest(makeRequest(), null, NO_ANCESTORS);
+
+    expect(result.headers).toEqual({
+      "content-type": "application/json",
+      "cache-control": "max-age=60",
+      "set-cookie": "sid=1\ntheme=dark",
+    });
   });
 });

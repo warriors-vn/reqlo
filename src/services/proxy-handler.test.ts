@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleProxyRequest } from "@/services/proxy-handler";
-import { PROXIED_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
+import {
+  decodeUpstreamHeaders,
+  encodeUpstreamHeaders,
+  PROXIED_HEADER,
+  PROXY_ERROR_HEADER,
+  PROXY_TARGET_HEADER,
+  UPSTREAM_HEADERS_HEADER,
+} from "@/services/proxy-constants";
 
 function makeRequest(target: string | null, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
@@ -388,5 +395,78 @@ describe("handleProxyRequest", () => {
     expect(upstreamSignal?.aborted).toBe(false);
     controller.abort();
     expect(upstreamSignal?.aborted).toBe(true);
+  });
+
+  it("marks its own errors so the client can tell them from the target's answer", async () => {
+    const missing = await handleProxyRequest({ request: makeRequest(null) });
+    expect(missing.headers.get(PROXY_ERROR_HEADER)).toBe("1");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("upstream says no", { status: 502 })),
+    );
+    const relayed = await handleProxyRequest({ request: makeRequest("https://api.example.com") });
+    expect(relayed.status).toBe(502);
+    expect(relayed.headers.has(PROXY_ERROR_HEADER)).toBe(false);
+  });
+
+  it("says why it couldn't connect, from the fetch error's cause", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(new Error("getaddrinfo ENOTFOUND nope.invalid"), {
+            code: "ENOTFOUND",
+          }),
+        });
+      }),
+    );
+
+    const res = await handleProxyRequest({ request: makeRequest("https://nope.invalid/x") });
+    const { error } = (await res.json()) as { error: string };
+
+    expect(res.headers.get(PROXY_ERROR_HEADER)).toBe("1");
+    expect(error).toContain("nope.invalid");
+    expect(error).toContain("DNS lookup failed");
+    expect(error).toContain("ENOTFOUND");
+    expect(error).not.toBe("fetch failed");
+  });
+
+  it("carries the target's untouched headers in an encoded copy, cookies included", async () => {
+    const upstreamHeaders = new Headers({
+      "cache-control": "max-age=60",
+      "content-encoding": "gzip",
+      "x-note": "café",
+    });
+    upstreamHeaders.append("set-cookie", "a=1; Path=/");
+    upstreamHeaders.append("set-cookie", "b=2; HttpOnly");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("ok", { headers: upstreamHeaders })),
+    );
+
+    const res = await handleProxyRequest({ request: makeRequest("https://api.example.com") });
+
+    // The transport copy is reqlo's: never cached, and no third-party cookies
+    // handed to the browser for reqlo's own origin.
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.has("set-cookie")).toBe(false);
+
+    const decoded = decodeUpstreamHeaders(res.headers.get(UPSTREAM_HEADERS_HEADER));
+    expect(decoded).toMatchObject({
+      "cache-control": "max-age=60",
+      "content-encoding": "gzip",
+      "x-note": "café",
+      "set-cookie": "a=1; Path=/\nb=2; HttpOnly",
+    });
+    expect(decoded).not.toHaveProperty(PROXIED_HEADER);
+  });
+});
+
+describe("upstream header encoding", () => {
+  it("leaves the copy off when it would be too large, and decodes garbage to null", () => {
+    expect(encodeUpstreamHeaders(new Headers({ "x-big": "y".repeat(20_000) }))).toBeNull();
+    expect(decodeUpstreamHeaders("not base64 json")).toBeNull();
+    expect(decodeUpstreamHeaders(null)).toBeNull();
   });
 });

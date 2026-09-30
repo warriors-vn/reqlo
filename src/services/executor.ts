@@ -5,8 +5,17 @@ import {
 } from "@/features/code-snippets/utils/request-resolver";
 import { fetchClientCredentialsToken, refreshOAuth2Token } from "@/services/oauth2";
 import { isTextualResponse, type ExecutionResult, type ResponseKind } from "@/services/execution";
-import { PROXIED_HEADER } from "@/services/proxy-constants";
-import { fetchViaProxy, ProxyUnavailableError } from "@/services/proxy-client";
+import {
+  decodeUpstreamHeaders,
+  PROXIED_HEADER,
+  UPSTREAM_HEADERS_HEADER,
+} from "@/services/proxy-constants";
+import {
+  fetchViaProxy,
+  ProxyTargetError,
+  ProxyUnavailableError,
+  throwIfProxyError,
+} from "@/services/proxy-client";
 import type { RequestAncestors } from "@/services/inheritance";
 import type { ScriptResponseContext, ScriptTestResult } from "@/services/scripting";
 
@@ -184,10 +193,19 @@ export async function executeRequest(
     if (!res.headers.has(PROXIED_HEADER)) {
       throw new ProxyUnavailableError();
     }
-    const respHeaders: Record<string, string> = {};
-    res.headers.forEach((v, k) => {
-      respHeaders[k] = v;
-    });
+    await throwIfProxyError(res);
+    // The target's own headers, as the proxy recorded them. The headers on
+    // `res` itself also carry the browser↔reqlo hop (cache-control: no-store,
+    // connection, vary, the proxy markers) and never carry set-cookie. The
+    // fallback is for a proxy that left the copy off as too large.
+    let respHeaders = decodeUpstreamHeaders(res.headers.get(UPSTREAM_HEADERS_HEADER));
+    if (!respHeaders) {
+      respHeaders = {};
+      const raw = respHeaders;
+      res.headers.forEach((v, k) => {
+        raw[k] = v;
+      });
+    }
     const contentType = respHeaders["content-type"] || "";
     const { blob, body, sizeBytes } = await readResponseBody(res, contentType, (text) =>
       options?.onStreamChunk?.(text, contentType),
@@ -327,7 +345,13 @@ function oauth2FailureResult(started: number, message: string): ExecutionResult 
 function describeSendFailure(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
 
-  if (e instanceof ProxyUnavailableError || e instanceof InvalidUrlError) return e.message;
+  if (
+    e instanceof ProxyUnavailableError ||
+    e instanceof InvalidUrlError ||
+    e instanceof ProxyTargetError
+  ) {
+    return e.message;
+  }
 
   // Only a TypeError can be the browser's "fetch failed" for the same-origin
   // call to /api/proxy. Anything else is a bug or bad input on this side, and

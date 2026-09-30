@@ -1,4 +1,4 @@
-import { PROXY_TARGET_HEADER } from "@/services/proxy-constants";
+import { PROXY_ERROR_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
 
 /**
  * Thrown when /api/proxy answered without the marker header — meaning nothing
@@ -56,4 +56,33 @@ export function fetchViaProxy(
   // outright. The server route also sends Cache-Control: no-store; this is
   // belt-and-suspenders on the request side.
   return fetch("/api/proxy", { ...init, headers, signal, cache: "no-store" });
+}
+
+/**
+ * Thrown for a response /api/proxy produced itself rather than relayed — it
+ * couldn't connect to the target, refused it, or was handed a bad one. The
+ * status on such a response (a 502, a 400) is reqlo's, not the API's, so it
+ * must surface as a failed send and never as a response to inspect.
+ */
+export class ProxyTargetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProxyTargetError";
+  }
+}
+
+/** Throws ProxyTargetError if `res` is the proxy's own error; otherwise
+ * leaves `res` untouched and unread. */
+export async function throwIfProxyError(res: Response): Promise<void> {
+  if (!res.headers.has(PROXY_ERROR_HEADER)) return;
+  let message = "";
+  try {
+    const parsed = (await res.json()) as { error?: unknown };
+    if (typeof parsed.error === "string") message = parsed.error;
+  } catch {
+    // fall through to the generic message
+  }
+  throw new ProxyTargetError(
+    message || `reqlo's proxy couldn't complete the request (${res.status}).`,
+  );
 }
