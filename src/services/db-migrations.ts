@@ -350,4 +350,17 @@ export function registerMigrations(dexie: ReqloDB, helpers: MigrationHelpers): v
           }
         });
     });
+  // A safety copy of the workspace, taken right before a restore replaces it.
+  dexie.version(15).stores({
+    workspaces: "id, updatedAt",
+    collections: "id, workspaceId, position",
+    folders:
+      "id, workspaceId, collectionId, parentFolderId, position, [collectionId+parentFolderId+position]",
+    requests:
+      "id, workspaceId, collectionId, folderId, position, updatedAt, method, bodyType, favorite, [workspaceId+collectionId+position]",
+    history:
+      "id, workspaceId, requestId, executedAt, method, status, favorite, pinned, [workspaceId+executedAt], [workspaceId+method], [workspaceId+status], [workspaceId+pinned], [workspaceId+favorite]",
+    environments: "id, workspaceId",
+    backups: "id, createdAt",
+  });
 }

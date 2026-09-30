@@ -383,37 +383,7 @@ export function registerBuiltInCommands(): () => void {
       category: "import-export",
       icon: Upload,
       shortcut: "mod+alt+shift+o",
-      run: async () => {
-        if (
-          !(await confirmDanger(
-            "Restore a workspace backup? This will replace the current local workspace.",
-          ))
-        )
-          return;
-        const text = await pickFile("application/json,.json");
-        if (!text) return;
-
-        let workspace: Workspace | null;
-        try {
-          workspace = await s().importWorkspaceJSON(text);
-        } catch {
-          toast.error("Restore failed", {
-            description: "Nothing was changed — your current workspace is still intact.",
-          });
-          return;
-        }
-        if (!workspace) {
-          toast.error("Restore failed", {
-            description: "The selected file is not a valid Reqlo workspace export.",
-          });
-          return;
-        }
-
-        const state = s();
-        toast.success("Workspace restored", {
-          description: `${workspace.name} · ${state.requests.length} requests · ${state.environments.length} environments`,
-        });
-      },
+      run: () => s().restoreWorkspaceBackup(),
     },
     {
       id: "export.collection",
