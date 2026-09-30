@@ -169,6 +169,15 @@ export async function executeRequest(
       init.body = serializedBody.body;
     }
 
+    // A URL that can't even be parsed is the user's to fix, not a sign the
+    // server is down — say so before the proxy fetch turns it into a TypeError
+    // that reads exactly like a network failure.
+    try {
+      new URL(url, globalThis.location?.origin);
+    } catch {
+      throw new InvalidUrlError(url);
+    }
+
     // Every send goes through reqlo's own server. Nothing is attempted
     // directly from the browser first — see fetchViaProxy for why.
     const res = await fetchViaProxy(url, init, controller.signal);
@@ -184,12 +193,16 @@ export async function executeRequest(
       options?.onStreamChunk?.(text, contentType),
     );
     const responseKind = detectResponseKind(contentType, res.status, sizeBytes);
+    // Taken here, before the post-response script: that script lazy-loads
+    // QuickJS on first use and may run for up to 2s, and none of that is the
+    // API's response time.
+    const durationMs = performance.now() - started;
 
     const post = await applyPostResponseScript(effectiveReq, resolved, {
       status: res.status,
       statusText: res.statusText,
       ok: res.ok,
-      durationMs: performance.now() - started,
+      durationMs,
       headers: respHeaders,
       body: isTextualResponse(responseKind) ? body : "",
     });
@@ -202,7 +215,7 @@ export async function executeRequest(
     return {
       status: res.status,
       statusText: res.statusText,
-      durationMs: performance.now() - started,
+      durationMs,
       sizeBytes,
       headers: respHeaders,
       body: isTextualResponse(responseKind) ? body : "",
@@ -314,7 +327,13 @@ function oauth2FailureResult(started: number, message: string): ExecutionResult 
 function describeSendFailure(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
 
-  if (e instanceof ProxyUnavailableError) return e.message;
+  if (e instanceof ProxyUnavailableError || e instanceof InvalidUrlError) return e.message;
+
+  // Only a TypeError can be the browser's "fetch failed" for the same-origin
+  // call to /api/proxy. Anything else is a bug or bad input on this side, and
+  // telling the user to check that reqlo is running would send them looking
+  // in the wrong place.
+  if (!(e instanceof TypeError)) return `Couldn't send this request: ${msg}`;
 
   if (globalThis.navigator?.onLine === false) {
     return (
@@ -323,12 +342,20 @@ function describeSendFailure(e: unknown): string {
     );
   }
 
-  // The only fetch this function ever describes now is the same-origin one to
-  // /api/proxy, so the old CORS and mixed-content branches can't apply: CORS
-  // never applies to a same-origin request, and the target's own scheme is
-  // the server's problem, not the browser's. A failure here means reqlo's own
-  // server didn't answer.
+  // The only fetch this describes is the same-origin one to /api/proxy, so
+  // CORS can't apply and the target's own scheme is the server's problem, not
+  // the browser's. A failure here means reqlo's own server didn't answer.
   return `Couldn't reach reqlo's own server to send this request: ${msg}. Check that reqlo is still running.`;
+}
+
+/** The resolved URL isn't something `new URL` can parse (e.g. "http://"). */
+export class InvalidUrlError extends Error {
+  constructor(url: string) {
+    super(
+      `"${url}" isn't a valid URL. Check it for typos, or a variable that resolved to nothing.`,
+    );
+    this.name = "InvalidUrlError";
+  }
 }
 
 async function buildMockResult(mock: MockConfig, signal?: AbortSignal): Promise<ExecutionResult> {
@@ -466,7 +493,14 @@ function getDownloadFilename(contentDisposition?: string) {
   if (!contentDisposition) return null;
 
   const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
-  if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1]);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      // A malformed %-escape must not turn a successful response into an
+      // error — fall through to the plain filename, or none.
+    }
+  }
 
   const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
   return plainMatch?.[1] ?? null;

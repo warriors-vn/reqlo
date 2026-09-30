@@ -203,6 +203,10 @@ export async function handleProxyRequest({ request }: { request: Request }): Pro
         // sail straight past it. Following the chain here instead means every
         // hop gets validated below, exactly like the original target.
         redirect: "manual",
+        // The browser hanging up (Cancel, or the request's own timeout) aborts
+        // request.signal. Without forwarding it, the upstream call keeps
+        // running — forever, for an SSE or long-poll target.
+        signal: request.signal,
       } as RequestInit)) as Response;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
