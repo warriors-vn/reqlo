@@ -42,7 +42,9 @@ export async function buildCollectionFileTree(collection: Collection): Promise<G
   ]);
   folders.sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
   rawRequests.sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
-  const requests = await Promise.all(rawRequests.map(sanitizeRequestForExport));
+  const requests = await Promise.all(
+    rawRequests.map((request) => sanitizeRequestForExport(request)),
+  );
   const sanitizedCollection = sanitizeCollectionForExport(collection);
 
   const files: GitExportFile[] = [

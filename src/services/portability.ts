@@ -10,6 +10,8 @@ import {
   type Environment,
   type Folder,
   type HistoryEntry,
+  type KV,
+  type RequestAuth,
   type RequestDefaults,
   type StoredFileBlob,
   type Workspace,
@@ -57,7 +59,7 @@ export async function exportCollection(collection: Collection): Promise<Collecti
     exportedAt: Date.now(),
     collection: sanitizeCollectionForExport(collection),
     folders: folders.map(sanitizeFolderForExport),
-    requests: await Promise.all(requests.map(sanitizeRequestForExport)),
+    requests: await Promise.all(requests.map((request) => sanitizeRequestForExport(request))),
   };
 }
 
@@ -88,9 +90,9 @@ export async function exportWorkspace(workspace: Workspace): Promise<WorkspaceEx
     workspace: sanitizeWorkspaceForExport(workspace),
     collections: collections.map(sanitizeCollectionForExport),
     folders: folders.map(sanitizeFolderForExport),
-    requests: await Promise.all(requests.map(sanitizeRequestForExport)),
+    requests: await Promise.all(requests.map((request) => sanitizeRequestForExport(request))),
     environments: environments.map(sanitizeEnvironmentForExport),
-    history: await Promise.all(history.map(sanitizeHistoryForExport)),
+    history: await Promise.all(history.map((entry) => sanitizeHistoryForExport(entry))),
   };
 }
 
@@ -165,17 +167,99 @@ export function sanitizeWorkspaceForExport(workspace: Workspace): Workspace {
   };
 }
 
-/** Blanks secret variables in a collection/folder's `defaults` — the same
- * treatment `sanitizeEnvironmentForExport`/`sanitizeWorkspaceForExport` give
- * environment and global variables. `defaults.auth` is left as-is: a
- * request's own auth is already exported in full today, and changing that is
- * a separate decision from closing this specific leak. */
+/** Request headers whose value is a credential in itself. */
+const CREDENTIAL_HEADERS = new Set([
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+  "x-api-key",
+  "x-auth-token",
+]);
+
+/**
+ * A credential typed straight into a field is a secret; one written as
+ * `{{token}}` is only a pointer to a variable, which has its own `secret`
+ * flag and is handled where variables are exported. Only the first is
+ * blanked — the second is exactly how a shared collection is meant to carry
+ * auth, and blanking it would break the collection for no gain.
+ */
+function isLiteralCredential(value: string | undefined): value is string {
+  return !!value && !value.includes("{{");
+}
+
+const redact = (value: string | undefined) => (isLiteralCredential(value) ? "" : value);
+
+/**
+ * Auth as it should leave this machine: literal passwords, tokens, API key
+ * values and OAuth client secrets blanked, and the cached OAuth token dropped
+ * outright — an access/refresh token pair is a live session, tied to the
+ * user who signed in, and has no business in a file meant for someone else.
+ * Usernames, key names, client ids and URLs stay: they're configuration.
+ */
+export function sanitizeAuthForExport(auth: RequestAuth): RequestAuth {
+  const next: RequestAuth = { ...auth };
+  if ("password" in next) next.password = redact(next.password);
+  if ("token" in next) next.token = redact(next.token);
+  if ("value" in next) next.value = redact(next.value);
+  if (next.oauth2) {
+    const { cachedToken: _cachedToken, ...config } = next.oauth2;
+    next.oauth2 = { ...config, clientSecret: redact(config.clientSecret) };
+  }
+  return next;
+}
+
+function sanitizeHeadersForExport(headers: KV[]): KV[] {
+  return headers.map((header) =>
+    CREDENTIAL_HEADERS.has(header.key.trim().toLowerCase()) && isLiteralCredential(header.value)
+      ? { ...header, value: "" }
+      : header,
+  );
+}
+
+function countAuthCredentials(auth: RequestAuth): number {
+  return (
+    [auth.password, auth.token, auth.value, auth.oauth2?.clientSecret].filter(isLiteralCredential)
+      .length + (auth.oauth2?.cachedToken ? 1 : 0)
+  );
+}
+
+/** How many values the sanitizers below will blank across these requests and
+ * collection/folder defaults — so an export can say what it left out instead
+ * of handing over a file that quietly no longer authenticates. */
+export function countCredentialsLeftOut(items: { auth: RequestAuth; headers: KV[] }[]): number {
+  return items.reduce(
+    (sum, item) =>
+      sum +
+      countAuthCredentials(item.auth) +
+      item.headers.filter(
+        (h) => CREDENTIAL_HEADERS.has(h.key.trim().toLowerCase()) && isLiteralCredential(h.value),
+      ).length,
+    0,
+  );
+}
+
+/** Blanks what shouldn't leave this machine in a collection/folder's
+ * `defaults`: secret variables — the same treatment
+ * `sanitizeEnvironmentForExport`/`sanitizeWorkspaceForExport` give environment
+ * and global variables — plus literal credentials in its auth and headers. */
 export function sanitizeRequestDefaultsForExport(defaults: RequestDefaults): RequestDefaults {
   return {
     ...defaults,
+    auth: sanitizeAuthForExport(defaults.auth),
+    headers: sanitizeHeadersForExport(defaults.headers),
     variables: defaults.variables.map((variable) =>
       variable.secret ? { ...variable, value: "" } : variable,
     ),
+  };
+}
+
+/** The credential half of sanitizeRequestForExport, synchronous so the
+ * Postman/OpenAPI exporters (which don't embed file blobs) can use it too. */
+export function redactRequestCredentials(request: ApiRequest): ApiRequest {
+  return {
+    ...request,
+    auth: sanitizeAuthForExport(request.auth),
+    headers: sanitizeHeadersForExport(request.headers),
   };
 }
 
@@ -195,7 +279,7 @@ async function exportStoredFile(file: StoredFileBlob): Promise<StoredFileBlob> {
 
 export async function sanitizeRequestForExport(request: ApiRequest): Promise<ApiRequest> {
   return {
-    ...request,
+    ...redactRequestCredentials(request),
     bodyDrafts: {
       ...request.bodyDrafts,
       formData: await Promise.all(
@@ -209,6 +293,31 @@ export async function sanitizeRequestForExport(request: ApiRequest): Promise<Api
           ? await exportStoredFile(request.bodyDrafts.binary.file)
           : null,
       },
+    },
+  };
+}
+
+/** A response's Set-Cookie is a session the same way a request's Cookie is. */
+function redactResponseHeaders(headers: Record<string, string> | undefined) {
+  return Object.fromEntries(
+    Object.entries(headers ?? {}).map(([name, value]) => [
+      name,
+      name.toLowerCase() === "set-cookie" ? "" : value,
+    ]),
+  );
+}
+
+/** The credential half of the history sanitizer, synchronous for the HAR
+ * exporter: the snapshot's auth and credential headers, and the response's
+ * Set-Cookie. */
+export function redactHistoryCredentials(history: HistoryEntry): HistoryEntry {
+  return {
+    ...history,
+    responseHeaders: redactResponseHeaders(history.responseHeaders),
+    snapshot: {
+      ...history.snapshot,
+      auth: sanitizeAuthForExport(history.snapshot.auth),
+      headers: sanitizeHeadersForExport(history.snapshot.headers),
     },
   };
 }
@@ -246,6 +355,7 @@ async function sanitizeHistoryForExport(history: HistoryEntry): Promise<HistoryE
 
   return {
     ...history,
+    responseHeaders: redactResponseHeaders(history.responseHeaders),
     snapshot: {
       ...sanitizedRequest,
       requestId: sanitizedRequest.id,
