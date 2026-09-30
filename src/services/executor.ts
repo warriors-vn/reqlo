@@ -103,6 +103,7 @@ export async function executeRequest(
   let scriptError: string | undefined;
   let preScriptLogs: ScriptLogEntry[] | undefined;
   let unresolvedVariables: string[] | undefined;
+  let resolvedUrl: string | undefined;
   try {
     if (req.auth.type === "oauth2" && req.auth.oauth2?.cachedToken) {
       const oauth2Config = req.auth.oauth2;
@@ -168,6 +169,7 @@ export async function executeRequest(
     preScriptLogs = scriptOutcome.scriptLogs;
 
     const { url, resolvedHeaders: headers, serializedBody } = resolved;
+    resolvedUrl = maskQueryCredential(url, effectiveReq.auth);
     unresolvedVariables = resolved.unresolvedVariables.length
       ? resolved.unresolvedVariables
       : undefined;
@@ -261,6 +263,7 @@ export async function executeRequest(
       scriptError,
       refreshedOAuth2Token,
       unresolvedVariables,
+      resolvedUrl,
       postScriptError: post.error,
       scriptTests: post.tests,
       scriptLogs: joinLogs(preScriptLogs, post.logs),
@@ -276,10 +279,19 @@ export async function executeRequest(
       scriptLogs: preScriptLogs,
       refreshedOAuth2Token,
       unresolvedVariables,
+      resolvedUrl,
     };
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
+}
+
+/** An API key sent as a query parameter is a credential; history is stored,
+ * searched and exported, so its value never goes in there. */
+export function maskQueryCredential(url: string, auth: ApiRequest["auth"]): string {
+  if (auth.type !== "api-key" || auth.addTo !== "query" || !auth.key) return url;
+  const name = encodeURIComponent(auth.key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return url.replace(new RegExp(`([?&]${name}=)[^&#]*`, "g"), "$1•••");
 }
 
 function joinLogs(...groups: (ScriptLogEntry[] | undefined)[]): ScriptLogEntry[] | undefined {

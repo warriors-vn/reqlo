@@ -88,7 +88,9 @@ export function HistoryRow({
               </span>
             )}
           </div>
-          <div className="truncate font-mono text-2xs text-muted-foreground">{entry.url}</div>
+          <div className="truncate font-mono text-2xs text-muted-foreground">
+            {entry.resolvedUrl ?? entry.url}
+          </div>
           <div className="flex items-center gap-3 text-2xs">
             <span className={cn("shrink-0 font-mono font-semibold", statusTone)}>
               {entry.errorMessage ? "ERR" : (entry.status ?? "—")}

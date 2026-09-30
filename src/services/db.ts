@@ -269,7 +269,11 @@ export interface HistoryEntry {
   requestId: string | null;
   requestName: string;
   method: HttpMethod;
+  /** The request's own URL, which may be a `{{template}}`. */
   url: string;
+  /** What was actually requested, with variables filled in. Older entries
+   * don't have it. */
+  resolvedUrl?: string;
   status: number | null;
   ok: boolean;
   durationMs: number;
