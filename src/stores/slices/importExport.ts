@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { flushRequestWrites } from "@/stores/requestWrites";
 import {
   db,
   uid,
@@ -322,6 +323,9 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
   },
 
   importWorkspaceJSON: async (text) => {
+    // The safety copy below reads IndexedDB, so edits still waiting on their
+    // debounce have to land first or the copy would miss them.
+    await flushRequestWrites();
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
@@ -533,6 +537,7 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
   },
 
   undoWorkspaceRestore: async (backupId) => {
+    await flushRequestWrites();
     try {
       if (!(await restoreSafetyBackup(backupId))) {
         toast.error("Couldn't undo the restore", {

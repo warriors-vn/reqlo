@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { discardRequestWrites, queueRequestWrite } from "@/stores/requestWrites";
 import {
   db,
   uid,
@@ -75,7 +76,7 @@ export const createRequestsSlice: SliceCreator<RequestsSlice> = (set, get) => ({
     set((s) => ({
       requests: s.requests.map((r) => (r.id === id ? { ...r, ...patch, updatedAt } : r)),
     }));
-    await reportDbWriteFailure(db.requests.update(id, { ...patch, updatedAt }));
+    await queueRequestWrite(id, { ...patch, updatedAt });
   },
 
   createRequest: async (collectionId, folderId = null, protocol = "http") => {
@@ -120,6 +121,7 @@ export const createRequestsSlice: SliceCreator<RequestsSlice> = (set, get) => ({
 
   deleteRequest: async (id) => {
     const deleted = get().requests.find((r) => r.id === id);
+    discardRequestWrites([id]);
     await reportDbWriteFailure(db.requests.delete(id));
     const cleanup = cleanupDeletedRequests(get, [id]);
     set((s) => ({
