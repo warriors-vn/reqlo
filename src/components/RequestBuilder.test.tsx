@@ -212,3 +212,34 @@ describe("RequestBuilder — collapsed panel", () => {
     expect(screen.queryByPlaceholderText("key")).not.toBeInTheDocument();
   });
 });
+
+describe("RequestBuilder — URL bar and Params table stay one source", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("turns a query string typed in the URL bar into Params rows", async () => {
+    const request = seedRequest();
+    const user = userEvent.setup();
+    render(<Wrapper requestId={request.id} />);
+
+    await user.type(screen.getByLabelText("Request URL"), "/items?page=2");
+
+    const stored = useStore.getState().requests[0];
+    expect(stored.url).toBe("https://api.example.com/items");
+    expect(stored.queryParams.filter((p) => p.key).map((p) => [p.key, p.value])).toEqual([
+      ["page", "2"],
+    ]);
+  });
+
+  it("shows a param added in the table inside the URL bar", async () => {
+    const request = seedRequest();
+    const user = userEvent.setup();
+    render(<Wrapper requestId={request.id} />);
+
+    await user.type(screen.getByPlaceholderText("key"), "q");
+    await user.type(screen.getByPlaceholderText("value"), "hi");
+
+    expect(screen.getByLabelText("Request URL")).toHaveValue("https://api.example.com?q=hi");
+  });
+});
