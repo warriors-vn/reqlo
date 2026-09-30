@@ -21,7 +21,12 @@ import { looksLikeOpenApiDocument, parseOpenApiDocument } from "@/services/opena
 import {
   exportCollection as buildCollectionExport,
   exportWorkspace as buildWorkspaceExport,
+  countCredentialsLeftOut,
   downloadJSON,
+  redactHistoryCredentials,
+  redactRequestCredentials,
+  sanitizeCollectionForExport,
+  sanitizeFolderForExport,
   validateCollectionExport,
   validateWorkspaceExport,
 } from "@/services/portability";
@@ -81,11 +86,35 @@ function refuseEmptyCollectionExport(name: string, count: number): boolean {
   return true;
 }
 
+/** Says so when an export blanked credentials — a file that silently no
+ * longer authenticates looks like a bug to whoever imports it. */
+function reportCredentialsLeftOut(items: Parameters<typeof countCredentialsLeftOut>[0]) {
+  const count = countCredentialsLeftOut(items);
+  if (!count) return;
+  toast.info(`${count} credential${count > 1 ? "s were" : " was"} left out of this export`, {
+    description:
+      "Tokens, passwords and keys typed directly into a request stay on this machine. Anything written as a {{variable}} is exported as-is.",
+  });
+}
+
 function reportExportWarnings(warnings: string[]) {
   if (!warnings.length) return;
   toast.warning(`Exported with ${warnings.length} note(s)`, {
     description: warnings.slice(0, 3).join(" · "),
   });
+}
+
+/** Everything in one collection that can hold a credential: its requests,
+ * and the defaults on the collection itself and on each of its folders. */
+function collectionCredentialSources(
+  state: { requests: ApiRequest[]; collections: Collection[]; folders: Folder[] },
+  collectionId: string,
+) {
+  return [
+    ...state.requests.filter((r) => r.collectionId === collectionId),
+    ...state.collections.filter((c) => c.id === collectionId).map((c) => c.defaults),
+    ...state.folders.filter((f) => f.collectionId === collectionId).map((f) => f.defaults),
+  ];
 }
 
 export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, get) => ({
@@ -457,6 +486,7 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
     if (!col) return;
     const data = await buildCollectionExport(col);
     downloadJSON(data, `${slugify(col.name)}.reqlo.json`);
+    reportCredentialsLeftOut(collectionCredentialSources(get(), col.id));
   },
 
   exportCollectionAsFilesById: async (id) => {
@@ -464,11 +494,15 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
     if (!col) return;
     const files = await buildCollectionFileTree(col);
     if (supportsDirectoryExport()) {
-      // Returns false if the user cancels the picker — respect that instead of falling back.
-      await writeFilesToDirectory(files);
+      // Returns false if the user cancels the picker — respect that instead of
+      // falling back, and report nothing, since nothing was written.
+      if (await writeFilesToDirectory(files)) {
+        reportCredentialsLeftOut(collectionCredentialSources(get(), col.id));
+      }
       return;
     }
     downloadZip(files, `${slugify(col.name)}.zip`, slugify(col.name));
+    reportCredentialsLeftOut(collectionCredentialSources(get(), col.id));
   },
 
   exportCollectionAsPostman: async (id) => {
@@ -476,9 +510,14 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
     if (!col) return;
     const scoped = get().requests.filter((r) => r.collectionId === col.id);
     if (refuseEmptyCollectionExport(col.name, scoped.length)) return;
-    const { collection, warnings } = buildPostmanCollection(col, get().folders, get().requests);
+    const { collection, warnings } = buildPostmanCollection(
+      sanitizeCollectionForExport(col),
+      get().folders.map(sanitizeFolderForExport),
+      get().requests.map(redactRequestCredentials),
+    );
     downloadJSON(collection, `${slugify(col.name)}.postman_collection.json`);
     reportExportWarnings(warnings);
+    reportCredentialsLeftOut(collectionCredentialSources(get(), col.id));
   },
 
   exportCollectionAsOpenApi: async (id) => {
@@ -486,7 +525,11 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
     if (!col) return;
     const scoped = get().requests.filter((r) => r.collectionId === col.id);
     if (refuseEmptyCollectionExport(col.name, scoped.length)) return;
-    const { document, warnings } = buildOpenApiDocument(col, get().folders, get().requests);
+    const { document, warnings } = buildOpenApiDocument(
+      sanitizeCollectionForExport(col),
+      get().folders.map(sanitizeFolderForExport),
+      get().requests.map(redactRequestCredentials),
+    );
     downloadJSON(document, `${slugify(col.name)}.openapi.json`);
     reportExportWarnings(warnings);
   },
@@ -500,7 +543,7 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
       return;
     }
     downloadJSON(
-      buildHarLog(history),
+      buildHarLog(history.map(redactHistoryCredentials)),
       `reqlo-history-${new Date().toISOString().slice(0, 10)}.har`,
     );
   },
@@ -521,5 +564,10 @@ export const createImportExportSlice: SliceCreator<ImportExportSlice> = (set, ge
         `${secretCount} secret value${secretCount > 1 ? "s were" : " was"} left out of this export`,
       );
     }
+    reportCredentialsLeftOut([
+      ...get().requests,
+      ...get().collections.map((c) => c.defaults),
+      ...get().folders.map((f) => f.defaults),
+    ]);
   },
 });

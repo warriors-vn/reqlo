@@ -15,8 +15,13 @@ import {
   createDefaultRequestDefaults,
 } from "@/services/db";
 import {
+  countCredentialsLeftOut,
   exportCollection,
   exportWorkspace,
+  redactHistoryCredentials,
+  redactRequestCredentials,
+  sanitizeAuthForExport,
+  sanitizeRequestDefaultsForExport,
   sanitizeEnvironmentForExport,
   sanitizeRequestForExport,
   sanitizeWorkspaceForExport,
@@ -450,5 +455,203 @@ describe("sanitizeWorkspaceForExport", () => {
     ]);
     // Original untouched.
     expect(workspace.globals[0].value).toBe("shh");
+  });
+});
+
+describe("credentials in exports", () => {
+  const cachedToken = {
+    accessToken: "live-access-token",
+    tokenType: "Bearer",
+    expiresAt: null,
+    refreshToken: "live-refresh-token",
+    environmentId: null,
+    fetchedAt: 1,
+  };
+
+  it("blanks a literal bearer token, basic password and API key value", () => {
+    expect(sanitizeAuthForExport({ type: "bearer", token: "sk-live-123" }).token).toBe("");
+    expect(sanitizeAuthForExport({ type: "basic", username: "tuan", password: "hunter2" })).toEqual(
+      { type: "basic", username: "tuan", password: "" },
+    );
+    expect(
+      sanitizeAuthForExport({ type: "api-key", key: "X-Api-Key", value: "abc", addTo: "header" }),
+    ).toEqual({ type: "api-key", key: "X-Api-Key", value: "", addTo: "header" });
+  });
+
+  it("keeps a credential written as a variable reference", () => {
+    expect(sanitizeAuthForExport({ type: "bearer", token: "{{TOKEN}}" }).token).toBe("{{TOKEN}}");
+    expect(
+      sanitizeAuthForExport({ type: "basic", username: "tuan", password: "{{PASSWORD}}" }).password,
+    ).toBe("{{PASSWORD}}");
+  });
+
+  it("drops the cached OAuth token and blanks a literal client secret, keeping the config", () => {
+    const sanitized = sanitizeAuthForExport({
+      type: "oauth2",
+      oauth2: {
+        grantType: "client_credentials",
+        tokenUrl: "https://auth.example.com/token",
+        clientId: "my-client",
+        clientSecret: "shh",
+        scope: "read",
+        cachedToken,
+      },
+    });
+    expect(sanitized.oauth2).toEqual({
+      grantType: "client_credentials",
+      tokenUrl: "https://auth.example.com/token",
+      clientId: "my-client",
+      clientSecret: "",
+      scope: "read",
+    });
+    expect(JSON.stringify(sanitized)).not.toContain("live-");
+  });
+
+  it("doesn't mutate the auth it was given", () => {
+    const auth = { type: "bearer" as const, token: "sk-live-123" };
+    sanitizeAuthForExport(auth);
+    expect(auth.token).toBe("sk-live-123");
+  });
+
+  it("blanks literal credential headers on a request, whatever their case", async () => {
+    const request = makeRequest({
+      auth: { type: "bearer", token: "sk-live-123" },
+      headers: [
+        { id: "h1", key: "Authorization", value: "Bearer abc", enabled: true },
+        { id: "h2", key: "COOKIE", value: "session=xyz", enabled: true },
+        { id: "h3", key: "x-api-key", value: "{{API_KEY}}", enabled: true },
+        { id: "h4", key: "Accept", value: "application/json", enabled: true },
+      ],
+    });
+
+    for (const sanitized of [
+      redactRequestCredentials(request),
+      await sanitizeRequestForExport(request),
+    ]) {
+      expect(sanitized.auth.token).toBe("");
+      expect(sanitized.headers.map((h) => [h.key, h.value])).toEqual([
+        ["Authorization", ""],
+        ["COOKIE", ""],
+        ["x-api-key", "{{API_KEY}}"],
+        ["Accept", "application/json"],
+      ]);
+    }
+  });
+
+  it("blanks auth and credential headers in collection/folder defaults", () => {
+    const sanitized = sanitizeRequestDefaultsForExport({
+      ...createDefaultRequestDefaults(),
+      auth: { type: "bearer", token: "team-token" },
+      headers: [{ id: "h1", key: "X-Auth-Token", value: "abc", enabled: true }],
+    });
+    expect(sanitized.auth.token).toBe("");
+    expect(sanitized.headers[0].value).toBe("");
+  });
+
+  it("blanks a history entry's snapshot credentials and the response's Set-Cookie", () => {
+    const request = makeRequest({
+      auth: { type: "bearer", token: "sk-live-123" },
+      headers: [{ id: "h1", key: "Cookie", value: "session=xyz", enabled: true }],
+    });
+    const entry = {
+      snapshot: createRequestSnapshot(request),
+      responseHeaders: { "Set-Cookie": "sid=secret; HttpOnly", "content-type": "text/plain" },
+    } as Partial<HistoryEntry> as HistoryEntry;
+
+    const redacted = redactHistoryCredentials(entry);
+
+    expect(redacted.snapshot.auth.token).toBe("");
+    expect(redacted.snapshot.headers[0].value).toBe("");
+    expect(redacted.responseHeaders).toEqual({ "Set-Cookie": "", "content-type": "text/plain" });
+  });
+
+  it("counts exactly what gets blanked", () => {
+    expect(
+      countCredentialsLeftOut([
+        makeRequest({
+          auth: { type: "bearer", token: "sk-live-123" },
+          headers: [
+            { id: "h1", key: "Cookie", value: "session=xyz", enabled: true },
+            { id: "h2", key: "Accept", value: "*/*", enabled: true },
+          ],
+        }),
+        makeRequest({ auth: { type: "bearer", token: "{{TOKEN}}" } }),
+        {
+          ...createDefaultRequestDefaults(),
+          auth: {
+            type: "oauth2",
+            oauth2: {
+              grantType: "client_credentials",
+              tokenUrl: "https://auth.example.com/token",
+              clientId: "my-client",
+              clientSecret: "shh",
+              cachedToken,
+            },
+          },
+        },
+      ]),
+    ).toBe(4);
+    expect(countCredentialsLeftOut([makeRequest()])).toBe(0);
+  });
+
+  it("keeps literal credentials out of a full workspace export", async () => {
+    const now = Date.now();
+    const workspace: Workspace = {
+      id: uid(),
+      name: "Creds",
+      globals: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.workspaces.add(workspace);
+    const collection: Collection = {
+      id: uid(),
+      workspaceId: workspace.id,
+      name: "C",
+      position: 0,
+      defaults: {
+        ...createDefaultRequestDefaults(),
+        auth: { type: "bearer", token: "collection-live-token" },
+      },
+      createdAt: Date.now(),
+    };
+    await db.collections.add(collection);
+    const request = makeRequest({
+      workspaceId: workspace.id,
+      collectionId: collection.id,
+      auth: { type: "basic", username: "tuan", password: "request-live-password" },
+    });
+    await db.requests.add(request);
+    await db.history.add({
+      id: uid(),
+      workspaceId: workspace.id,
+      requestId: request.id,
+      requestName: request.name,
+      method: "GET",
+      url: request.url,
+      status: 200,
+      ok: true,
+      durationMs: 1,
+      sizeBytes: 0,
+      executedAt: Date.now(),
+      environmentId: null,
+      environmentName: null,
+      favorite: false,
+      pinned: false,
+      searchText: "",
+      snapshot: createRequestSnapshot(request),
+      responseKind: "text",
+      responseContentType: "text/plain",
+      responseHeaders: { "set-cookie": "sid=history-live-cookie" },
+      responseBody: "",
+      responseBodyTruncated: false,
+    } as HistoryEntry);
+
+    const exported = JSON.stringify(await exportWorkspace(workspace));
+
+    expect(exported).not.toContain("collection-live-token");
+    expect(exported).not.toContain("request-live-password");
+    expect(exported).not.toContain("history-live-cookie");
+    expect(exported).toContain('"username":"tuan"');
   });
 });

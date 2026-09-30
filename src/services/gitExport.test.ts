@@ -52,8 +52,9 @@ describe("buildCollectionFileTree", () => {
     const files = await buildCollectionFileTree(collection);
     const root = JSON.parse(files.find((f) => f.path === "_collection.json")!.content);
 
-    // Auth is written through, same as request-level auth in exportCollection.
-    expect(root.defaults.auth).toEqual({ type: "bearer", token: "collection-token" });
+    // A literal token is blanked, same as request-level auth in
+    // exportCollection — this tree is meant to be committed to a repo.
+    expect(root.defaults.auth).toEqual({ type: "bearer", token: "" });
     // Secret variables in the collection's own defaults are blanked, same as
     // exportCollection/exportWorkspace treat them — this file leaves the
     // workspace too, and shouldn't carry the secret value with it.
