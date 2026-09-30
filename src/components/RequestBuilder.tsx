@@ -3,6 +3,7 @@ import { type ApiRequest, type HttpMethod } from "@/services/db";
 import type { ExecutionResult } from "@/services/execution";
 import { parseCurl } from "@/services/curl";
 import { useState } from "react";
+import { composeUrl, splitUrl } from "@/lib/url-query";
 import { cn } from "@/lib/utils";
 import { AdvancedBodyEditor } from "@/features/request-body/components/AdvancedBodyEditor";
 import { RequestAuthEditor } from "@/components/RequestAuthEditor";
@@ -56,6 +57,9 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
     "params" | "headers" | "body" | "auth" | "script" | "extract" | "tests" | "mock" | "message"
   >("params");
   const [nameEdit, setNameEdit] = useState(false);
+  // While the URL bar has focus it shows exactly what was typed ("?a=" would
+  // otherwise be rewritten mid-keystroke); otherwise it mirrors the Params table.
+  const [urlDraft, setUrlDraft] = useState<string | null>(null);
   // Lives in the store (persisted, like sidebarCollapsed) rather than local
   // state: this component remounts on every request switch (Workspace.tsx
   // keys it by activeRequest.id), so local state would forget the collapsed
@@ -224,8 +228,18 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
           <div className="w-px bg-border" />
           <TemplateInput
             type="text"
-            value={request.url}
-            onChange={(url) => updateRequest(request.id, { url })}
+            value={
+              urlDraft ?? (isWebSocket ? request.url : composeUrl(request.url, request.queryParams))
+            }
+            onChange={(text) => {
+              if (isWebSocket) {
+                updateRequest(request.id, { url: text });
+                return;
+              }
+              setUrlDraft(text);
+              updateRequest(request.id, splitUrl(text, request.queryParams));
+            }}
+            onBlurCapture={() => setUrlDraft(null)}
             placeholder={
               isWebSocket ? "wss://example.com/socket" : "https://api.example.com/endpoint"
             }
