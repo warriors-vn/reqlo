@@ -137,6 +137,26 @@ describe("parseCurl", () => {
     expect(req.name).toBe("Imported cURL");
   });
 
+  it("defaults a schemeless host to https, the way curl defaults it to http", () => {
+    const req = parseCurl(
+      `curl -X POST api.example.com/login -H "Content-Type: application/json" -d '{"a":1}'`,
+      WORKSPACE_ID,
+      null,
+    );
+    expect(req.url).toBe("https://api.example.com/login");
+    expect(req.method).toBe("POST");
+  });
+
+  it("defaults a schemeless localhost host (with port) to https", () => {
+    const req = parseCurl("curl localhost:3000/health", WORKSPACE_ID, null);
+    expect(req.url).toBe("https://localhost:3000/health");
+  });
+
+  it("does not mistake a flag's own positional value for a schemeless URL", () => {
+    const req = parseCurl(`curl -b cookies.txt https://api.example.com`, WORKSPACE_ID, null);
+    expect(req.url).toBe("https://api.example.com");
+  });
+
   it("populates bodyDrafts.urlEncoded when Content-Type sniffing selects x-www-form-urlencoded", () => {
     const req = parseCurl(
       `curl -H "Content-Type: application/x-www-form-urlencoded" https://api.example.com -d 'a=1&b=2'`,

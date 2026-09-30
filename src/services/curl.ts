@@ -11,6 +11,15 @@ import {
 } from "@/services/db";
 import { looksLikeJson } from "@/services/import-shared";
 
+// A bare host, optionally with a port and/or path — "api.example.com/login",
+// "localhost:3000/x", "127.0.0.1:8080". Requires a dot (a public-suffix-style
+// domain) or "localhost" so a stray positional word doesn't get mistaken for
+// a URL; every other flag's own value is already consumed by that flag's
+// handler before this ever runs, so this only ever inspects the token
+// curl treats as the URL.
+const BARE_HOST_RE =
+  /^(localhost|(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,})(:\d+)?(\/[^\s]*)?$/;
+
 /**
  * Parse a cURL command into a partial ApiRequest.
  * Supports: -X/--request, -H/--header, -d/--data/--data-raw/--data-binary,
@@ -115,7 +124,16 @@ export function parseCurl(
       if (tokens[i + 1] && !tokens[i + 1].startsWith("-")) i++;
       continue;
     }
-    if (!url && /^https?:\/\//i.test(t)) url = t;
+    if (!url && /^https?:\/\//i.test(t)) {
+      url = t;
+    } else if (!url && BARE_HOST_RE.test(t)) {
+      // Real-world cURL commands (docs, terminal history) routinely drop the
+      // scheme, e.g. `curl api.example.com/login` — curl itself defaults
+      // that to http. Without this, the paste-into-URL-bar gate in
+      // RequestBuilder.tsx sees an empty parsed.url and falls back to
+      // pasting the raw cURL text verbatim into the URL field.
+      url = `https://${t}`;
+    }
   }
 
   let bodyType: RequestBodyType = "none";
