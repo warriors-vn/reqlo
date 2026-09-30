@@ -12,6 +12,7 @@ import {
   type RequestAuth,
   type RequestBodyType,
   type RequestDefaults,
+  type ScriptConfig,
 } from "@/services/db";
 import { looksLikeJson } from "@/services/import-shared";
 
@@ -30,6 +31,8 @@ export interface PostmanUrl {
   host?: string[] | string;
   path?: string[] | string;
   query?: PostmanKV[];
+  /** `:name` path variables. */
+  variable?: PostmanKV[];
 }
 
 interface PostmanFormDataEntry extends PostmanKV {
@@ -65,8 +68,14 @@ export interface PostmanRequest {
   auth?: PostmanAuth;
 }
 
+export interface PostmanEvent {
+  listen?: string;
+  script?: { exec?: string[] | string };
+}
+
 export interface PostmanItem {
   name?: string;
+  event?: PostmanEvent[];
   item?: PostmanItem[];
   request?: PostmanRequest;
   /** Postman supports auth on a folder, which maps to reqlo's folder defaults. */
@@ -109,6 +118,7 @@ export function parsePostmanCollection(
   const requests: ApiRequest[] = [];
   const warnings: string[] = [];
   const now = Date.now();
+  const pathVars = new Map<string, string>();
 
   function walk(items: PostmanItem[], parentFolderId: string | null) {
     items.forEach((item, index) => {
@@ -132,12 +142,34 @@ export function parsePostmanCollection(
         return;
       }
       if (item.request) {
-        requests.push(convertRequest(item.name, item.request, parentFolderId, index, warnings));
+        requests.push(
+          convertRequest(
+            item.name,
+            item.request,
+            item.event,
+            parentFolderId,
+            index,
+            warnings,
+            pathVars,
+          ),
+        );
       }
     });
   }
 
   walk(raw.item ?? [], null);
+
+  const scripted = requests.filter(
+    (r) => r.preRequestScript.source || r.postResponseScript.source,
+  ).length;
+  if (scripted > 0) {
+    warnings.push(
+      `${scripted} request(s) had Postman scripts. They were imported switched off, with the original code as comments — pm.* isn't available in reqlo, so they need porting before you enable them.`,
+    );
+  }
+
+  const declared = new Set((raw.variable ?? []).map((v) => v.key));
+  const seeded = [...pathVars].filter(([key]) => !declared.has(key));
 
   return {
     collectionName: raw.info?.name || "Imported from Postman",
@@ -149,7 +181,8 @@ export function parsePostmanCollection(
       auth: convertAuth(raw.auth, warnings, raw.info?.name),
       variables: (raw.variable ?? [])
         .filter((v) => v.key)
-        .map((v) => ({ id: uid(), key: v.key, value: v.value ?? "", enabled: !v.disabled })),
+        .map((v) => ({ id: uid(), key: v.key, value: v.value ?? "", enabled: !v.disabled }))
+        .concat(seeded.map(([key, value]) => ({ id: uid(), key, value, enabled: true }))),
     },
   };
 }
@@ -157,13 +190,15 @@ export function parsePostmanCollection(
 function convertRequest(
   name: string | undefined,
   request: PostmanRequest,
+  events: PostmanEvent[] | undefined,
   folderId: string | null,
   position: number,
   warnings: string[],
+  pathVars: Map<string, string>,
 ): ApiRequest {
   const now = Date.now();
   const method = (request.method || "GET").toUpperCase() as HttpMethod;
-  const { url, queryParams } = convertUrl(request.url);
+  const { url, queryParams } = convertUrl(request.url, pathVars);
   const headers = (request.header ?? [])
     .filter((h) => h.key)
     .map(
@@ -188,12 +223,49 @@ function convertRequest(
     bodyType,
     bodyDrafts,
     auth,
+    preRequestScript: convertScript(events, "prerequest"),
+    postResponseScript: convertScript(events, "test"),
     createdAt: now,
     updatedAt: now,
   });
 }
 
-function convertUrl(url: PostmanUrl | string | undefined): { url: string; queryParams: KV[] } {
+/** Postman's pm.* API doesn't exist in reqlo's sandbox, so the source is kept
+ * as comments in a disabled script — readable for porting, inert if enabled. */
+function convertScript(events: PostmanEvent[] | undefined, listen: string): ScriptConfig {
+  const exec = events?.find((e) => e.listen === listen)?.script?.exec;
+  const text = (Array.isArray(exec) ? exec.join("\n") : (exec ?? "")).trim();
+  if (!text) return { enabled: false, source: "" };
+  const commented = text
+    .split("\n")
+    .map((line) => `// ${line}`)
+    .join("\n");
+  return {
+    enabled: false,
+    source: `// Imported from Postman — pm.* isn't supported here; port it, then enable.\n${commented}\n`,
+  };
+}
+
+function convertUrl(
+  url: PostmanUrl | string | undefined,
+  pathVars: Map<string, string>,
+): { url: string; queryParams: KV[] } {
+  const result = convertUrlParts(url);
+  if (typeof url === "object" && url?.variable?.length) {
+    for (const v of url.variable) {
+      if (!v.key) continue;
+      const escaped = v.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      result.url = result.url.replace(new RegExp(`/:${escaped}(?=[/?#]|$)`, "g"), `/{{${v.key}}}`);
+      if (v.value && !pathVars.has(v.key)) pathVars.set(v.key, v.value);
+    }
+  }
+  return result;
+}
+
+function convertUrlParts(url: PostmanUrl | string | undefined): {
+  url: string;
+  queryParams: KV[];
+} {
   if (!url) return { url: "", queryParams: [] };
   if (typeof url === "string") return { url, queryParams: [] };
 
