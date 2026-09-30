@@ -549,3 +549,45 @@ describe("partitionRunnableRequests", () => {
     expect(skipped).toHaveLength(2);
   });
 });
+
+describe("runSingleRequest — history URL", () => {
+  it("records the URL that was sent alongside the template, and makes it searchable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ ok: true })),
+    );
+    const deps = makeDeps();
+    const request = makeRequest({ url: "{{baseUrl}}/users/{{id}}" });
+    const env = makeEnv({
+      variables: [
+        { id: "a", key: "baseUrl", value: "https://staging.example.com", enabled: true },
+        { id: "b", key: "id", value: "42", enabled: true },
+      ],
+    });
+
+    await runSingleRequest(request, env, NO_ANCESTORS, deps);
+
+    const entry = deps.addHistory.mock.calls[0][0] as HistoryEntry;
+    expect(entry.url).toBe("{{baseUrl}}/users/{{id}}");
+    expect(entry.resolvedUrl).toBe("https://staging.example.com/users/42");
+    expect(entry.searchText).toContain("staging.example.com");
+  });
+
+  it("never stores an API key sent in the query string", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ ok: true })),
+    );
+    const deps = makeDeps();
+    const request = makeRequest({
+      auth: { type: "api-key", key: "api_key", value: "s3cret-value", addTo: "query" },
+    });
+
+    await runSingleRequest(request, makeEnv(), NO_ANCESTORS, deps);
+
+    const entry = deps.addHistory.mock.calls[0][0] as HistoryEntry;
+    expect(entry.resolvedUrl).toContain("api_key=");
+    expect(entry.resolvedUrl).not.toContain("s3cret-value");
+    expect(entry.searchText).not.toContain("s3cret-value");
+  });
+});

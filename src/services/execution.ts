@@ -41,6 +41,10 @@ export interface ExecutionResult {
    * value for — each substituted an empty string, so the request that went out
    * isn't the one the user wrote. Absent when everything resolved. */
   unresolvedVariables?: string[];
+  /** The URL this send actually went to — variables substituted, inherited
+   * params merged — with an API key passed in the query string masked. Absent
+   * for a mock or a send that failed before the URL was built. */
+  resolvedUrl?: string;
 }
 
 export function formatBytes(n: number) {
