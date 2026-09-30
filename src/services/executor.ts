@@ -10,6 +10,7 @@ import { isTextualResponse, type ExecutionResult, type ResponseKind } from "@/se
 import {
   decodeUpstreamHeaders,
   PROXIED_HEADER,
+  PROXY_FOLLOW_REDIRECTS_HEADER,
   UPSTREAM_HEADERS_HEADER,
 } from "@/services/proxy-constants";
 import {
@@ -177,6 +178,7 @@ export async function executeRequest(
       for (const [name, value] of Object.entries(scriptHeaderPatch))
         setHeader(headers, name, value);
     }
+    if (effectiveReq.followRedirects === false) headers[PROXY_FOLLOW_REDIRECTS_HEADER] = "0";
     const init: RequestInit = { method: effectiveReq.method, headers };
 
     if (

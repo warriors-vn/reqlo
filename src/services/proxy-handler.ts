@@ -8,6 +8,7 @@ import {
   encodeUpstreamHeaders,
   PROXIED_HEADER,
   PROXY_ERROR_HEADER,
+  PROXY_FOLLOW_REDIRECTS_HEADER,
   PROXY_TARGET_HEADER,
   UPSTREAM_HEADERS_HEADER,
 } from "@/services/proxy-constants";
@@ -16,6 +17,7 @@ import {
 // privacy leak) to forward on to an arbitrary third-party target.
 const STRIPPED_REQUEST_HEADERS = [
   PROXY_TARGET_HEADER,
+  PROXY_FOLLOW_REDIRECTS_HEADER,
   "origin",
   "referer",
   "cookie",
@@ -255,6 +257,7 @@ export async function handleProxyRequest({ request }: { request: Request }): Pro
     );
   }
 
+  const followRedirects = request.headers.get(PROXY_FOLLOW_REDIRECTS_HEADER) !== "0";
   const forwardHeaders = new Headers(request.headers);
   for (const key of STRIPPED_REQUEST_HEADERS) forwardHeaders.delete(key);
 
@@ -310,7 +313,9 @@ export async function handleProxyRequest({ request }: { request: Request }): Pro
     const location = REDIRECT_STATUSES.has(upstream.status)
       ? upstream.headers.get("location")
       : null;
-    if (!location) break;
+    // Not following: the 3xx itself is the answer — its status and Location
+    // header are exactly what someone testing a redirect came to see.
+    if (!location || !followRedirects) break;
 
     if (hop >= MAX_REDIRECTS) {
       return proxyErrorResponse(502, `Too many redirects (stopped after ${MAX_REDIRECTS}).`);

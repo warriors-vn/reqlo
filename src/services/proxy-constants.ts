@@ -6,6 +6,10 @@
  * the real target URL instead of a JSON envelope. */
 export const PROXY_TARGET_HEADER = "x-reqlo-proxy-target";
 
+/** Set to "0" by the client to have the proxy hand a 3xx back as it is
+ * instead of following it. Anything else (or absent) follows, as before. */
+export const PROXY_FOLLOW_REDIRECTS_HEADER = "x-reqlo-follow-redirects";
+
 /** Set by /api/proxy on every response it ever returns, success or error —
  * how the client tells "reqlo's proxy actually ran" apart from a plain 404
  * from a deployment (e.g. the static-nginx Docker image) that has no server

@@ -7,6 +7,7 @@ import {
   encodeUpstreamHeaders,
   PROXIED_HEADER,
   PROXY_ERROR_HEADER,
+  PROXY_FOLLOW_REDIRECTS_HEADER,
   PROXY_TARGET_HEADER,
   UPSTREAM_HEADERS_HEADER,
 } from "@/services/proxy-constants";
@@ -123,6 +124,22 @@ describe("executeRequest — every send goes through /api/proxy", () => {
 
     const init = fetchMock.mock.calls[0][1]!;
     expect(new Headers(init.headers).get(PROXY_TARGET_HEADER)).toBe("https://app.reqlo.dev/health");
+  });
+
+  it("asks the proxy not to follow redirects only when the request says so", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      proxiedResponse("ok"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await executeRequest(makeRequest({}), null, NO_ANCESTORS);
+    await executeRequest(makeRequest({ followRedirects: true }), null, NO_ANCESTORS);
+    await executeRequest(makeRequest({ followRedirects: false }), null, NO_ANCESTORS);
+
+    const sent = fetchMock.mock.calls.map((call) =>
+      new Headers(call[1]!.headers).get(PROXY_FOLLOW_REDIRECTS_HEADER),
+    );
+    expect(sent).toEqual([null, null, "0"]);
   });
 
   // The one case the direct-fetch fallback used to cover. Without a server,
