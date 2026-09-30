@@ -33,6 +33,35 @@ export function SnippetCodeEditor({
 
   const editorHeight = fullscreen ? "calc(100vh - 14rem)" : "100%";
 
+  // Same reasoning as TextCodeEditor: @monaco-editor/react calls
+  // editor.updateOptions() whenever this object's reference changes, so an
+  // inline literal here re-applied options on every snippet regeneration.
+  const editorOptions = useMemo(
+    () => ({
+      readOnly: true,
+      minimap: { enabled: false },
+      fontFamily: "var(--font-mono)",
+      fontLigatures: true,
+      fontSize: fullscreen ? 13 : 12,
+      wordWrap: (wrapLines ? "on" : "off") as "on" | "off",
+      lineNumbers: "on" as const,
+      roundedSelection: true,
+      scrollBeyondLastLine: false,
+      overviewRulerBorder: false,
+      renderLineHighlightOnlyWhenFocus: true,
+      lineDecorationsWidth: 10,
+      glyphMargin: false,
+      folding: false,
+      automaticLayout: true,
+      padding: { top: 16, bottom: 24 },
+      smoothScrolling: true,
+      cursorStyle: "line-thin" as const,
+      cursorBlinking: "solid" as const,
+      renderValidationDecorations: "off" as const,
+    }),
+    [fullscreen, wrapLines],
+  );
+
   const matches = useMemo(() => {
     const editor = editorRef.current;
     const model = editor?.getModel();
@@ -235,28 +264,7 @@ export function SnippetCodeEditor({
               Loading editor…
             </div>
           }
-          options={{
-            readOnly: true,
-            minimap: { enabled: false },
-            fontFamily: "var(--font-mono)",
-            fontLigatures: true,
-            fontSize: fullscreen ? 13 : 12,
-            wordWrap: wrapLines ? "on" : "off",
-            lineNumbers: "on",
-            roundedSelection: true,
-            scrollBeyondLastLine: false,
-            overviewRulerBorder: false,
-            renderLineHighlightOnlyWhenFocus: true,
-            lineDecorationsWidth: 10,
-            glyphMargin: false,
-            folding: false,
-            automaticLayout: true,
-            padding: { top: 16, bottom: 24 },
-            smoothScrolling: true,
-            cursorStyle: "line-thin",
-            cursorBlinking: "solid",
-            renderValidationDecorations: "off",
-          }}
+          options={editorOptions}
         />
       </div>
     </div>

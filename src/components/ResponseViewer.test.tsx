@@ -350,3 +350,93 @@ describe("ResponseViewer — live streaming progress", () => {
     expect(screen.getByText("fresh chunk")).toBeInTheDocument();
   });
 });
+
+describe("ResponseViewer — find in response", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("opens the find bar from the toolbar button and reports a match count", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    render(
+      <ResponseViewer
+        result={makeResult({
+          responseKind: "text",
+          contentType: "text/plain",
+          body: "foo bar foo baz foo",
+        })}
+        loading={false}
+      />,
+    );
+    await user.click(screen.getByTitle("Find in response (⌘F)"));
+    await user.type(screen.getByPlaceholderText("Find in response"), "foo");
+    expect(screen.getByText("1/3")).toBeInTheDocument();
+  });
+
+  it("cycles the active match with next/previous", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    render(
+      <ResponseViewer
+        result={makeResult({
+          responseKind: "text",
+          contentType: "text/plain",
+          body: "foo bar foo baz foo",
+        })}
+        loading={false}
+      />,
+    );
+    await user.click(screen.getByTitle("Find in response (⌘F)"));
+    await user.type(screen.getByPlaceholderText("Find in response"), "foo");
+    expect(screen.getByText("1/3")).toBeInTheDocument();
+    await user.click(screen.getByTitle("Next match (Enter)"));
+    expect(screen.getByText("2/3")).toBeInTheDocument();
+    await user.click(screen.getByTitle("Previous match (Shift+Enter)"));
+    expect(screen.getByText("1/3")).toBeInTheDocument();
+  });
+
+  it("shows 0/0 for a query with no matches", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    render(
+      <ResponseViewer
+        result={makeResult({ responseKind: "text", contentType: "text/plain", body: "hello" })}
+        loading={false}
+      />,
+    );
+    await user.click(screen.getByTitle("Find in response (⌘F)"));
+    await user.type(screen.getByPlaceholderText("Find in response"), "nope");
+    expect(screen.getByText("0/0")).toBeInTheDocument();
+  });
+
+  it("closes the find bar on Escape", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    render(
+      <ResponseViewer
+        result={makeResult({ responseKind: "text", contentType: "text/plain", body: "hello" })}
+        loading={false}
+      />,
+    );
+    await user.click(screen.getByTitle("Find in response (⌘F)"));
+    const input = screen.getByPlaceholderText("Find in response");
+    await user.type(input, "hel{Escape}");
+    expect(screen.queryByPlaceholderText("Find in response")).not.toBeInTheDocument();
+  });
+
+  it("disables the find button when there's nothing searchable (binary response)", () => {
+    render(
+      <ResponseViewer
+        result={makeResult({
+          responseKind: "binary",
+          body: "",
+          contentType: "application/octet-stream",
+          blob: new Blob([new Uint8Array([1, 2, 3])]),
+        })}
+        loading={false}
+      />,
+    );
+    expect(screen.getByTitle("Nothing to search in this view")).toBeDisabled();
+  });
+});

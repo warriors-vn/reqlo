@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Search, FolderClosed, Heart, Inbox } from "lucide-react";
 import { useStore } from "@/stores/useStore";
+import { useShallow } from "zustand/react/shallow";
 import { CollectionsEmptyState } from "./sidebar/CollectionsEmptyState";
 import { DropIndicator } from "./sidebar/DropIndicator";
 import { FolderTree } from "./sidebar/FolderTree";
@@ -12,6 +13,13 @@ import { SidebarBrandRow } from "./sidebar/SidebarBrandRow";
 import { NewCollectionForm } from "./sidebar/NewCollectionForm";
 import { SidebarDeleteDialogs } from "./sidebar/SidebarDeleteDialogs";
 import { CollectionActionsMenu } from "./sidebar/CollectionActionsMenu";
+import { useInlineRename } from "./sidebar/useInlineRename";
+import { useSidebarDnd } from "./sidebar/useSidebarDnd";
+
+// A stable no-op for list slots (favorites) that don't support the
+// interaction at all — a fresh arrow function here would change identity
+// every render and defeat RequestList's row memoization for no reason.
+const noop = () => undefined;
 
 export function Sidebar() {
   const {
@@ -49,45 +57,61 @@ export function Sidebar() {
     setPalette,
     sidebarTree,
     setSidebarTreeOpen,
-  } = useStore();
+  } = useStore(
+    useShallow((state) => ({
+      collections: state.collections,
+      folders: state.folders,
+      requests: state.requests,
+      history: state.history,
+      openRequest: state.openRequest,
+      activeTabId: state.activeTabId,
+      tabs: state.tabs,
+      createRequest: state.createRequest,
+      createCollection: state.createCollection,
+      renameCollection: state.renameCollection,
+      moveRequestToCollection: state.moveRequestToCollection,
+      reorderRequests: state.reorderRequests,
+      deleteRequest: state.deleteRequest,
+      duplicateRequest: state.duplicateRequest,
+      renameRequest: state.renameRequest,
+      requestPrompt: state.requestPrompt,
+      duplicateCollection: state.duplicateCollection,
+      deleteCollection: state.deleteCollection,
+      createFolder: state.createFolder,
+      renameFolder: state.renameFolder,
+      deleteFolder: state.deleteFolder,
+      reorderFolders: state.reorderFolders,
+      moveFolderToParent: state.moveFolderToParent,
+      moveRequestToFolder: state.moveRequestToFolder,
+      toggleFavorite: state.toggleFavorite,
+      exportCollectionById: state.exportCollectionById,
+      openDefaultsEditor: state.openDefaultsEditor,
+      exportCollectionAsFilesById: state.exportCollectionAsFilesById,
+      exportCollectionAsPostman: state.exportCollectionAsPostman,
+      exportCollectionAsOpenApi: state.exportCollectionAsOpenApi,
+      reorderCollections: state.reorderCollections,
+      setPalette: state.setPalette,
+      sidebarTree: state.sidebarTree,
+      setSidebarTreeOpen: state.setSidebarTreeOpen,
+    })),
+  );
   const [query, setQuery] = useState("");
   const [newCollectionName, setNewCollectionName] = useState("");
-  const [renamingCollectionId, setRenamingCollectionId] = useState<string | null>(null);
-  const [collectionNameDraft, setCollectionNameDraft] = useState("");
-  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
-  const [folderNameDraft, setFolderNameDraft] = useState("");
-  const [draggedCollectionId, setDraggedCollectionId] = useState<string | null>(null);
-  const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null);
-  const [draggedRequest, setDraggedRequest] = useState<{
-    id: string;
-    collectionId: string | null;
-    folderId: string | null;
-  } | null>(null);
-  const [collectionAppendTargetId, setCollectionAppendTargetId] = useState<string | null>(null);
-  const [collectionReorderTargetId, setCollectionReorderTargetId] = useState<string | null>(null);
-  const [folderAppendTargetId, setFolderAppendTargetId] = useState<string | null>(null);
-  const [folderReorderTargetId, setFolderReorderTargetId] = useState<string | null>(null);
-  const [requestDropTarget, setRequestDropTarget] = useState<{
-    targetId: string | null;
-    collectionId: string | null;
-    folderId: string | null;
-  } | null>(null);
   const [pendingDeleteRequestId, setPendingDeleteRequestId] = useState<string | null>(null);
   const [pendingDeleteCollectionId, setPendingDeleteCollectionId] = useState<string | null>(null);
   const [pendingDeleteFolderId, setPendingDeleteFolderId] = useState<string | null>(null);
+
+  const q = query.trim().toLowerCase();
+  const dragEnabled = !q;
+
+  const collectionRename = useInlineRename(renameCollection);
+  const folderRename = useInlineRename(renameFolder);
+  const dnd = useSidebarDnd(dragEnabled);
 
   const activeRequestId = tabs.find((t) => t.id === activeTabId)?.requestId;
   const activeRequestObj = requests.find((request) => request.id === activeRequestId);
   const activeCollectionId = activeRequestObj?.collectionId ?? null;
   const activeFolderId = activeRequestObj?.folderId ?? null;
-  const q = query.trim().toLowerCase();
-  const dragEnabled = !q;
-  const reorderRequestDrop = reorderRequests as (
-    draggedId: string,
-    targetId: string | null,
-    collectionId: string | null,
-    folderId: string | null,
-  ) => Promise<void>;
 
   const filteredRequests = useMemo(
     () =>
@@ -114,33 +138,6 @@ export function Sidebar() {
     [collections],
   );
 
-  const clearRequestDragState = () => {
-    setDraggedRequest(null);
-    setRequestDropTarget(null);
-    setCollectionAppendTargetId(null);
-    setFolderAppendTargetId(null);
-  };
-
-  const clearCollectionDragState = () => {
-    setDraggedCollectionId(null);
-    setCollectionReorderTargetId(null);
-  };
-
-  const clearFolderDragState = () => {
-    setDraggedFolderId(null);
-    setFolderReorderTargetId(null);
-    setCollectionAppendTargetId(null);
-    setFolderAppendTargetId(null);
-  };
-
-  useEffect(() => {
-    if (!dragEnabled) {
-      clearRequestDragState();
-      clearCollectionDragState();
-      clearFolderDragState();
-    }
-  }, [dragEnabled]);
-
   const createCollectionInline = async () => {
     const name = newCollectionName.trim();
     if (!name) return;
@@ -148,45 +145,51 @@ export function Sidebar() {
     setNewCollectionName("");
   };
 
-  const startCollectionRename = (id: string, name: string) => {
-    setRenamingCollectionId(id);
-    setCollectionNameDraft(name);
-  };
+  // Reads `requests` imperatively (rather than closing over the component's
+  // own `requests` prop) so this callback's identity doesn't change on every
+  // keystroke made while editing a request elsewhere — it's threaded down
+  // through FolderTree/RequestList to every row via `onRename`.
+  const startRequestRename = useCallback(
+    async (id: string) => {
+      const target = useStore.getState().requests.find((r) => r.id === id);
+      if (!target) return;
+      const name = await requestPrompt({ title: "Rename request", defaultValue: target.name });
+      if (name) await renameRequest(id, name);
+    },
+    [requestPrompt, renameRequest],
+  );
 
-  const submitCollectionRename = async (id: string) => {
-    const nextName = collectionNameDraft.trim();
-    if (nextName) {
-      await renameCollection(id, nextName);
-    }
-    setRenamingCollectionId(null);
-    setCollectionNameDraft("");
-  };
+  const createFolderInline = useCallback(
+    async (collectionId: string, parentFolderId: string | null) => {
+      const folder = await createFolder(collectionId, parentFolderId, "New folder");
+      folderRename.start(folder.id, folder.name);
+    },
+    [createFolder, folderRename],
+  );
 
-  const startFolderRename = (id: string, name: string) => {
-    setRenamingFolderId(id);
-    setFolderNameDraft(name);
-  };
+  const onNewFolder = useCallback(
+    (collectionId: string, parentFolderId: string | null) =>
+      void createFolderInline(collectionId, parentFolderId),
+    [createFolderInline],
+  );
 
-  const submitFolderRename = async (id: string) => {
-    const nextName = folderNameDraft.trim();
-    if (nextName) {
-      await renameFolder(id, nextName);
-    }
-    setRenamingFolderId(null);
-    setFolderNameDraft("");
-  };
-
-  const startRequestRename = async (id: string) => {
-    const target = requests.find((r) => r.id === id);
-    if (!target) return;
-    const name = await requestPrompt({ title: "Rename request", defaultValue: target.name });
-    if (name) await renameRequest(id, name);
-  };
-
-  const createFolderInline = async (collectionId: string, parentFolderId: string | null) => {
-    const folder = await createFolder(collectionId, parentFolderId, "New folder");
-    startFolderRename(folder.id, folder.name);
-  };
+  // Reads `folders` imperatively for the same reason as startRequestRename
+  // above — this is the single `onFolderDrop` shared by every folder in
+  // every collection via FolderTree's recursion.
+  const onFolderDrop = useCallback(
+    (targetFolderId: string) => {
+      const allFolders = useStore.getState().folders;
+      const dragged = allFolders.find((f) => f.id === dnd.draggedFolderId);
+      const target = allFolders.find((f) => f.id === targetFolderId);
+      if (!dragged || !target || dragged.id === target.id) return;
+      if (dragged.parentFolderId === target.parentFolderId) {
+        void reorderFolders(dragged.id, target.id);
+      } else {
+        void moveFolderToParent(dragged.id, target.id);
+      }
+    },
+    [dnd.draggedFolderId, reorderFolders, moveFolderToParent],
+  );
 
   return (
     <aside
@@ -245,20 +248,20 @@ export function Sidebar() {
             listCollectionId={null}
             listFolderId={null}
             reorderEnabled={false}
-            draggedRequest={draggedRequest}
-            requestDropTarget={requestDropTarget}
+            draggedRequest={dnd.draggedRequest}
+            requestDropTarget={dnd.requestDropTarget}
             activeRequestId={activeRequestId}
             onOpen={openRequest}
-            onToggleFavorite={(id) => void toggleFavorite(id)}
-            onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
-            onDragStart={() => undefined}
-            onDragEnd={clearRequestDragState}
-            onReorder={() => undefined}
-            onRequestDropTargetChange={() => undefined}
-            onSectionAppendHover={() => undefined}
-            onRename={(id) => void startRequestRename(id)}
-            onDuplicate={(id) => void duplicateRequest(id)}
-            onDelete={(id) => setPendingDeleteRequestId(id)}
+            onToggleFavorite={toggleFavorite}
+            onMove={moveRequestToCollection}
+            onDragStart={noop}
+            onDragEnd={dnd.clearRequestDragState}
+            onReorder={noop}
+            onRequestDropTargetChange={noop}
+            onSectionAppendHover={noop}
+            onRename={startRequestRename}
+            onDuplicate={duplicateRequest}
+            onDelete={setPendingDeleteRequestId}
             emptyIcon={<Heart className="h-3.5 w-3.5" />}
             emptyTitle="No favorites yet"
             emptyHint="Star a request to pin it here"
@@ -272,18 +275,18 @@ export function Sidebar() {
           open={sidebarTree.unfiled}
           onToggle={() => setSidebarTreeOpen("unfiled", !sidebarTree.unfiled)}
           onDragOver={(event) => {
-            if (!dragEnabled || !draggedRequest) return;
+            if (!dragEnabled || !dnd.draggedRequest) return;
             event.preventDefault();
-            setCollectionAppendTargetId("__unfiled__");
-            setRequestDropTarget(null);
+            dnd.setCollectionAppendTargetId("__unfiled__");
+            dnd.setRequestDropTarget(null);
           }}
           onDrop={() => {
-            if (!dragEnabled || !draggedRequest) return;
-            void reorderRequestDrop(draggedRequest.id, null, null, null);
-            clearRequestDragState();
+            if (!dragEnabled || !dnd.draggedRequest) return;
+            void reorderRequests(dnd.draggedRequest.id, null, null, null);
+            dnd.clearRequestDragState();
           }}
           dropIndicator={
-            collectionAppendTargetId === "__unfiled__" ? (
+            dnd.collectionAppendTargetId === "__unfiled__" ? (
               <DropIndicator label="Drop to add to Unfiled" />
             ) : null
           }
@@ -294,26 +297,20 @@ export function Sidebar() {
             listCollectionId={null}
             listFolderId={null}
             reorderEnabled={dragEnabled}
-            draggedRequest={draggedRequest}
-            requestDropTarget={requestDropTarget}
+            draggedRequest={dnd.draggedRequest}
+            requestDropTarget={dnd.requestDropTarget}
             activeRequestId={activeRequestId}
             onOpen={openRequest}
-            onToggleFavorite={(id) => void toggleFavorite(id)}
-            onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
-            onDragStart={(id, collectionId, folderId) => {
-              setDraggedRequest({ id, collectionId, folderId });
-              setCollectionAppendTargetId(null);
-              setRequestDropTarget(null);
-            }}
-            onDragEnd={clearRequestDragState}
-            onReorder={(draggedId, targetId, collectionId, folderId) =>
-              void reorderRequestDrop(draggedId, targetId, collectionId, folderId)
-            }
-            onRequestDropTargetChange={setRequestDropTarget}
-            onSectionAppendHover={setCollectionAppendTargetId}
-            onRename={(id) => void startRequestRename(id)}
-            onDuplicate={(id) => void duplicateRequest(id)}
-            onDelete={(id) => setPendingDeleteRequestId(id)}
+            onToggleFavorite={toggleFavorite}
+            onMove={moveRequestToCollection}
+            onDragStart={dnd.startRequestDrag}
+            onDragEnd={dnd.clearRequestDragState}
+            onReorder={reorderRequests}
+            onRequestDropTargetChange={dnd.setRequestDropTarget}
+            onSectionAppendHover={dnd.setCollectionAppendTargetId}
+            onRename={startRequestRename}
+            onDuplicate={duplicateRequest}
+            onDelete={setPendingDeleteRequestId}
             emptyIcon={<Inbox className="h-3.5 w-3.5" />}
             emptyTitle="Nothing unfiled"
             emptyHint="Drag a request here to unfile it"
@@ -328,22 +325,19 @@ export function Sidebar() {
               key={col.id}
               icon={<FolderClosed className="h-3.5 w-3.5 text-muted-foreground" />}
               title={
-                renamingCollectionId === col.id ? (
+                collectionRename.renamingId === col.id ? (
                   <input
                     autoFocus
-                    value={collectionNameDraft}
-                    onChange={(event) => setCollectionNameDraft(event.target.value)}
+                    value={collectionRename.draft}
+                    onChange={(event) => collectionRename.setDraft(event.target.value)}
                     onClick={(event) => event.stopPropagation()}
-                    onBlur={() => void submitCollectionRename(col.id)}
+                    onBlur={() => void collectionRename.submit(col.id)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();
                         event.currentTarget.blur();
                       }
-                      if (event.key === "Escape") {
-                        setRenamingCollectionId(null);
-                        setCollectionNameDraft("");
-                      }
+                      if (event.key === "Escape") collectionRename.cancel();
                     }}
                     className="h-7 min-w-0 rounded-lg border border-border/80 bg-background/80 px-2 text-xs font-medium outline-none transition focus:border-foreground/15"
                   />
@@ -354,54 +348,57 @@ export function Sidebar() {
               count={list.length}
               open={isOpen}
               onToggle={() => setSidebarTreeOpen(col.id, !isOpen)}
-              draggable={dragEnabled && renamingCollectionId !== col.id}
-              dragging={draggedCollectionId === col.id}
-              dragTargeted={collectionReorderTargetId === col.id}
-              onDragStart={() => {
-                setDraggedCollectionId(col.id);
-                setCollectionReorderTargetId(null);
-              }}
-              onDragEnd={clearCollectionDragState}
+              draggable={dragEnabled && collectionRename.renamingId !== col.id}
+              dragging={dnd.draggedCollectionId === col.id}
+              dragTargeted={dnd.collectionReorderTargetId === col.id}
+              onDragStart={() => dnd.startCollectionDrag(col.id)}
+              onDragEnd={dnd.clearCollectionDragState}
               onDragOver={(event) => {
-                if (dragEnabled && (draggedRequest || draggedFolderId)) {
+                if (dragEnabled && (dnd.draggedRequest || dnd.draggedFolderId)) {
                   event.preventDefault();
-                  setCollectionAppendTargetId(col.id);
-                  setRequestDropTarget(null);
+                  dnd.setCollectionAppendTargetId(col.id);
+                  dnd.setRequestDropTarget(null);
                   return;
                 }
-                if (!dragEnabled || !draggedCollectionId || draggedCollectionId === col.id) return;
+                if (
+                  !dragEnabled ||
+                  !dnd.draggedCollectionId ||
+                  dnd.draggedCollectionId === col.id
+                ) {
+                  return;
+                }
                 event.preventDefault();
-                setCollectionReorderTargetId(col.id);
+                dnd.setCollectionReorderTargetId(col.id);
               }}
               onDrop={() => {
-                if (dragEnabled && draggedRequest) {
-                  void reorderRequestDrop(draggedRequest.id, null, col.id, null);
-                  clearRequestDragState();
+                if (dragEnabled && dnd.draggedRequest) {
+                  void reorderRequests(dnd.draggedRequest.id, null, col.id, null);
+                  dnd.clearRequestDragState();
                   return;
                 }
-                if (dragEnabled && draggedFolderId) {
-                  const dragged = folders.find((f) => f.id === draggedFolderId);
+                if (dragEnabled && dnd.draggedFolderId) {
+                  const dragged = folders.find((f) => f.id === dnd.draggedFolderId);
                   if (dragged && dragged.collectionId === col.id) {
-                    void moveFolderToParent(draggedFolderId, null);
+                    void moveFolderToParent(dnd.draggedFolderId, null);
                   }
-                  clearFolderDragState();
+                  dnd.clearFolderDragState();
                   return;
                 }
-                if (!draggedCollectionId || draggedCollectionId === col.id) return;
-                void reorderCollections(draggedCollectionId, col.id);
-                clearCollectionDragState();
+                if (!dnd.draggedCollectionId || dnd.draggedCollectionId === col.id) return;
+                void reorderCollections(dnd.draggedCollectionId, col.id);
+                dnd.clearCollectionDragState();
               }}
               dropIndicator={
-                collectionAppendTargetId === col.id ? (
+                dnd.collectionAppendTargetId === col.id ? (
                   <DropIndicator label={`Drop to add to ${col.name}`} />
-                ) : collectionReorderTargetId === col.id ? (
+                ) : dnd.collectionReorderTargetId === col.id ? (
                   <DropIndicator label={`Drop to reorder ${col.name}`} tone="muted" />
                 ) : null
               }
               actions={
                 <CollectionActionsMenu
                   collection={col}
-                  onRename={() => startCollectionRename(col.id, col.name)}
+                  onRename={() => collectionRename.start(col.id, col.name)}
                   onCreateRequest={(protocol) => void createRequest(col.id, null, protocol)}
                   onCreateFolder={() => void createFolderInline(col.id, null)}
                   onDuplicate={() => void duplicateCollection(col.id)}
@@ -421,67 +418,39 @@ export function Sidebar() {
                 requests={filteredRequests}
                 collections={collectionOptions}
                 dragEnabled={dragEnabled}
-                draggedRequest={draggedRequest}
-                requestDropTarget={requestDropTarget}
-                draggedFolderId={draggedFolderId}
-                folderReorderTargetId={folderReorderTargetId}
-                folderAppendTargetId={folderAppendTargetId}
+                draggedRequest={dnd.draggedRequest}
+                requestDropTarget={dnd.requestDropTarget}
+                draggedFolderId={dnd.draggedFolderId}
+                folderReorderTargetId={dnd.folderReorderTargetId}
+                folderAppendTargetId={dnd.folderAppendTargetId}
                 activeRequestId={activeRequestId}
                 openMap={sidebarTree.collections}
-                renamingFolderId={renamingFolderId}
-                folderNameDraft={folderNameDraft}
-                onFolderNameDraftChange={setFolderNameDraft}
-                onToggleFolderOpen={(id, open) => setSidebarTreeOpen(id, open)}
-                onStartFolderRename={startFolderRename}
-                onSubmitFolderRename={submitFolderRename}
-                onCancelFolderRename={() => {
-                  setRenamingFolderId(null);
-                  setFolderNameDraft("");
-                }}
+                renamingFolderId={folderRename.renamingId}
+                folderNameDraft={folderRename.draft}
+                onFolderNameDraftChange={folderRename.setDraft}
+                onToggleFolderOpen={setSidebarTreeOpen}
+                onStartFolderRename={folderRename.start}
+                onSubmitFolderRename={folderRename.submit}
+                onCancelFolderRename={folderRename.cancel}
                 onOpen={openRequest}
-                onToggleFavorite={(id) => void toggleFavorite(id)}
-                onMove={(id, collectionId) => void moveRequestToCollection(id, collectionId)}
-                onDragStartRequest={(id, collectionId, folderId) => {
-                  setDraggedRequest({ id, collectionId, folderId });
-                  setCollectionAppendTargetId(null);
-                  setFolderAppendTargetId(null);
-                  setRequestDropTarget(null);
-                }}
-                onDragEndRequest={clearRequestDragState}
-                onReorderRequest={(draggedId, targetId, collectionId, folderId) =>
-                  void reorderRequestDrop(draggedId, targetId, collectionId, folderId)
-                }
-                onRequestDropTargetChange={setRequestDropTarget}
-                onRenameRequest={(id) => void startRequestRename(id)}
-                onDuplicateRequest={(id) => void duplicateRequest(id)}
-                onDeleteRequest={(id) => setPendingDeleteRequestId(id)}
-                onDropRequestIntoFolder={(requestId, collectionId, folderId) =>
-                  void moveRequestToFolder(requestId, collectionId, folderId)
-                }
-                onDragStartFolder={(id) => {
-                  setDraggedFolderId(id);
-                  setFolderReorderTargetId(null);
-                }}
-                onDragEndFolder={clearFolderDragState}
-                onFolderAppendHover={setFolderAppendTargetId}
-                onFolderReorderTargetChange={setFolderReorderTargetId}
-                onFolderDrop={(targetFolderId) => {
-                  const dragged = folders.find((f) => f.id === draggedFolderId);
-                  const target = folders.find((f) => f.id === targetFolderId);
-                  if (!dragged || !target || dragged.id === target.id) return;
-                  if (dragged.parentFolderId === target.parentFolderId) {
-                    void reorderFolders(dragged.id, target.id);
-                  } else {
-                    void moveFolderToParent(dragged.id, target.id);
-                  }
-                }}
-                onNewFolder={(collectionId, parentFolderId) =>
-                  void createFolderInline(collectionId, parentFolderId)
-                }
-                onNewRequestInFolder={(collectionId, folderId) =>
-                  void createRequest(collectionId, folderId)
-                }
-                onDeleteFolderRequest={(id) => setPendingDeleteFolderId(id)}
+                onToggleFavorite={toggleFavorite}
+                onMove={moveRequestToCollection}
+                onDragStartRequest={dnd.startRequestDrag}
+                onDragEndRequest={dnd.clearRequestDragState}
+                onReorderRequest={reorderRequests}
+                onRequestDropTargetChange={dnd.setRequestDropTarget}
+                onRenameRequest={startRequestRename}
+                onDuplicateRequest={duplicateRequest}
+                onDeleteRequest={setPendingDeleteRequestId}
+                onDropRequestIntoFolder={moveRequestToFolder}
+                onDragStartFolder={dnd.startFolderDrag}
+                onDragEndFolder={dnd.clearFolderDragState}
+                onFolderAppendHover={dnd.setFolderAppendTargetId}
+                onFolderReorderTargetChange={dnd.setFolderReorderTargetId}
+                onFolderDrop={onFolderDrop}
+                onNewFolder={onNewFolder}
+                onNewRequestInFolder={createRequest}
+                onDeleteFolderRequest={setPendingDeleteFolderId}
               />
             </SidebarSection>
           );
