@@ -203,12 +203,26 @@ function convertUrl(url: PostmanUrl | string | undefined): { url: string; queryP
       (q) => ({ id: uid(), key: q.key, value: q.value ?? "", enabled: !q.disabled }) satisfies KV,
     );
 
-  if (url.raw) return { url: url.raw, queryParams };
+  // Postman writes the query string into `raw` AND lists it in `query[]`.
+  // reqlo appends queryParams to the URL at send time, so keeping both would
+  // send every param twice — `query[]` wins because it also carries the
+  // disabled rows `raw` has already dropped.
+  if (url.raw) return { url: queryParams.length ? stripQuery(url.raw) : url.raw, queryParams };
 
   const host = Array.isArray(url.host) ? url.host.join(".") : (url.host ?? "");
   const path = Array.isArray(url.path) ? url.path.join("/") : (url.path ?? "");
   const protocol = url.protocol ? `${url.protocol}://` : "";
   return { url: `${protocol}${host}${path ? `/${path}` : ""}`, queryParams };
+}
+
+/** `https://a.b/x?y=1#frag` → `https://a.b/x#frag`. */
+function stripQuery(raw: string): string {
+  const queryStart = raw.indexOf("?");
+  if (queryStart === -1) return raw;
+  const hashStart = raw.indexOf("#", queryStart);
+  return hashStart === -1
+    ? raw.slice(0, queryStart)
+    : raw.slice(0, queryStart) + raw.slice(hashStart);
 }
 
 function convertBody(

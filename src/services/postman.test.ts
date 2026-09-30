@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { looksLikePostmanCollection, parsePostmanCollection } from "@/services/postman";
+import { buildResolvedRequestArtifacts } from "@/features/code-snippets/utils/request-resolver";
+import { NO_ANCESTORS } from "@/services/inheritance";
 
 const WORKSPACE_ID = "ws-1";
 type Doc = Parameters<typeof parsePostmanCollection>[0];
@@ -68,7 +70,7 @@ describe("parsePostmanCollection", () => {
       expect(result.requests[0].queryParams).toEqual([]);
     });
 
-    it("prefers the object form's raw field when present", () => {
+    it("prefers the object form's raw field, minus the query string that query[] already carries", () => {
       const doc: Doc = {
         item: [
           {
@@ -79,10 +81,38 @@ describe("parsePostmanCollection", () => {
         ],
       };
       const result = parsePostmanCollection(doc, WORKSPACE_ID);
-      expect(result.requests[0].url).toBe("https://api.example.com/x?y=1");
+      expect(result.requests[0].url).toBe("https://api.example.com/x");
       expect(result.requests[0].queryParams).toEqual([
         { id: expect.any(String), key: "y", value: "1", enabled: true },
       ]);
+    });
+
+    it("sends each imported query param exactly once", () => {
+      const doc: Doc = {
+        item: [
+          {
+            request: {
+              url: {
+                raw: "https://api.example.com/x?y=1&z=2#top",
+                query: [
+                  { key: "y", value: "1" },
+                  { key: "z", value: "2" },
+                ],
+              },
+            },
+          },
+        ],
+      };
+      const [request] = parsePostmanCollection(doc, WORKSPACE_ID).requests;
+      const sent = buildResolvedRequestArtifacts(request, null, NO_ANCESTORS).url;
+      expect(sent.match(/y=1/g)).toHaveLength(1);
+      expect(sent.match(/z=2/g)).toHaveLength(1);
+    });
+
+    it("keeps a raw URL's query string when query[] is absent", () => {
+      const doc: Doc = { item: [{ request: { url: { raw: "https://api.example.com/x?y=1" } } }] };
+      const [request] = parsePostmanCollection(doc, WORKSPACE_ID).requests;
+      expect(request.url).toBe("https://api.example.com/x?y=1");
     });
 
     it("reassembles a URL from protocol/host/path arrays when raw is absent", () => {
