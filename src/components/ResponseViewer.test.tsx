@@ -439,4 +439,25 @@ describe("ResponseViewer — find in response", () => {
     );
     expect(screen.getByTitle("Nothing to search in this view")).toBeDisabled();
   });
+
+  it("disables find on a stream response's Events view but enables it on Raw", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    render(
+      <ResponseViewer
+        result={makeResult({
+          responseKind: "stream",
+          body: "data: foo\n\ndata: bar\n\n",
+          contentType: "text/event-stream",
+        })}
+        loading={false}
+      />,
+    );
+    expect(screen.getByTitle("Nothing to search in this view")).toBeDisabled();
+
+    await user.click(screen.getByRole("tab", { name: "Raw" }));
+    await user.click(screen.getByTitle("Find in response (⌘F)"));
+    await user.type(screen.getByPlaceholderText("Find in response"), "data");
+    expect(screen.getByText("1/2")).toBeInTheDocument();
+  });
 });

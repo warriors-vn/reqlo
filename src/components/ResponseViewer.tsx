@@ -81,11 +81,13 @@ export function ResponseViewer({
     setBodyView(currentBodyView);
   }, [currentBodyView, result]);
 
-  // Only the plain-text pretty/raw body view is a flat string a substring
-  // search can run over — the SSE event list and the binary preview each
-  // render their own structure instead.
-  const searchableText =
-    bodyView !== "preview" && result?.responseKind !== "stream" ? renderableBody.text : "";
+  // Only a flat-string body view is searchable — the binary preview and, for
+  // a stream response's Pretty tab, the structured SSE event list (rendered
+  // by SseEventList, not the <pre> below) each render their own structure
+  // instead. A stream response's Raw view is still plain text and searches
+  // like any other.
+  const isStreamEventsView = bodyView === "pretty" && result?.responseKind === "stream";
+  const searchableText = bodyView !== "preview" && !isStreamEventsView ? renderableBody.text : "";
   const search = useResponseSearch(searchableText);
   const canSearch = tab === "body" && !result?.error && searchableText.length > 0;
 

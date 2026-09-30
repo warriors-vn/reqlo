@@ -34,7 +34,6 @@ export function TabBar() {
     closeTabsToRight,
     createRequest,
     duplicateRequest,
-    openRequest,
     sidebarCollapsed,
     toggleSidebar,
     activateAdjacentTab,
@@ -50,7 +49,6 @@ export function TabBar() {
       closeTabsToRight: state.closeTabsToRight,
       createRequest: state.createRequest,
       duplicateRequest: state.duplicateRequest,
-      openRequest: state.openRequest,
       sidebarCollapsed: state.sidebarCollapsed,
       toggleSidebar: state.toggleSidebar,
       activateAdjacentTab: state.activateAdjacentTab,
@@ -175,13 +173,7 @@ export function TabBar() {
                     <ChevronsRight className="h-3.5 w-3.5" /> Close to the right
                   </ContextMenuItem>
                   <ContextMenuSeparator />
-                  <ContextMenuItem
-                    onSelect={() => {
-                      void duplicateRequest(tab.requestId).then((duplicate) => {
-                        if (duplicate) openRequest(duplicate.id);
-                      });
-                    }}
-                  >
+                  <ContextMenuItem onSelect={() => void duplicateRequest(tab.requestId)}>
                     <Copy className="h-3.5 w-3.5" /> Duplicate tab
                   </ContextMenuItem>
                 </ContextMenuContent>
