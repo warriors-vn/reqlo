@@ -370,8 +370,9 @@ export function registerBuiltInCommands(): () => void {
         if (!text) return;
         const col = await s().importOpenApiText(text);
         if (!col) {
+          const { describeRejectedSpec, parseSpecText } = await import("@/services/openapi");
           toast.error("Import failed", {
-            description: "Not a recognized OpenAPI 3.0/3.1 document.",
+            description: describeRejectedSpec(await parseSpecText(text)),
           });
         }
       },

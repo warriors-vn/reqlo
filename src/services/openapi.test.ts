@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { load as loadYaml } from "js-yaml";
-import { looksLikeOpenApiDocument, parseOpenApiDocument } from "@/services/openapi";
+import {
+  describeRejectedSpec,
+  looksLikeOpenApiDocument,
+  parseOpenApiDocument,
+  parseSpecText,
+} from "@/services/openapi";
 
 const WORKSPACE_ID = "ws-1";
 type Doc = Parameters<typeof parseOpenApiDocument>[0];
+
+const varsOf = (result: ReturnType<typeof parseOpenApiDocument>) =>
+  Object.fromEntries(result.collectionDefaults.variables.map((v) => [v.key, v.value]));
 
 describe("looksLikeOpenApiDocument", () => {
   it("accepts a 3.x document with a paths object", () => {
@@ -39,7 +47,8 @@ describe("parseOpenApiDocument", () => {
     expect(result.collectionName).toBe("Pet Store");
     expect(result.requests).toHaveLength(1);
     expect(result.requests[0].method).toBe("GET");
-    expect(result.requests[0].url).toBe("https://api.example.com/pets");
+    expect(result.requests[0].url).toBe("{{baseUrl}}/pets");
+    expect(varsOf(result)).toEqual({ baseUrl: "https://api.example.com" });
     expect(result.requests[0].name).toBe("List pets");
   });
 
@@ -66,7 +75,9 @@ describe("parseOpenApiDocument", () => {
       },
     };
     const result = parseOpenApiDocument(doc, WORKSPACE_ID);
-    expect(result.requests[0].url).toBe("https://api.example.com/{{version}}/pets/{{petId}}");
+    expect(result.requests[0].url).toBe("{{baseUrl}}/pets/{{petId}}");
+    // No default for {version}, so it stays a reference the user can define.
+    expect(varsOf(result).baseUrl).toBe("https://api.example.com/{{version}}");
   });
 
   it("converts query and header parameters into KV rows, required ones enabled", () => {
@@ -326,9 +337,9 @@ describe("parseOpenApiDocument", () => {
     expect(result.folders.map((f) => f.name)).toEqual(["Pets"]);
     const petsFolderId = result.folders[0].id;
     const byPath = new Map(result.requests.map((r) => [r.url, r.folderId]));
-    expect(byPath.get("/pets")).toBe(petsFolderId);
-    expect(byPath.get("/pets/{{id}}")).toBe(petsFolderId);
-    expect(byPath.get("/health")).toBeNull();
+    expect(byPath.get("{{baseUrl}}/pets")).toBe(petsFolderId);
+    expect(byPath.get("{{baseUrl}}/pets/{{id}}")).toBe(petsFolderId);
+    expect(byPath.get("{{baseUrl}}/health")).toBeNull();
   });
 
   it("warns once and leaves external $refs unresolved", () => {
@@ -364,5 +375,106 @@ paths:
     const result = parseOpenApiDocument(parsed as Doc, WORKSPACE_ID);
     expect(result.collectionName).toBe("Pet Store");
     expect(result.requests[0].name).toBe("List pets");
+  });
+});
+
+describe("servers", () => {
+  const doc = (servers: Doc["servers"]): Doc => ({
+    openapi: "3.0.3",
+    servers,
+    paths: { "/users": { get: {} } },
+  });
+
+  it("fills a templated server from its variable defaults", () => {
+    const result = parseOpenApiDocument(
+      doc([
+        {
+          url: "https://{region}.api.example.com/{version}",
+          variables: { region: { default: "eu" }, version: { default: "v2" } },
+        },
+      ]),
+      WORKSPACE_ID,
+    );
+    expect(varsOf(result).baseUrl).toBe("https://eu.api.example.com/v2");
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("leaves baseUrl empty and says so when the server is relative", () => {
+    const result = parseOpenApiDocument(doc([{ url: "/v1" }]), WORKSPACE_ID);
+    expect(varsOf(result)).toEqual({});
+    expect(result.requests[0].url).toBe("{{baseUrl}}/users");
+    expect(result.warnings.join(" ")).toContain('"/v1"');
+    expect(result.warnings.join(" ")).toContain("https://host/v1");
+  });
+
+  it("does the same when the spec has no servers at all", () => {
+    const result = parseOpenApiDocument(doc(undefined), WORKSPACE_ID);
+    expect(varsOf(result)).toEqual({});
+    expect(result.warnings.join(" ")).toContain("no server");
+  });
+});
+
+describe("path parameters", () => {
+  it("seeds a collection variable from the parameter's example or schema default", () => {
+    const result = parseOpenApiDocument(
+      {
+        openapi: "3.0.3",
+        servers: [{ url: "https://api.example.com" }],
+        paths: {
+          "/users/{id}": {
+            parameters: [{ name: "id", in: "path", required: true, example: 42 }],
+            get: {},
+          },
+          "/orgs/{slug}": {
+            get: {
+              parameters: [
+                {
+                  name: "slug",
+                  in: "path",
+                  required: true,
+                  schema: { type: "string", default: "acme" },
+                },
+              ],
+            },
+          },
+        },
+      },
+      WORKSPACE_ID,
+    );
+    expect(varsOf(result)).toEqual({
+      baseUrl: "https://api.example.com",
+      id: "42",
+      slug: "acme",
+    });
+  });
+
+  it("doesn't invent a value for a parameter the spec gives none for", () => {
+    const result = parseOpenApiDocument(
+      {
+        openapi: "3.0.3",
+        servers: [{ url: "https://api.example.com" }],
+        paths: { "/users/{id}": { get: { parameters: [{ name: "id", in: "path" }] } } },
+      },
+      WORKSPACE_ID,
+    );
+    expect(varsOf(result)).toEqual({ baseUrl: "https://api.example.com" });
+  });
+});
+
+describe("a spec that isn't OpenAPI 3", () => {
+  it("explains a Swagger 2.0 file instead of calling it unrecognized", () => {
+    expect(describeRejectedSpec({ swagger: "2.0", paths: {} })).toMatch(/Swagger 2\.0/);
+    expect(describeRejectedSpec({ swagger: "2.0", paths: {} })).toMatch(/convert/i);
+  });
+
+  it("distinguishes an unreadable file from a readable non-spec", () => {
+    expect(describeRejectedSpec(undefined)).toMatch(/JSON or YAML/);
+    expect(describeRejectedSpec({ hello: "world" })).toMatch(/Not a recognized/);
+  });
+
+  it("parseSpecText reads JSON and YAML, and gives undefined for neither", async () => {
+    expect(await parseSpecText('{"swagger":"2.0"}')).toEqual({ swagger: "2.0" });
+    expect(await parseSpecText("swagger: '2.0'\n")).toEqual({ swagger: "2.0" });
+    expect(await parseSpecText("a: [unterminated")).toBeUndefined();
   });
 });
