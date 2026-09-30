@@ -296,3 +296,34 @@ function walkTree(
   out.push(...ownRequests);
   return out;
 }
+
+/** Waits `ms`, or less if the run is stopped meanwhile — Stop must not leave
+ * the user watching a countdown. */
+export function waitBetweenRequests(ms: number, signal: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
+/** Whether a request counts as passed: it got a good response, no script
+ * failed, and every assertion and script test held. */
+export function outcomePassed(outcome: RunSingleRequestOutcome | undefined): boolean {
+  if (!outcome) return false;
+  return (
+    !outcome.result.error &&
+    !outcome.result.scriptError &&
+    // A post-response script that couldn't run leaves its tests unanswered,
+    // which is not the same as them passing.
+    !outcome.result.postScriptError &&
+    outcome.result.ok &&
+    outcome.assertionOutcomes.every((o) => o.passed) &&
+    (outcome.result.scriptTests ?? []).every((test) => test.passed)
+  );
+}

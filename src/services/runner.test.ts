@@ -15,6 +15,7 @@ import {
   collectRequestsInTreeOrder,
   partitionRunnableRequests,
   runSingleRequest,
+  waitBetweenRequests,
 } from "@/services/runner";
 import { MAX_RESPONSE_RENDER_LENGTH } from "@/lib/response-body-view";
 
@@ -589,5 +590,37 @@ describe("runSingleRequest — history URL", () => {
     expect(entry.resolvedUrl).toContain("api_key=");
     expect(entry.resolvedUrl).not.toContain("s3cret-value");
     expect(entry.searchText).not.toContain("s3cret-value");
+  });
+});
+
+describe("waitBetweenRequests", () => {
+  it("waits the delay, and returns at once for zero", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      let done = false;
+      void waitBetweenRequests(500, controller.signal).then(() => (done = true));
+      await vi.advanceTimersByTimeAsync(499);
+      expect(done).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(done).toBe(true);
+      await expect(waitBetweenRequests(0, controller.signal)).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is cut short when the run is stopped", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      let done = false;
+      void waitBetweenRequests(60_000, controller.signal).then(() => (done = true));
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(done).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
