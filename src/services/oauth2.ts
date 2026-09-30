@@ -3,7 +3,7 @@ import {
   createEnvironmentMap,
   resolveTemplate,
 } from "@/features/code-snippets/utils/request-resolver";
-import { fetchViaProxy, ProxyUnavailableError } from "@/services/proxy-client";
+import { fetchViaProxy, ProxyUnavailableError, throwIfProxyError } from "@/services/proxy-client";
 import { PROXIED_HEADER } from "@/services/proxy-constants";
 
 const CALLBACK_PATH = "/oauth/callback";
@@ -106,6 +106,7 @@ async function requestToken(
     throw new Error(`Token request failed: ${msg}. Check that reqlo is still running.`);
   }
   if (!res.headers.has(PROXIED_HEADER)) throw new ProxyUnavailableError();
+  await throwIfProxyError(res);
 
   const text = await res.text();
   let json: Record<string, unknown> = {};

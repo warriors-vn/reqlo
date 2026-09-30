@@ -4,7 +4,13 @@
 // server the production Docker image runs (server/static-server.mjs). Nothing
 // here touches the router, so neither host has to pull the other's runtime in.
 
-import { PROXIED_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
+import {
+  encodeUpstreamHeaders,
+  PROXIED_HEADER,
+  PROXY_ERROR_HEADER,
+  PROXY_TARGET_HEADER,
+  UPSTREAM_HEADERS_HEADER,
+} from "@/services/proxy-constants";
 
 // Metadata about reqlo's own request to /api/proxy — meaningless (or a
 // privacy leak) to forward on to an arbitrary third-party target.
@@ -127,9 +133,47 @@ function proxyErrorResponse(status: number, message: string): Response {
     headers: {
       "content-type": "application/json",
       [PROXIED_HEADER]: "1",
+      // Everything built here is reqlo's own answer, never the target's.
+      [PROXY_ERROR_HEADER]: "1",
       "cache-control": "no-store",
     },
   });
+}
+
+const CONNECT_FAILURE_REASONS: Record<string, string> = {
+  ENOTFOUND: "the host name couldn't be resolved (DNS lookup failed)",
+  EAI_AGAIN: "the host name couldn't be resolved (DNS lookup timed out)",
+  ECONNREFUSED: "the connection was refused — nothing is listening on that host and port",
+  ECONNRESET: "the connection was reset by the other side",
+  ETIMEDOUT: "the connection timed out",
+  UND_ERR_CONNECT_TIMEOUT: "the connection timed out",
+  EHOSTUNREACH: "the host is unreachable",
+  ENETUNREACH: "the network is unreachable",
+  UND_ERR_SOCKET: "the connection was closed before a response arrived",
+};
+
+/**
+ * Why the upstream fetch failed, in words. Node's fetch reports every
+ * connection-level failure as the same bare "fetch failed" and puts the
+ * actual reason on `error.cause` — the code (ENOTFOUND, ECONNREFUSED, a TLS
+ * certificate error) that is the one thing the user needs to see.
+ */
+function describeFetchFailure(error: unknown, target: URL): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error ? (error.cause as unknown) : undefined;
+  const code =
+    cause && typeof cause === "object" && typeof (cause as { code?: unknown }).code === "string"
+      ? (cause as { code: string }).code
+      : "";
+  const causeMessage = cause instanceof Error ? cause.message : "";
+
+  const known = CONNECT_FAILURE_REASONS[code];
+  if (known) return `Couldn't connect to ${target.host}: ${known} (${code}).`;
+  if (/CERT|TLS|SSL|SELF_SIGNED|ALTNAME/i.test(code)) {
+    return `Couldn't connect to ${target.host}: TLS certificate problem — ${causeMessage || code} (${code}).`;
+  }
+  const detail = causeMessage || message;
+  return `Couldn't connect to ${target.host}: ${detail}${code ? ` (${code})` : ""}.`;
 }
 
 // Exported for direct unit testing of the SSRF guard and header handling —
@@ -209,8 +253,7 @@ export async function handleProxyRequest({ request }: { request: Request }): Pro
         signal: request.signal,
       } as RequestInit)) as Response;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return proxyErrorResponse(502, `reqlo's proxy couldn't reach the target: ${message}`);
+      return proxyErrorResponse(502, describeFetchFailure(error, currentUrl));
     }
 
     const location = REDIRECT_STATUSES.has(upstream.status)
@@ -261,6 +304,14 @@ export async function handleProxyRequest({ request }: { request: Request }): Pro
 
   const responseHeaders = new Headers(upstream.headers);
   for (const key of STRIPPED_RESPONSE_HEADERS) responseHeaders.delete(key);
+  // The browser would apply the target's cookies to reqlo's own origin, where
+  // they pile up and are never sent back to the target. They reach the user
+  // through the encoded copy below instead.
+  responseHeaders.delete("set-cookie");
+  // Taken from the untouched upstream headers, before anything above was
+  // stripped or anything below is added: this is what the response view shows.
+  const upstreamHeaders = encodeUpstreamHeaders(upstream.headers);
+  if (upstreamHeaders) responseHeaders.set(UPSTREAM_HEADERS_HEADER, upstreamHeaders);
   responseHeaders.set(PROXIED_HEADER, "1");
   // Every call here is semantically a fresh outbound send, even though the
   // outer URL is always the same "/api/proxy" — the real target lives in a

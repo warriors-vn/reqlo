@@ -1,7 +1,7 @@
 import type { IntrospectionQuery } from "graphql";
 import type { ApiRequest, Environment } from "@/services/db";
 import type { RequestAncestors } from "@/services/inheritance";
-import { fetchViaProxy, ProxyUnavailableError } from "@/services/proxy-client";
+import { fetchViaProxy, ProxyUnavailableError, throwIfProxyError } from "@/services/proxy-client";
 import { PROXIED_HEADER } from "@/services/proxy-constants";
 import {
   applyPreRequestScript,
@@ -69,6 +69,11 @@ export async function fetchIntrospectionSchema(
   }
   if (!res.headers.has(PROXIED_HEADER)) {
     return { ok: false, error: new ProxyUnavailableError().message };
+  }
+  try {
+    await throwIfProxyError(res);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 
   if (!res.ok) {
