@@ -44,6 +44,31 @@ export function TextCodeEditor({
     }
   }, [validation]);
 
+  // @monaco-editor/react diffs this object by reference and calls the
+  // underlying editor's updateOptions() whenever it changes — a fresh
+  // literal every render meant that ran on every keystroke even when
+  // nothing here actually changed.
+  const editorOptions = useMemo(
+    () => ({
+      theme: monacoTheme,
+      minimap: { enabled: false },
+      fontSize,
+      wordWrap: (wrapLines ? "on" : "off") as "on" | "off",
+      lineNumbers: (showLineNumbers ? "on" : "off") as "on" | "off",
+      scrollBeyondLastLine: false,
+      lineDecorationsWidth: 6,
+      glyphMargin: false,
+      padding: { top: 14, bottom: 14 },
+      tabSize: 2,
+      automaticLayout: true,
+      overviewRulerBorder: false,
+      roundedSelection: true,
+      smoothScrolling: true,
+      placeholder,
+    }),
+    [monacoTheme, fontSize, wrapLines, showLineNumbers, placeholder],
+  );
+
   return (
     <div className="overflow-hidden rounded-[22px] border border-border/80 bg-background/80 shadow-[0_16px_40px_rgba(15,23,42,0.06)] backdrop-blur-sm">
       <div className="flex items-center justify-between border-b border-border/70 bg-[color-mix(in_oklab,var(--surface)_88%,transparent)] px-3 py-2">
@@ -120,23 +145,7 @@ export function TextCodeEditor({
               },
             });
           }}
-          options={{
-            theme: monacoTheme,
-            minimap: { enabled: false },
-            fontSize,
-            wordWrap: wrapLines ? "on" : "off",
-            lineNumbers: showLineNumbers ? "on" : "off",
-            scrollBeyondLastLine: false,
-            lineDecorationsWidth: 6,
-            glyphMargin: false,
-            padding: { top: 14, bottom: 14 },
-            tabSize: 2,
-            automaticLayout: true,
-            overviewRulerBorder: false,
-            roundedSelection: true,
-            smoothScrolling: true,
-            placeholder,
-          }}
+          options={editorOptions}
         />
       </div>
     </div>

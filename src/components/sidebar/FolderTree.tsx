@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   FolderClosed,
   MoreHorizontal,
@@ -87,7 +88,7 @@ export interface FolderTreeProps {
   onDeleteFolderRequest: (id: string) => void;
 }
 
-export function FolderTree(props: FolderTreeProps) {
+export const FolderTree = memo(function FolderTree(props: FolderTreeProps) {
   const { collectionId, parentFolderId, folders, requests } = props;
   const childFolders = folders
     .filter((f) => f.collectionId === collectionId && f.parentFolderId === parentFolderId)
@@ -256,4 +257,4 @@ export function FolderTree(props: FolderTreeProps) {
       />
     </>
   );
-}
+});
