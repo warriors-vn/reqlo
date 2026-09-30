@@ -3,8 +3,16 @@ import { CheckCircle2, Loader2, RotateCcw, Square, XCircle } from "lucide-react"
 import { Overlay } from "@/components/Overlay";
 import { useStore } from "@/stores/useStore";
 import {
+  clampDelay,
+  loadRunnerOptions,
+  saveRunnerOptions,
+  type RunnerOptions,
+} from "@/lib/runner-options";
+import {
   collectRequestsInTreeOrder,
+  outcomePassed,
   partitionRunnableRequests,
+  waitBetweenRequests,
   runSingleRequest,
   type RunSingleRequestOutcome,
   type RunTarget,
@@ -46,19 +54,7 @@ function writeFailureOutcome(error: unknown): RunSingleRequestOutcome {
   };
 }
 
-function rowPassed(outcome: RunSingleRequestOutcome | undefined) {
-  if (!outcome) return false;
-  return (
-    !outcome.result.error &&
-    !outcome.result.scriptError &&
-    // A post-response script that couldn't run leaves its tests unanswered,
-    // which is not the same as them passing.
-    !outcome.result.postScriptError &&
-    outcome.result.ok &&
-    outcome.assertionOutcomes.every((o) => o.passed) &&
-    (outcome.result.scriptTests ?? []).every((test) => test.passed)
-  );
-}
+const rowPassed = outcomePassed;
 
 /** Declarative rules and script tests counted as one number — see the same
  * reasoning on RequestBuilder's Tests badge. */
@@ -81,6 +77,14 @@ export function CollectionRunnerModal() {
   const [rows, setRows] = useState<RunRow[]>([]);
   const [targetLabel, setTargetLabel] = useState("");
   const [skippedWebSockets, setSkippedWebSockets] = useState(0);
+  const [options, setOptions] = useState<RunnerOptions>(loadRunnerOptions);
+  const [stoppedEarly, setStoppedEarly] = useState(false);
+
+  const changeOptions = (patch: Partial<RunnerOptions>) => {
+    const next = { ...options, ...patch };
+    setOptions(next);
+    saveRunnerOptions(next);
+  };
 
   const runNow = async (target: RunTarget, token: number, signal: AbortSignal) => {
     const initial = useStore.getState();
@@ -94,6 +98,8 @@ export function CollectionRunnerModal() {
       collectRequestsInTreeOrder(target, initial.requests, initial.folders),
     );
     setSkippedWebSockets(skipped.length);
+    setStoppedEarly(false);
+    const runOptions = loadRunnerOptions();
     setRows(
       orderedRequests.map((r) => ({
         requestId: r.id,
@@ -104,7 +110,9 @@ export function CollectionRunnerModal() {
     );
 
     try {
-      for (const request of orderedRequests) {
+      for (const [index, request] of orderedRequests.entries()) {
+        if (signal.aborted) break;
+        if (index > 0) await waitBetweenRequests(runOptions.delayMs, signal);
         if (signal.aborted) break;
 
         setRows((prev) =>
@@ -148,6 +156,11 @@ export function CollectionRunnerModal() {
             row.requestId === request.id ? { ...row, status: "done", outcome } : row,
           ),
         );
+
+        if (runOptions.stopOnFailure && !outcomePassed(outcome)) {
+          setStoppedEarly(index < orderedRequests.length - 1);
+          break;
+        }
       }
     } finally {
       useStore.getState().finishRun(token);
@@ -201,6 +214,12 @@ export function CollectionRunnerModal() {
           </div>
         )}
 
+        {stoppedEarly && (
+          <p className="rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-2xs text-muted-foreground">
+            Stopped at the first failure — the requests below it didn&apos;t run.
+          </p>
+        )}
+
         {skippedWebSockets > 0 && (
           <p className="rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-2xs text-muted-foreground">
             {skippedWebSockets} WebSocket request
@@ -219,6 +238,33 @@ export function CollectionRunnerModal() {
               Nothing to run — this collection has no requests yet.
             </div>
           )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-2xs">
+          <label className="flex items-center gap-2">
+            <span className="text-muted-foreground">Delay between requests</span>
+            <input
+              type="number"
+              min={0}
+              step={100}
+              disabled={running}
+              value={options.delayMs}
+              onChange={(e) => changeOptions({ delayMs: clampDelay(Number(e.target.value)) })}
+              aria-label="Delay between requests in milliseconds"
+              className="h-7 w-20 rounded-lg border border-border/80 bg-background/80 px-2 font-mono disabled:opacity-50"
+            />
+            <span className="text-muted-foreground">ms</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              disabled={running}
+              checked={options.stopOnFailure}
+              onChange={(e) => changeOptions({ stopOnFailure: e.target.checked })}
+            />
+            <span>Stop at the first failure</span>
+          </label>
+          <span className="text-muted-foreground">Applies to the next run.</span>
         </div>
 
         {running && (

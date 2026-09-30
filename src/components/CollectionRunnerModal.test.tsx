@@ -115,3 +115,62 @@ describe("CollectionRunnerModal — a write failure doesn't strand a row at 'run
     expect(spy).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("CollectionRunnerModal — run options", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  function failureOutcome(): RunSingleRequestOutcome {
+    const base = successOutcome();
+    return { ...base, result: { ...base.result, status: 500, ok: false } };
+  }
+
+  it("stops at the first failure when asked to, and says the rest didn't run", async () => {
+    localStorage.setItem(
+      "reqlo.runner-options",
+      JSON.stringify({ delayMs: 0, stopOnFailure: true }),
+    );
+    const { collection } = seedCollection(3);
+    const spy = vi.spyOn(runner, "runSingleRequest");
+    spy.mockResolvedValueOnce(successOutcome());
+    spy.mockResolvedValueOnce(failureOutcome());
+    spy.mockResolvedValue(successOutcome());
+
+    render(<CollectionRunnerModal />);
+    act(() => {
+      useStore.getState().startRun({ type: "collection", id: collection.id });
+    });
+    await waitFor(() => expect(useStore.getState().activeRun).toBeNull());
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText(/Stopped at the first failure/)).toBeInTheDocument();
+  });
+
+  it("carries on past a failure by default", async () => {
+    const { collection } = seedCollection(3);
+    const spy = vi.spyOn(runner, "runSingleRequest");
+    spy.mockResolvedValueOnce(failureOutcome());
+    spy.mockResolvedValue(successOutcome());
+
+    render(<CollectionRunnerModal />);
+    act(() => {
+      useStore.getState().startRun({ type: "collection", id: collection.id });
+    });
+    await waitFor(() => expect(useStore.getState().activeRun).toBeNull());
+
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText(/Stopped at the first failure/)).toBeNull();
+  });
+
+  it("remembers the options it is given", async () => {
+    seedCollection(1);
+    act(() => useStore.getState().openOverlay("runner"));
+    render(<CollectionRunnerModal />);
+    const box = screen.getByRole("checkbox", { name: /stop at the first failure/i });
+    act(() => box.click());
+    expect(JSON.parse(localStorage.getItem("reqlo.runner-options")!).stopOnFailure).toBe(true);
+  });
+});
