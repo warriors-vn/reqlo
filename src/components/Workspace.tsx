@@ -181,9 +181,15 @@ export function Workspace() {
     try {
       outcome = await runSingleRequest(
         activeRequest,
-        activeEnvironment,
+        rawActiveEnvironment,
         getRequestAncestors(activeRequest.id),
-        { workspaceId: workspace.id, addHistory, updateEnvironment, updateRequest },
+        {
+          workspaceId: workspace.id,
+          globals: workspace.globals ?? [],
+          addHistory,
+          updateEnvironment,
+          updateRequest,
+        },
         {
           signal: controller.signal,
           onStreamChunk: (text, contentType) =>
