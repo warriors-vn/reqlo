@@ -1,7 +1,7 @@
 import type { IntrospectionQuery } from "graphql";
 import type { ApiRequest, Environment } from "@/services/db";
 import type { RequestAncestors } from "@/services/inheritance";
-import { fetchViaProxy, ProxyUnavailableError } from "@/services/executor";
+import { fetchViaProxy, ProxyUnavailableError } from "@/services/proxy-client";
 import { PROXIED_HEADER } from "@/services/proxy-constants";
 import {
   applyPreRequestScript,

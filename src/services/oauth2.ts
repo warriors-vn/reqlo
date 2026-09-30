@@ -3,6 +3,8 @@ import {
   createEnvironmentMap,
   resolveTemplate,
 } from "@/features/code-snippets/utils/request-resolver";
+import { fetchViaProxy, ProxyUnavailableError } from "@/services/proxy-client";
+import { PROXIED_HEADER } from "@/services/proxy-constants";
 
 const CALLBACK_PATH = "/oauth/callback";
 const POPUP_MESSAGE_SOURCE = "reqlo-oauth";
@@ -82,16 +84,28 @@ async function requestToken(
 ): Promise<OAuth2CachedToken> {
   let res: Response;
   try {
-    res = await fetch(tokenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body: body.toString(),
+    // Through reqlo's proxy like every other send: most token endpoints
+    // (Keycloak, Azure AD, custom auth servers) send no CORS headers, so a
+    // direct browser POST is blocked before it ever reaches them.
+    res = await fetchViaProxy(
+      tokenUrl,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: body.toString(),
+      },
       signal,
-    });
+    );
   } catch (e) {
+    if (e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError"))
+      throw e;
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Token request failed: ${msg}. Check the Token URL and CORS.`);
+    throw new Error(`Token request failed: ${msg}. Check that reqlo is still running.`);
   }
+  if (!res.headers.has(PROXIED_HEADER)) throw new ProxyUnavailableError();
 
   const text = await res.text();
   let json: Record<string, unknown> = {};

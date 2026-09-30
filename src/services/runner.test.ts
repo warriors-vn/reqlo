@@ -10,7 +10,7 @@ import {
   createDefaultRequestDefaults,
 } from "@/services/db";
 import { NO_ANCESTORS } from "@/services/inheritance";
-import { PROXIED_HEADER } from "@/services/proxy-constants";
+import { PROXIED_HEADER, PROXY_TARGET_HEADER } from "@/services/proxy-constants";
 import {
   collectRequestsInTreeOrder,
   partitionRunnableRequests,
@@ -442,8 +442,9 @@ describe("runSingleRequest", () => {
   });
 
   it("still logs history when persisting a refreshed OAuth2 token fails", async () => {
-    const fetchMock = vi.fn(async (url: string) =>
-      url.includes("/token")
+    // Both calls hit /api/proxy now; the real target is in a header.
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      new Headers(init?.headers).get(PROXY_TARGET_HEADER)?.includes("/token")
         ? jsonResponse({ access_token: "fresh", token_type: "Bearer" })
         : jsonResponse({}),
     );
