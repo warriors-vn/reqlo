@@ -92,6 +92,10 @@ describe("handleProxyRequest", () => {
     "http://172.16.0.1",
     "http://172.31.255.255",
     "http://192.168.1.1",
+    "http://100.64.0.1", // 100.64.0.0/10 (CGNAT: Tailscale, some cloud VPCs)
+    "http://100.127.255.254",
+    "http://198.18.0.1", // 198.18.0.0/15
+    "http://198.19.255.255",
     "http://[::1]:9999",
     "http://[::]:9999",
     "http://[fe80::1]", // link-local (fe80::/10)
@@ -133,6 +137,18 @@ describe("handleProxyRequest", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     },
   );
+
+  it("doesn't mistake the addresses just outside those ranges for private ones", async () => {
+    vi.stubEnv("REQLO_BLOCK_PRIVATE_TARGETS", "1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("ok", { status: 200 })),
+    );
+    for (const target of ["http://100.63.0.1", "http://100.128.0.1", "http://198.20.0.1"]) {
+      const res = await handleProxyRequest({ request: makeRequest(target) });
+      expect(res.status, target).toBe(200);
+    }
+  });
 
   it("does not block a normal public host that merely contains private-looking substrings", async () => {
     vi.stubGlobal(
@@ -468,5 +484,59 @@ describe("upstream header encoding", () => {
     expect(encodeUpstreamHeaders(new Headers({ "x-big": "y".repeat(20_000) }))).toBeNull();
     expect(decodeUpstreamHeaders("not base64 json")).toBeNull();
     expect(decodeUpstreamHeaders(null)).toBeNull();
+  });
+
+  describe("request body size", () => {
+    const post = (body: BodyInit, headers: Record<string, string> = {}) =>
+      makeRequest("https://api.example.com", { method: "POST", body, headers });
+
+    it("refuses a body over REQLO_MAX_BODY_BYTES before forwarding anything", async () => {
+      vi.stubEnv("REQLO_MAX_BODY_BYTES", "10");
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await handleProxyRequest({ request: post("x".repeat(11)) });
+
+      expect(res.status).toBe(413);
+      expect(res.headers.get(PROXY_ERROR_HEADER)).toBe("1");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("counts while reading, so a missing or understated Content-Length doesn't get around it", async () => {
+      vi.stubEnv("REQLO_MAX_BODY_BYTES", "10");
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(6));
+          controller.enqueue(new Uint8Array(6));
+          controller.close();
+        },
+      });
+      const request = makeRequest("https://api.example.com", {
+        method: "POST",
+        body: stream,
+        headers: { "content-length": "1" },
+        // @ts-expect-error — required by undici for a streaming body
+        duplex: "half",
+      });
+
+      const res = await handleProxyRequest({ request });
+
+      expect(res.status).toBe(413);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("forwards a body at the limit intact", async () => {
+      vi.stubEnv("REQLO_MAX_BODY_BYTES", "10");
+      const fetchMock = vi.fn(async () => new Response("ok", { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await handleProxyRequest({ request: post("0123456789") });
+
+      expect(res.status).toBe(200);
+      const sent = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body;
+      expect(new TextDecoder().decode(sent as ArrayBuffer)).toBe("0123456789");
+    });
   });
 });

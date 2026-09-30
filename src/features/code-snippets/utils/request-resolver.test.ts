@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildResolvedRequestArtifacts,
   createEnvironmentMap,
+  findMissingHostVariables,
+  setHeader,
   mergeGlobalsIntoEnvironment,
   normalizeRequestUrl,
   resolveTemplate,
 } from "./request-resolver";
-import type { Environment, KV } from "@/services/db";
+import { NO_ANCESTORS } from "@/services/inheritance";
+import { normalizeApiRequest, type Environment, type KV } from "@/services/db";
 
 function makeKv(key: string, value: string, overrides: Partial<KV> = {}): KV {
   return { id: `${key}-id`, key, value, enabled: true, ...overrides };
@@ -132,5 +136,74 @@ describe("normalizeRequestUrl", () => {
   it("trims and passes an empty URL straight through", () => {
     expect(normalizeRequestUrl("   ")).toBe("");
     expect(normalizeRequestUrl("  api.example.com  ")).toBe("https://api.example.com");
+  });
+});
+
+describe("header names are case-insensitive", () => {
+  const build = (
+    overrides: Parameters<typeof normalizeApiRequest>[0] extends infer T ? Partial<T> : never,
+  ) =>
+    buildResolvedRequestArtifacts(
+      normalizeApiRequest({
+        id: "r",
+        workspaceId: "w",
+        name: "n",
+        method: "GET",
+        url: "https://api.example.com",
+        createdAt: 0,
+        updatedAt: 0,
+        ...overrides,
+      }),
+      null,
+      NO_ANCESTORS,
+    );
+
+  it("replaces a header that differs from Bearer auth only in case", () => {
+    const { resolvedHeaders } = build({
+      headers: [{ id: "h", key: "authorization", value: "Bearer stale", enabled: true }],
+      auth: { type: "bearer", token: "fresh" },
+    });
+    expect(resolvedHeaders).toEqual({ Authorization: "Bearer fresh" });
+  });
+
+  it("lets the later of two same-named headers win", () => {
+    const { resolvedHeaders } = build({
+      headers: [
+        { id: "a", key: "X-Team", value: "one", enabled: true },
+        { id: "b", key: "x-team", value: "two", enabled: true },
+      ],
+    });
+    expect(resolvedHeaders).toEqual({ "x-team": "two" });
+  });
+
+  it("applies to an API key header too", () => {
+    const { resolvedHeaders } = build({
+      headers: [{ id: "h", key: "x-api-key", value: "old", enabled: true }],
+      auth: { type: "api-key", key: "X-API-KEY", value: "new", addTo: "header" },
+    });
+    expect(resolvedHeaders).toEqual({ "X-API-KEY": "new" });
+  });
+
+  it("setHeader leaves unrelated headers alone", () => {
+    const headers = { Accept: "*/*", accept: "text/plain", Other: "1" };
+    setHeader(headers, "ACCEPT", "application/json");
+    expect(headers).toEqual({ Other: "1", ACCEPT: "application/json" });
+  });
+});
+
+describe("findMissingHostVariables", () => {
+  it("names a variable that left the URL without a host", () => {
+    expect(findMissingHostVariables("{{baseUrl}}/users", "/users", ["baseUrl"])).toEqual([
+      "baseUrl",
+    ]);
+  });
+
+  it("is empty when the URL still has a scheme, even with a missing path variable", () => {
+    expect(findMissingHostVariables("https://a.io/{{id}}", "https://a.io/", ["id"])).toEqual([]);
+  });
+
+  it("leaves an explicit relative URL alone, and ignores variables not in the URL", () => {
+    expect(findMissingHostVariables("/users", "/users", [])).toEqual([]);
+    expect(findMissingHostVariables("/users", "/users", ["bodyVar"])).toEqual([]);
   });
 });

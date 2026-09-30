@@ -129,6 +129,41 @@ export function normalizeRequestUrl(url: string) {
   return trimmed;
 }
 
+/**
+ * Sets a header, replacing any existing one whose name differs only in case.
+ * HTTP names are case-insensitive but the headers object is keyed by exact
+ * spelling, so `authorization` from the Headers tab plus Bearer auth's
+ * `Authorization` used to be two keys — which `new Headers()` then joins into
+ * "Bearer a, Bearer b".
+ */
+export function setHeader(headers: Record<string, string>, name: string, value: string) {
+  const lower = name.toLowerCase();
+  for (const existing of Object.keys(headers)) {
+    if (existing.toLowerCase() === lower) delete headers[existing];
+  }
+  headers[name] = value;
+}
+
+/**
+ * Variables that left the URL without a host. `{{baseUrl}}/users` with no
+ * `baseUrl` resolves to `/users`, which `fetch` reads as "this page's own
+ * origin" — the request went to reqlo itself and came back as its 404 page,
+ * with only a toast afterwards mentioning the variable. Empty when the URL
+ * has a scheme, or has no unresolved variable in it (an explicit `/users`
+ * typed on purpose is left alone).
+ */
+export function findMissingHostVariables(
+  templateUrl: string,
+  resolvedUrl: string,
+  unresolved: string[],
+): string[] {
+  if (!unresolved.length || /^[a-zA-Z][\w+.-]*:\/\//.test(resolvedUrl)) return [];
+  const inUrl = new Set(
+    [...templateUrl.matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)].map((match) => match[1]),
+  );
+  return unresolved.filter((name) => inUrl.has(name));
+}
+
 export function resolveKvList(list: KV[], envMap: Map<string, string>, misses?: Set<string>) {
   return list
     .filter((item) => item.enabled && item.key)
@@ -180,12 +215,13 @@ export function applyResolvedAuth(
     case "basic": {
       const username = resolveTemplate(request.auth.username ?? "", envMap, misses);
       const password = resolveTemplate(request.auth.password ?? "", envMap, misses);
-      if (username || password) headers.Authorization = `Basic ${btoa(`${username}:${password}`)}`;
+      if (username || password)
+        setHeader(headers, "Authorization", `Basic ${btoa(`${username}:${password}`)}`);
       return;
     }
     case "bearer": {
       const token = resolveTemplate(request.auth.token ?? "", envMap, misses);
-      if (token) headers.Authorization = `Bearer ${token}`;
+      if (token) setHeader(headers, "Authorization", `Bearer ${token}`);
       return;
     }
     case "api-key": {
@@ -196,14 +232,14 @@ export function applyResolvedAuth(
         queryParams.push({ id: `auth-${key}`, key, value, enabled: true });
         return;
       }
-      headers[key] = value;
+      setHeader(headers, key, value);
       return;
     }
     case "oauth2": {
       const cached = request.auth.oauth2?.cachedToken;
       if (!cached) return;
       if (cached.expiresAt !== null && cached.expiresAt <= Date.now()) return;
-      headers.Authorization = `${cached.tokenType} ${cached.accessToken}`;
+      setHeader(headers, "Authorization", `${cached.tokenType} ${cached.accessToken}`);
       return;
     }
     // applyInheritedDefaults has already turned "inherit" into whatever the
@@ -233,9 +269,10 @@ export function buildResolvedRequestArtifacts(
   );
   const unresolved = new Set<string>();
   const resolvedQueryParams = resolveKvList(request.queryParams, envMap, unresolved);
-  const headers = Object.fromEntries(
-    resolveKvList(request.headers, envMap, unresolved).map((item) => [item.key, item.value]),
-  );
+  const headers: Record<string, string> = {};
+  for (const item of resolveKvList(request.headers, envMap, unresolved)) {
+    setHeader(headers, item.key, item.value);
+  }
 
   applyResolvedAuth(request, envMap, headers, resolvedQueryParams, unresolved);
 

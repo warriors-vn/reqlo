@@ -2,6 +2,8 @@ import { type ApiRequest, type Environment, type MockConfig } from "@/services/d
 import {
   applyPreRequestScript,
   buildResolvedRequestArtifacts,
+  findMissingHostVariables,
+  setHeader,
 } from "@/features/code-snippets/utils/request-resolver";
 import { fetchClientCredentialsToken, refreshOAuth2Token } from "@/services/oauth2";
 import { isTextualResponse, type ExecutionResult, type ResponseKind } from "@/services/execution";
@@ -169,7 +171,10 @@ export async function executeRequest(
     unresolvedVariables = resolved.unresolvedVariables.length
       ? resolved.unresolvedVariables
       : undefined;
-    if (scriptHeaderPatch) Object.assign(headers, scriptHeaderPatch);
+    if (scriptHeaderPatch) {
+      for (const [name, value] of Object.entries(scriptHeaderPatch))
+        setHeader(headers, name, value);
+    }
     const init: RequestInit = { method: effectiveReq.method, headers };
 
     if (
@@ -180,6 +185,13 @@ export async function executeRequest(
     ) {
       init.body = serializedBody.body;
     }
+
+    const missingHost = findMissingHostVariables(
+      effectiveReq.url,
+      url,
+      resolved.unresolvedVariables,
+    );
+    if (missingHost.length) throw new MissingHostError(missingHost);
 
     // A URL that can't even be parsed is the user's to fix, not a sign the
     // server is down — say so before the proxy fetch turns it into a TypeError
@@ -361,6 +373,7 @@ function describeSendFailure(e: unknown): string {
   if (
     e instanceof ProxyUnavailableError ||
     e instanceof InvalidUrlError ||
+    e instanceof MissingHostError ||
     e instanceof ProxyTargetError
   ) {
     return e.message;
@@ -383,6 +396,18 @@ function describeSendFailure(e: unknown): string {
   // CORS can't apply and the target's own scheme is the server's problem, not
   // the browser's. A failure here means reqlo's own server didn't answer.
   return `Couldn't reach reqlo's own server to send this request: ${msg}. Check that reqlo is still running.`;
+}
+
+/** The URL starts with a variable that has no value, so there is no host to
+ * send to. Thrown before the fetch, since the fetch would go to reqlo itself. */
+export class MissingHostError extends Error {
+  constructor(names: string[]) {
+    const list = names.map((name) => `{{${name}}}`).join(", ");
+    super(
+      `${list} ${names.length > 1 ? "aren't" : "isn't"} defined, so this request has no host to send to. Add ${names.length > 1 ? "them" : "it"} to the active environment or to the globals.`,
+    );
+    this.name = "MissingHostError";
+  }
 }
 
 /** The resolved URL isn't something `new URL` can parse (e.g. "http://"). */
