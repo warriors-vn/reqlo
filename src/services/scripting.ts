@@ -39,12 +39,39 @@ export interface ScriptTestResult {
   message: string;
 }
 
+/** One `console.*` call. QuickJS ships no console, so the harness provides
+ * one — without it the first `console.log` anyone types fails the script. */
+export interface ScriptLogEntry {
+  level: "log" | "info" | "warn" | "error";
+  text: string;
+}
+
 export interface ScriptResult {
   headers?: Record<string, string>;
   environment?: Record<string, string>;
   tests?: ScriptTestResult[];
+  logs?: ScriptLogEntry[];
   error?: string;
 }
+
+/** What the harness hands back to the host. Tests and logs travel with every
+ * outcome — including a script that threw — so a stray error doesn't erase
+ * the ten tests that ran before it and would have explained it. */
+interface HarnessEnvelope {
+  threw: boolean;
+  thrown?: unknown;
+  unserializable?: boolean;
+  value?: unknown;
+  tests: ScriptTestResult[];
+  logs: ScriptLogEntry[];
+  /** `environment` as the script left it, for the host to diff against what it
+   * was given: `environment.token = x` looks like it works, and silently
+   * discarding it was the trap. */
+  environment: Record<string, unknown>;
+}
+
+const MAX_LOG_ENTRIES = 200;
+const MAX_LOG_LENGTH = 2000;
 
 // Cached across calls so running a collection with many scripted requests
 // doesn't re-instantiate the WASM module (loader + compile + link) per
@@ -118,6 +145,50 @@ async function runScript(
         const environment = request.environment;
         const response = JSON.parse(__RES__);
         const __tests__ = [];
+        const __logs__ = [];
+
+        // Lazy and memoized: a body that isn't JSON only throws if the script
+        // actually asks for it.
+        if (response) {
+          let parsed, done = false;
+          Object.defineProperty(response, "json", {
+            enumerable: false,
+            value: function () {
+              if (!done) { parsed = JSON.parse(response.body); done = true; }
+              return parsed;
+            },
+          });
+        }
+
+        // env.set/get are sugar over the same object, so the host's diff sees
+        // them exactly like a direct assignment.
+        const env = {
+          get(key) { return environment[key]; },
+          set(key, value) { environment[String(key)] = String(value); },
+        };
+
+        function __format__(v) {
+          if (typeof v === "string") return v;
+          if (v instanceof Error) return v.message ? v.name + ": " + v.message : String(v);
+          try {
+            const j = JSON.stringify(v);
+            return j === undefined ? String(v) : j;
+          } catch (_) { return String(v); }
+        }
+        function __logger__(level) {
+          return function () {
+            if (__logs__.length >= ${MAX_LOG_ENTRIES}) return;
+            const text = Array.prototype.map.call(arguments, __format__).join(" ");
+            __logs__.push({ level, text: text.length > ${MAX_LOG_LENGTH} ? text.slice(0, ${MAX_LOG_LENGTH}) + "…" : text });
+          };
+        }
+        const console = {
+          log: __logger__("log"),
+          debug: __logger__("log"),
+          info: __logger__("info"),
+          warn: __logger__("warn"),
+          error: __logger__("error"),
+        };
 
         // A test fails by throwing, so a bare "throw new Error(...)" works and
         // the helpers below are just sugar over it. Everything is collected
@@ -166,11 +237,32 @@ async function runScript(
         function __run__() {
           ${source}
         }
-        const result = __run__();
-        const out = (result === undefined || result === null) ? {} : result;
-        if (typeof out !== "object" || Array.isArray(out)) return JSON.stringify(out);
-        if (__tests__.length) out.tests = __tests__;
-        return JSON.stringify(out);
+        const envelope = { threw: false, tests: __tests__, logs: __logs__, environment };
+        try {
+          const result = __run__();
+          const out = (result === undefined || result === null) ? {} : result;
+          try {
+            JSON.stringify(out);
+            envelope.value = out;
+          } catch (_) {
+            envelope.unserializable = true;
+          }
+        } catch (e) {
+          envelope.threw = true;
+          envelope.thrown = (e && typeof e === "object" && typeof e.message === "string")
+            ? e.message
+            : e;
+        }
+        try {
+          return JSON.stringify(envelope);
+        } catch (_) {
+          // A thrown/returned value that can't be serialized shouldn't take the
+          // tests and logs down with it.
+          envelope.thrown = String(envelope.thrown);
+          envelope.value = undefined;
+          envelope.unserializable = true;
+          return JSON.stringify(envelope);
+        }
       })();
     `;
 
@@ -184,34 +276,40 @@ async function runScript(
     const raw = vm.dump(evalResult.value);
     evalResult.value.dispose();
 
-    if (typeof raw !== "string") {
-      return { error: "Script must return a plain object (or nothing)." };
-    }
-
-    let parsed: unknown;
+    let envelope: HarnessEnvelope;
     try {
-      parsed = JSON.parse(raw);
+      envelope = JSON.parse(raw as string) as HarnessEnvelope;
     } catch {
       return { error: "Script's return value isn't JSON-serializable." };
     }
 
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { error: "Script must return a plain object (or nothing)." };
+    const result: ScriptResult = {};
+    if (envelope.tests?.length) result.tests = envelope.tests;
+    if (envelope.logs?.length) result.logs = envelope.logs;
+
+    if (envelope.threw) return { ...result, error: describeVmError(envelope.thrown) };
+    if (envelope.unserializable) {
+      return { ...result, error: "Script's return value isn't JSON-serializable." };
     }
 
-    const { headers, environment, tests } = parsed as Record<string, unknown>;
-    const result: ScriptResult = {};
-    if (Array.isArray(tests)) result.tests = tests as ScriptTestResult[];
+    const value = envelope.value;
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return { ...result, error: "Script must return a plain object (or nothing)." };
+    }
+
+    const { headers, environment } = value as Record<string, unknown>;
     if (headers !== undefined) {
-      if (!isStringRecord(headers)) return { error: "Returned `headers` must be a string map." };
+      if (!isStringRecord(headers)) {
+        return { ...result, error: "Returned `headers` must be a string map." };
+      }
       result.headers = headers;
     }
-    if (environment !== undefined) {
-      if (!isStringRecord(environment)) {
-        return { error: "Returned `environment` must be a string map." };
-      }
-      result.environment = environment;
+    if (environment !== undefined && !isStringRecord(environment)) {
+      return { ...result, error: "Returned `environment` must be a string map." };
     }
+    // An explicit return wins over what was mutated in place.
+    const patch = { ...diffEnvironment(context.environment, envelope.environment), ...environment };
+    if (Object.keys(patch).length) result.environment = patch;
     return result;
   } catch (e) {
     return { error: errorMessage(e) };
@@ -241,6 +339,21 @@ function timeoutAwareMessage(message: string): string {
   return message.toLowerCase().includes("interrupted")
     ? `Script timed out after ${SCRIPT_TIMEOUT_MS / 1000}s.`
     : message;
+}
+
+/** Keys the script added or changed on `environment`, as strings. A deletion
+ * isn't a patch this contract can express, so it's ignored. */
+function diffEnvironment(
+  before: Record<string, string>,
+  after: Record<string, unknown> | undefined,
+): Record<string, string> {
+  const patch: Record<string, string> = {};
+  for (const [key, value] of Object.entries(after ?? {})) {
+    if (value === undefined || value === null || typeof value === "object") continue;
+    const next = String(value);
+    if (before[key] !== next) patch[key] = next;
+  }
+  return patch;
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {

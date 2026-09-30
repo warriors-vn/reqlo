@@ -69,6 +69,29 @@ export function RequestAssertionEditor({ request, result }: Props) {
         </div>
       )}
 
+      {!!result?.scriptLogs?.length && (
+        <div className="space-y-1 rounded-xl border border-border/80 bg-background/70 px-3 py-2">
+          <div className="text-3xs font-medium uppercase tracking-wide text-muted-foreground">
+            Console
+          </div>
+          <div className="max-h-48 space-y-0.5 overflow-auto font-mono text-2xs">
+            {result.scriptLogs.map((entry, index) => (
+              <div
+                key={index}
+                className={cn(
+                  "whitespace-pre-wrap break-all",
+                  entry.level === "error" && "text-destructive",
+                  entry.level === "warn" && "text-[var(--status-warn)]",
+                  (entry.level === "log" || entry.level === "info") && "text-foreground",
+                )}
+              >
+                {entry.text}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {result?.postScriptError && (
         <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-2xs text-destructive">
           Post-response script failed: {result.postScriptError}

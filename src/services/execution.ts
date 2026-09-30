@@ -1,5 +1,5 @@
 import type { OAuth2CachedToken } from "@/services/db";
-import type { ScriptTestResult } from "@/services/scripting";
+import type { ScriptLogEntry, ScriptTestResult } from "@/services/scripting";
 
 export type ResponseKind =
   "empty" | "json" | "text" | "html" | "stream" | "image" | "pdf" | "binary";
@@ -30,6 +30,9 @@ export interface ExecutionResult {
    * alongside the declarative assertion rules, which they complement rather
    * than replace. */
   scriptTests?: ScriptTestResult[];
+  /** `console.*` output from the pre-request and post-response scripts, in
+   * the order they ran. */
+  scriptLogs?: ScriptLogEntry[];
   /** A cached OAuth2 token auto-refreshed before sending, for the caller to persist. */
   refreshedOAuth2Token?: OAuth2CachedToken;
   /** Set when a cached OAuth2 token was expired and refreshing it was unavailable or failed — the request was not sent. */

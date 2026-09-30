@@ -148,3 +148,113 @@ describe("runPreRequestScript — unchanged by the shared harness", () => {
     expect(result.environment).toEqual({ hasResponse: "false" });
   });
 });
+
+describe("a script that throws outside test()", () => {
+  it("keeps the tests that ran before the error", async () => {
+    const result = await run(`
+      test("status is 200", () => expect(response.status).toBe(200));
+      test("status is 201", () => expect(response.status).toBe(201));
+      JSON.parse("<html>401</html>");
+      test("never reached", () => {});
+    `);
+    expect(result.error).toBeTruthy();
+    expect(result.tests?.map((t) => [t.name, t.passed])).toEqual([
+      ["status is 200", true],
+      ["status is 201", false],
+    ]);
+  });
+
+  it("still reports the message of a thrown string or object", async () => {
+    expect((await run(`throw "boom";`)).error).toBe("boom");
+    expect((await run(`throw { message: "nope" };`)).error).toBe("nope");
+  });
+
+  it("keeps the tests when the return value can't be serialized", async () => {
+    const result = await run(`
+      test("ran", () => {});
+      const a = {}; a.self = a;
+      return a;
+    `);
+    expect(result.error).toMatch(/serializable/);
+    expect(result.tests).toEqual([{ name: "ran", passed: true, message: "" }]);
+  });
+});
+
+describe("console", () => {
+  it("collects console output instead of failing with 'console is not defined'", async () => {
+    const result = await run(`
+      console.log("body:", response.body.length, { a: 1 });
+      console.warn("careful");
+      console.error(new Error("bad"));
+    `);
+    expect(result.error).toBeUndefined();
+    expect(result.logs).toEqual([
+      { level: "log", text: 'body: 31 {"a":1}' },
+      { level: "warn", text: "careful" },
+      { level: "error", text: "Error: bad" },
+    ]);
+  });
+
+  it("works in the pre-request phase and survives an error", async () => {
+    const result = await runPreRequestScript(
+      `console.log("before"); throw new Error("x");`,
+      makeContext(),
+    );
+    expect(result.error).toBe("x");
+    expect(result.logs).toEqual([{ level: "log", text: "before" }]);
+  });
+
+  it("caps runaway logging", async () => {
+    const result = await run(`for (let i = 0; i < 10000; i++) console.log(i);`);
+    expect(result.logs).toHaveLength(200);
+  });
+});
+
+describe("environment mutation", () => {
+  it("persists an assignment to environment, which used to be silently dropped", async () => {
+    const result = await runPreRequestScript(
+      `environment.token = "abc"; environment.n = 5;`,
+      makeContext({ environment: { keep: "1" } }),
+    );
+    expect(result.environment).toEqual({ token: "abc", n: "5" });
+  });
+
+  it("supports env.set / env.get", async () => {
+    const result = await run(
+      `
+      env.set("token", JSON.parse(response.body).token);
+      env.set("seen", env.get("prev"));
+    `,
+      makeResponse(),
+      makeContext({ environment: { prev: "p" } }),
+    );
+    expect(result.environment).toEqual({ token: "abc", seen: "p" });
+  });
+
+  it("leaves unchanged values out of the patch, and lets an explicit return win", async () => {
+    const result = await runPreRequestScript(
+      `environment.a = "2"; environment.b = "changed"; return { environment: { a: "explicit" } };`,
+      makeContext({ environment: { a: "1", b: "b", c: "c" } }),
+    );
+    expect(result.environment).toEqual({ a: "explicit", b: "changed" });
+    expect(
+      (await runPreRequestScript(`return {};`, makeContext({ environment: { a: "1" } })))
+        .environment,
+    ).toBeUndefined();
+  });
+});
+
+describe("response.json()", () => {
+  it("parses the body once, lazily", async () => {
+    const result = await run(`
+      return { environment: { first: response.json().items[1] + "", same: String(response.json() === response.json()) } };
+    `);
+    expect(result.environment).toEqual({ first: "2", same: "true" });
+  });
+
+  it("only throws if the script asks for a body that isn't JSON", async () => {
+    const html = makeResponse({ body: "<html/>" });
+    expect((await run(`test("t", () => {});`, html)).error).toBeUndefined();
+    expect((await run(`response.json();`, html)).error).toBeTruthy();
+  });
+});
