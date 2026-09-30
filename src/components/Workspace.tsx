@@ -7,7 +7,9 @@ import {
   type SetStateAction,
 } from "react";
 import { useStore } from "@/stores/useStore";
+import { useShallow } from "zustand/react/shallow";
 import { Sidebar } from "@/components/Sidebar";
+import { WorkspaceSkeleton } from "@/components/WorkspaceSkeleton";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -52,7 +54,26 @@ export function Workspace() {
     updateEnvironment,
     updateRequest,
     getRequestAncestors,
-  } = useStore();
+  } = useStore(
+    useShallow((state) => ({
+      ready: state.ready,
+      init: state.init,
+      tabs: state.tabs,
+      activeTabId: state.activeTabId,
+      requests: state.requests,
+      workspace: state.workspace,
+      addHistory: state.addHistory,
+      sidebarCollapsed: state.sidebarCollapsed,
+      toggleSidebar: state.toggleSidebar,
+      sidebarWidth: state.sidebarWidth,
+      sendPing: state.sendPing,
+      environments: state.environments,
+      activeEnvId: state.activeEnvId,
+      updateEnvironment: state.updateEnvironment,
+      updateRequest: state.updateRequest,
+      getRequestAncestors: state.getRequestAncestors,
+    })),
+  );
   const [results, setResults] = useState<Record<string, ExecutionResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [streamingByRequest, setStreamingByRequest] = useState<Record<string, StreamingProgress>>(
@@ -268,14 +289,7 @@ export function Workspace() {
   }, [sendPing]);
 
   if (!ready) {
-    return (
-      <div className="grid h-screen place-items-center">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-          Hydrating local workspace…
-        </div>
-      </div>
-    );
+    return <WorkspaceSkeleton />;
   }
 
   const mainContent = (
@@ -393,7 +407,13 @@ function clearStreaming(
 }
 
 function EmptyState() {
-  const { createRequest, collections, openOverlay } = useStore();
+  const { createRequest, collections, openOverlay } = useStore(
+    useShallow((state) => ({
+      createRequest: state.createRequest,
+      collections: state.collections,
+      openOverlay: state.openOverlay,
+    })),
+  );
   return (
     <motion.div
       initial={{ opacity: 0 }}

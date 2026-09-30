@@ -9,8 +9,11 @@ export interface TabsSlice {
 
   openRequest: (requestId: string) => void;
   closeTab: (tabId: string) => void;
+  closeOtherTabs: (tabId: string) => void;
+  closeTabsToRight: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   activateAdjacentTab: (direction: "next" | "prev") => void;
+  reorderTabs: (draggedId: string, targetId: string) => void;
   getActiveRequest: () => ApiRequest | null;
   setSidebarSelection: (selection: SidebarSelection | null) => void;
 }
@@ -42,6 +45,23 @@ export const createTabsSlice: SliceCreator<TabsSlice> = (set, get) => ({
     persistSession(get);
   },
 
+  closeOtherTabs: (tabId) => {
+    const { tabs } = get();
+    if (!tabs.some((t) => t.id === tabId)) return;
+    set({ tabs: tabs.filter((t) => t.id === tabId), activeTabId: tabId });
+    persistSession(get);
+  },
+
+  closeTabsToRight: (tabId) => {
+    const { tabs, activeTabId } = get();
+    const idx = tabs.findIndex((t) => t.id === tabId);
+    if (idx === -1) return;
+    const kept = tabs.slice(0, idx + 1);
+    const nextActive = kept.some((t) => t.id === activeTabId) ? activeTabId : tabId;
+    set({ tabs: kept, activeTabId: nextActive });
+    persistSession(get);
+  },
+
   setActiveTab: (tabId) => {
     set({ activeTabId: tabId });
     persistSession(get);
@@ -61,6 +81,24 @@ export const createTabsSlice: SliceCreator<TabsSlice> = (set, get) => ({
         ? (currentIndex + 1) % tabs.length
         : (currentIndex - 1 + tabs.length) % tabs.length;
     set({ activeTabId: tabs[nextIndex].id });
+    persistSession(get);
+  },
+
+  reorderTabs: (draggedId, targetId) => {
+    if (draggedId === targetId) return;
+    set((s) => {
+      const draggedIndex = s.tabs.findIndex((t) => t.id === draggedId);
+      if (draggedIndex === -1) return s;
+      const next = [...s.tabs];
+      const [dragged] = next.splice(draggedIndex, 1);
+      const targetIndex = next.findIndex((t) => t.id === targetId);
+      if (targetIndex === -1) {
+        next.splice(draggedIndex, 0, dragged);
+        return s;
+      }
+      next.splice(targetIndex, 0, dragged);
+      return { tabs: next };
+    });
     persistSession(get);
   },
 

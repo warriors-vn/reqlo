@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { copyTextToClipboard } from "@/features/code-snippets/utils/clipboard";
-import { Check, Copy, Download, ExternalLink, Save } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, Save, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStore } from "@/stores/useStore";
@@ -26,6 +27,9 @@ import { SseEventList } from "./response-viewer/SseEventList";
 import { downloadResponse } from "./response-viewer/download-response";
 import { getDefaultBodyView, renderBodyViewTabs } from "./response-viewer/body-views";
 import { useObjectUrl } from "./response-viewer/useObjectUrl";
+import { useResponseSearch } from "./response-viewer/useResponseSearch";
+import { ResponseSearchBar } from "./response-viewer/ResponseSearchBar";
+import { HighlightedText } from "./response-viewer/HighlightedText";
 import type { BodyView } from "./response-viewer/types";
 
 type PrimaryTab = "body" | "headers";
@@ -76,6 +80,14 @@ export function ResponseViewer({
   useEffect(() => {
     setBodyView(currentBodyView);
   }, [currentBodyView, result]);
+
+  // Only the plain-text pretty/raw body view is a flat string a substring
+  // search can run over — the SSE event list and the binary preview each
+  // render their own structure instead.
+  const searchableText =
+    bodyView !== "preview" && result?.responseKind !== "stream" ? renderableBody.text : "";
+  const search = useResponseSearch(searchableText);
+  const canSearch = tab === "body" && !result?.error && searchableText.length > 0;
 
   if (loading) {
     if (streaming?.text) {
@@ -193,7 +205,16 @@ export function ResponseViewer({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="flex h-full flex-col"
+      onKeyDown={(event) => {
+        if (!canSearch) return;
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+          event.preventDefault();
+          search.setOpen(true);
+        }
+      }}
+    >
       {/* A re-send with no streaming data (yet, or ever — e.g. a binary
           response never populates `streaming`) would otherwise show zero
           indication a new request is in flight, since the block above keeps
@@ -252,6 +273,18 @@ export function ResponseViewer({
               ))}
             </TabsList>
 
+            <button
+              type="button"
+              disabled={!canSearch}
+              onClick={() => search.setOpen((o) => !o)}
+              className={cn(
+                "grid h-8 w-8 place-items-center rounded-xl text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
+                search.open && "bg-accent text-foreground",
+              )}
+              title={canSearch ? "Find in response (⌘F)" : "Nothing to search in this view"}
+            >
+              <Search className="h-3.5 w-3.5" />
+            </button>
             <button
               type="button"
               disabled={!copyValue}
@@ -315,6 +348,17 @@ export function ResponseViewer({
             ) : (
               <>
                 {renderBodyViewTabs(result, bodyView, setBodyView)}
+                {canSearch && search.open && (
+                  <ResponseSearchBar
+                    query={search.query}
+                    onQueryChange={search.setQuery}
+                    matchCount={search.matchCount}
+                    activeIndex={search.activeIndex}
+                    onNext={search.goNext}
+                    onPrev={search.goPrev}
+                    onClose={search.close}
+                  />
+                )}
                 <div className="min-h-0 flex-1">
                   {bodyView === "preview" ? (
                     <ResponsePreview result={result} previewUrl={previewUrl} />
@@ -331,7 +375,15 @@ export function ResponseViewer({
                         <SseEventList text={renderableBody.text} />
                       ) : (
                         <pre className="p-4 font-mono text-xs leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
-                          {renderableBody.text || "(empty body)"}
+                          {canSearch && search.open && search.query ? (
+                            <HighlightedText
+                              text={renderableBody.text}
+                              query={search.query}
+                              activeIndex={search.activeIndex}
+                            />
+                          ) : (
+                            renderableBody.text || "(empty body)"
+                          )}
                         </pre>
                       )}
                     </ScrollArea>
