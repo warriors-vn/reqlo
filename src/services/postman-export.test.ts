@@ -379,4 +379,34 @@ describe("buildPostmanCollection — what it says it cannot carry", () => {
     expect(JSON.stringify(collection)).not.toContain("ADMIN_KEY");
     expect(warnings.join(" ")).toContain("folder-level variable");
   });
+
+  it("writes the enabled query params into url.raw as well as url.query, like Postman does", () => {
+    const now = Date.now();
+    const request = normalizeApiRequest({
+      id: "r1",
+      workspaceId: "ws",
+      collectionId: "c1",
+      name: "List",
+      method: "GET",
+      url: "https://api.example.com/users",
+      queryParams: [
+        { id: "q1", key: "page", value: "2", enabled: true },
+        { id: "q2", key: "debug", value: "1", enabled: false },
+      ],
+      createdAt: now,
+      updatedAt: now,
+    });
+    const collection = {
+      id: "c1",
+      workspaceId: "ws",
+      name: "C",
+      position: 0,
+      createdAt: now,
+      defaults: createDefaultRequestDefaults(),
+    };
+    const { collection: out } = buildPostmanCollection(collection as never, [], [request]);
+    const url = (out.item?.[0].request?.url ?? {}) as { raw?: string; query?: unknown[] };
+    expect(url.raw).toBe("https://api.example.com/users?page=2");
+    expect(url.query).toHaveLength(2);
+  });
 });

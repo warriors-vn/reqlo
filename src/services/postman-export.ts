@@ -151,8 +151,14 @@ function requestItem(
  * are present, while other tools read the parts, so writing both keeps the
  * file useful in either. */
 function buildUrl(rawUrl: string, params: KV[]): PostmanRequest["url"] {
-  const raw = rawUrl;
   const query = toPostmanKV(params);
+  // Postman's own `raw` carries the query string too (and `query[]` repeats
+  // it), so tools that only read `raw` still see the full URL. Only enabled
+  // rows go into the string; disabled ones live in `query[]` alone.
+  const enabledQuery = new URLSearchParams(
+    params.filter((p) => p.enabled && p.key.trim()).map((p) => [p.key, p.value]),
+  ).toString();
+  const raw = enabledQuery ? `${rawUrl}${rawUrl.includes("?") ? "&" : "?"}${enabledQuery}` : rawUrl;
 
   let parsed: URL | null = null;
   try {
