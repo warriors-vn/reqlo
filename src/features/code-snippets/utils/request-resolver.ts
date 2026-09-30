@@ -1,5 +1,6 @@
 import { serializeRequestBody } from "@/features/request-body/utils/body";
 import type { SerializedRequestBody } from "@/features/request-body/types";
+import type { ScriptLogEntry } from "@/services/scripting";
 import {
   mergeEnvironmentVariables,
   type ApiRequest,
@@ -295,6 +296,7 @@ export interface PreRequestScriptOutcome {
   scriptHeaderPatch?: Record<string, string>;
   scriptEnvironmentPatch?: Record<string, string>;
   scriptError?: string;
+  scriptLogs?: ScriptLogEntry[];
 }
 
 /**
@@ -328,7 +330,7 @@ export async function applyPreRequestScript(
   });
 
   if (scriptResult.error) {
-    return { resolved, scriptError: scriptResult.error };
+    return { resolved, scriptError: scriptResult.error, scriptLogs: scriptResult.logs };
   }
 
   let nextResolved = resolved;
@@ -349,5 +351,6 @@ export async function applyPreRequestScript(
     resolved: nextResolved,
     scriptHeaderPatch: scriptResult.headers,
     scriptEnvironmentPatch,
+    scriptLogs: scriptResult.logs,
   };
 }

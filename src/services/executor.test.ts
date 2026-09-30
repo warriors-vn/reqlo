@@ -313,6 +313,33 @@ describe("executeRequest — post-response script", () => {
     expect(result.postScriptError).toBe("bad script");
   });
 
+  it("returns console output from both scripts, and the tests that ran before a throw", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => proxiedResponse("<html>401</html>")),
+    );
+
+    const result = await executeRequest(
+      makeRequest({
+        url: "https://api.example.com/data",
+        preRequestScript: { enabled: true, source: `console.log("pre");` },
+        postResponseScript: {
+          enabled: true,
+          source: `console.log("post"); test("ok", () => {}); JSON.parse(response.body);`,
+        },
+      }),
+      null,
+      NO_ANCESTORS,
+    );
+
+    expect(result.scriptLogs).toEqual([
+      { level: "log", text: "pre" },
+      { level: "log", text: "post" },
+    ]);
+    expect(result.scriptTests).toEqual([{ name: "ok", passed: true, message: "" }]);
+    expect(result.postScriptError).toBeTruthy();
+  });
+
   it("does not run when the script is disabled", async () => {
     vi.stubGlobal(
       "fetch",

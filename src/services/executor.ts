@@ -17,7 +17,7 @@ import {
   throwIfProxyError,
 } from "@/services/proxy-client";
 import type { RequestAncestors } from "@/services/inheritance";
-import type { ScriptResponseContext, ScriptTestResult } from "@/services/scripting";
+import type { ScriptLogEntry, ScriptResponseContext, ScriptTestResult } from "@/services/scripting";
 
 // Re-exported: these lived here before OAuth2 needed them too, and importing
 // them from executor would be a cycle (executor already imports oauth2).
@@ -75,6 +75,7 @@ export async function executeRequest(
       scriptEnvironmentPatch: post.environmentPatch,
       postScriptError: post.error,
       scriptTests: post.tests,
+      scriptLogs: post.logs,
     };
   }
 
@@ -98,6 +99,7 @@ export async function executeRequest(
   let refreshedOAuth2Token: ExecutionResult["refreshedOAuth2Token"];
   let scriptEnvironmentPatch: Record<string, string> | undefined;
   let scriptError: string | undefined;
+  let preScriptLogs: ScriptLogEntry[] | undefined;
   let unresolvedVariables: string[] | undefined;
   try {
     if (req.auth.type === "oauth2" && req.auth.oauth2?.cachedToken) {
@@ -161,6 +163,7 @@ export async function executeRequest(
     const { resolved, scriptHeaderPatch } = scriptOutcome;
     scriptEnvironmentPatch = scriptOutcome.scriptEnvironmentPatch;
     scriptError = scriptOutcome.scriptError;
+    preScriptLogs = scriptOutcome.scriptLogs;
 
     const { url, resolvedHeaders: headers, serializedBody } = resolved;
     unresolvedVariables = resolved.unresolvedVariables.length
@@ -248,6 +251,7 @@ export async function executeRequest(
       unresolvedVariables,
       postScriptError: post.error,
       scriptTests: post.tests,
+      scriptLogs: joinLogs(preScriptLogs, post.logs),
     };
   } catch (e: unknown) {
     const isAbort =
@@ -257,6 +261,7 @@ export async function executeRequest(
       error: isAbort ? (e instanceof Error ? e.message : String(e)) : describeSendFailure(e),
       scriptEnvironmentPatch,
       scriptError,
+      scriptLogs: preScriptLogs,
       refreshedOAuth2Token,
       unresolvedVariables,
     };
@@ -265,9 +270,15 @@ export async function executeRequest(
   }
 }
 
+function joinLogs(...groups: (ScriptLogEntry[] | undefined)[]): ScriptLogEntry[] | undefined {
+  const all = groups.flatMap((group) => group ?? []);
+  return all.length ? all : undefined;
+}
+
 interface PostResponseOutcome {
   environmentPatch?: Record<string, string>;
   tests?: ScriptTestResult[];
+  logs?: ScriptLogEntry[];
   error?: string;
 }
 
@@ -301,13 +312,15 @@ async function applyPostResponseScript(
     response,
   );
 
-  if (outcome.error) return { error: outcome.error, tests: outcome.tests };
+  const logs = outcome.logs?.length ? outcome.logs : undefined;
+  if (outcome.error) return { error: outcome.error, tests: outcome.tests, logs };
   return {
     environmentPatch:
       outcome.environment && Object.keys(outcome.environment).length
         ? outcome.environment
         : undefined,
     tests: outcome.tests?.length ? outcome.tests : undefined,
+    logs,
   };
 }
 
