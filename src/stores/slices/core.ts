@@ -1,8 +1,10 @@
+import { toast } from "sonner";
 // The store's persistent data — everything init() hydrates from IndexedDB in
 // one pass. Actions that mutate these live in the slice that owns the concept
 // (requests.ts, collections.ts, …); this slice owns only the fields themselves
 // and the single load that fills them.
 
+import { startTabPresence } from "@/lib/tab-presence";
 import {
   db,
   uid,
@@ -51,6 +53,15 @@ export const createCoreSlice: SliceCreator<CoreSlice> = (set) => ({
 
   init: async () => {
     void requestPersistentStorage();
+    startTabPresence(() =>
+      toast.warning("reqlo is open in another tab", {
+        id: "other-tab-open",
+        duration: Infinity,
+        closeButton: true,
+        description:
+          "Changes made in one tab aren't shown in the other, and saving from the older one can overwrite them. Keep one tab open, and reload this one to see the latest.",
+      }),
+    );
     const ws = await ensureSeed();
     const [collections, folders, requests, history, environments] = await Promise.all([
       db.collections.where("workspaceId").equals(ws.id).toArray(),
