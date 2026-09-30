@@ -627,3 +627,81 @@ describe("parsePostmanCollection", () => {
     });
   });
 });
+
+describe("Postman scripts", () => {
+  const doc = (item: unknown[]): Doc =>
+    ({ info: { name: "C", schema: "v2.1" }, item }) as unknown as Doc;
+
+  it("keeps pre-request and test scripts as disabled comments and warns", () => {
+    const result = parsePostmanCollection(
+      doc([
+        {
+          name: "A",
+          event: [
+            { listen: "prerequest", script: { exec: ["pm.variables.set('a', 1);"] } },
+            { listen: "test", script: { exec: ["pm.test('ok', () => {});", "done();"] } },
+          ],
+          request: { method: "GET", url: "https://x.test" },
+        },
+        { name: "B", request: { method: "GET", url: "https://x.test/b" } },
+      ]),
+      WORKSPACE_ID,
+    );
+    const [a, b] = result.requests;
+    expect(a.preRequestScript.enabled).toBe(false);
+    expect(a.preRequestScript.source).toContain("// pm.variables.set('a', 1);");
+    expect(a.postResponseScript.enabled).toBe(false);
+    expect(a.postResponseScript.source).toContain("// pm.test('ok', () => {});\n// done();");
+    expect(b.preRequestScript.source).toBe("");
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatch(/^1 request\(s\) had Postman scripts/);
+  });
+
+  it("does not warn when no item has a script", () => {
+    const result = parsePostmanCollection(
+      doc([{ name: "B", request: { method: "GET", url: "https://x.test/b" } }]),
+      WORKSPACE_ID,
+    );
+    expect(result.warnings).toEqual([]);
+  });
+});
+
+describe("Postman path variables", () => {
+  it("turns :name into {{name}} and seeds a collection variable from its value", () => {
+    const result = parsePostmanCollection(
+      {
+        info: { name: "C", schema: "v2.1" },
+        item: [
+          {
+            name: "A",
+            request: {
+              method: "GET",
+              url: {
+                raw: "https://x.test:8080/users/:id/posts/:postId?q=1",
+                variable: [
+                  { key: "id", value: "42" },
+                  { key: "postId", value: "" },
+                ],
+              },
+            },
+          },
+        ],
+      } as unknown as Doc,
+      WORKSPACE_ID,
+    );
+    expect(result.requests[0].url).toBe("https://x.test:8080/users/{{id}}/posts/{{postId}}?q=1");
+    const vars = result.collectionDefaults.variables;
+    expect(vars.map((v) => [v.key, v.value])).toEqual([["id", "42"]]);
+  });
+
+  it("leaves :name alone when the URL doesn't declare it as a variable", () => {
+    const result = parsePostmanCollection(
+      {
+        info: { name: "C", schema: "v2.1" },
+        item: [{ name: "A", request: { method: "GET", url: { raw: "https://x.test/a/:id" } } }],
+      } as unknown as Doc,
+      WORKSPACE_ID,
+    );
+    expect(result.requests[0].url).toBe("https://x.test/a/:id");
+  });
+});
