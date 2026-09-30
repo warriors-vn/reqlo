@@ -9,7 +9,6 @@ import {
   type RunSingleRequestOutcome,
   type RunTarget,
 } from "@/services/runner";
-import { mergeGlobalsIntoEnvironment } from "@/features/code-snippets/utils/request-resolver";
 
 interface RunRow {
   requestId: string;
@@ -119,10 +118,6 @@ export function CollectionRunnerModal() {
         if (!workspaceId) break;
         const rawEnvironment =
           current.environments.find((e) => e.id === current.activeEnvId) ?? null;
-        const environment = mergeGlobalsIntoEnvironment(
-          rawEnvironment,
-          current.workspace?.globals ?? [],
-        );
 
         // A write failure inside runSingleRequest (history/environment/request
         // persistence) now throws instead of failing silently — without this
@@ -133,10 +128,11 @@ export function CollectionRunnerModal() {
         try {
           outcome = await runSingleRequest(
             request,
-            environment,
+            rawEnvironment,
             current.getRequestAncestors(request.id),
             {
               workspaceId,
+              globals: current.workspace?.globals ?? [],
               addHistory: current.addHistory,
               updateEnvironment: current.updateEnvironment,
               updateRequest: current.updateRequest,

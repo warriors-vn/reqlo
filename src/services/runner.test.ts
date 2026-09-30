@@ -46,6 +46,7 @@ function makeEnv(overrides: Partial<Environment> = {}): Environment {
 function makeDeps(workspaceId = "ws-1") {
   return {
     workspaceId,
+    globals: [] as KV[],
     addHistory: vi.fn(async (_entry: HistoryEntry) => {}),
     updateEnvironment: vi.fn(async (_id: string, _patch: { variables: KV[] }) => {}),
     updateRequest: vi.fn(async (_id: string, _patch: Partial<ApiRequest>) => {}),
@@ -226,6 +227,71 @@ describe("runSingleRequest", () => {
     // Headers instance so it can add the proxy target to them.
     const [, calledInit] = fetchMock.mock.calls[0];
     expect(new Headers(calledInit?.headers).get("Authorization")).toBe("Bearer chained-token");
+  });
+
+  it("does not copy workspace globals into the environment when an Extract rule writes to it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ token: "t" })),
+    );
+    const deps = {
+      ...makeDeps(),
+      globals: [{ id: "g1", key: "GLOBAL_KEY", value: "g", enabled: true, secret: true }] as KV[],
+    };
+    const request = makeRequest({
+      extracts: [{ id: "e1", path: "token", variableName: "authToken", enabled: true }],
+    });
+    const env = makeEnv({ variables: [{ id: "v1", key: "own", value: "1", enabled: true }] });
+
+    await runSingleRequest(request, env, NO_ANCESTORS, deps);
+
+    const [id, patch] = deps.updateEnvironment.mock.calls[0];
+    expect(id).toBe("env-1");
+    expect(patch.variables.map((v) => v.key)).toEqual(["own", "authToken"]);
+  });
+
+  it("resolves workspace globals itself, beneath the environment's own variables", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const deps = {
+      ...makeDeps(),
+      globals: [
+        { id: "g1", key: "TOKEN", value: "from-global", enabled: true },
+        { id: "g2", key: "SHARED", value: "global", enabled: true },
+      ] as KV[],
+    };
+    const request = makeRequest({
+      headers: [
+        { id: "h1", key: "X-Token", value: "{{TOKEN}}", enabled: true },
+        { id: "h2", key: "X-Shared", value: "{{SHARED}}", enabled: true },
+      ],
+    });
+    const env = makeEnv({ variables: [{ id: "v1", key: "SHARED", value: "env", enabled: true }] });
+
+    await runSingleRequest(request, env, NO_ANCESTORS, deps);
+
+    const headers = new Headers(fetchMock.mock.calls[0][1]?.headers);
+    expect(headers.get("X-Token")).toBe("from-global");
+    expect(headers.get("X-Shared")).toBe("env");
+  });
+
+  it("reports no active environment instead of writing to a phantom row when only globals exist", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ token: "t" })),
+    );
+    const deps = {
+      ...makeDeps(),
+      globals: [{ id: "g1", key: "GLOBAL_KEY", value: "g", enabled: true }] as KV[],
+    };
+    const request = makeRequest({
+      extracts: [{ id: "e1", path: "token", variableName: "authToken", enabled: true }],
+    });
+
+    const outcome = await runSingleRequest(request, null, NO_ANCESTORS, deps);
+
+    expect(outcome.noActiveEnvironment).toBe(true);
+    expect(deps.updateEnvironment).not.toHaveBeenCalled();
   });
 
   it("runs a pre-request script whose environment write interpolates into this same request's headers, and persists it", async () => {

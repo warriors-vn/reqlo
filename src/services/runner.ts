@@ -18,11 +18,17 @@ import { resolveExtractPath, stringifyExtractedValue } from "@/services/extract"
 import { evaluateAssertions, type AssertionOutcome } from "@/services/assertions";
 import { isTooLargeToParse } from "@/lib/response-body-view";
 import type { RequestAncestors } from "@/services/inheritance";
+import { mergeGlobalsIntoEnvironment } from "@/features/code-snippets/utils/request-resolver";
 
 const MAX_HISTORY_RESPONSE_BODY = 40_000;
 
 export interface RunSingleRequestDeps {
   workspaceId: string;
+  /** Workspace globals, resolved beneath the environment. Passed separately
+   * rather than pre-merged into `environment` because everything this
+   * function writes back (Extract rules, script patches) targets the real
+   * environment row — a merged copy would carry every global into it. */
+  globals: KV[];
   addHistory: (entry: HistoryEntry) => Promise<void>;
   updateEnvironment: (id: string, patch: { variables: KV[] }) => Promise<void>;
   updateRequest: (id: string, patch: Partial<ApiRequest>) => Promise<void>;
@@ -54,7 +60,12 @@ export async function runSingleRequest(
   deps: RunSingleRequestDeps,
   options?: ExecuteRequestOptions,
 ): Promise<RunSingleRequestOutcome> {
-  const result = await executeRequest(request, environment, ancestors, options);
+  const result = await executeRequest(
+    request,
+    mergeGlobalsIntoEnvironment(environment, deps.globals),
+    ancestors,
+    options,
+  );
 
   // When a cached token got auto-refreshed, log history and persist the
   // request against the refreshed copy — the stale/expired token isn't what
