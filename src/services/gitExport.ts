@@ -1,3 +1,4 @@
+import { flushRequestWrites } from "@/stores/requestWrites";
 import { db, type Collection, type Folder } from "@/services/db";
 import {
   sanitizeCollectionForExport,
@@ -36,6 +37,7 @@ function dedupe(base: string, used: Set<string>): string {
 }
 
 export async function buildCollectionFileTree(collection: Collection): Promise<GitExportFile[]> {
+  await flushRequestWrites();
   const [folders, rawRequests] = await Promise.all([
     db.folders.where("collectionId").equals(collection.id).toArray(),
     db.requests.where("collectionId").equals(collection.id).toArray(),

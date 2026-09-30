@@ -39,6 +39,12 @@ export default defineConfig({
     ...(selfHostedNodeBuild ? { spa: { enabled: true } } : {}),
   },
   vite: {
+    server: {
+      // Generated output — without this, `vitest --coverage` or a Playwright
+      // run fires hundreds of "page reload" events and reloads any open reqlo
+      // tab mid-edit.
+      watch: { ignored: ["**/coverage/**", "**/playwright-report/**", "**/test-results/**"] },
+    },
     optimizeDeps: {
       // esbuild's dev-server pre-bundler rewrites these into .vite/deps/ cache
       // files, which breaks the Emscripten loader's import.meta.url-relative

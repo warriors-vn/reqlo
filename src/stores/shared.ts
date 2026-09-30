@@ -217,7 +217,10 @@ export async function reportDbWriteFailure<T>(write: Promise<T>): Promise<T> {
     return await write;
   } catch (error) {
     console.error(error);
+    // One fixed id: a failing store (quota) fails every write, and a toast per
+    // write would stack up.
     toast.error("Change not saved", {
+      id: "db-write-failed",
       description:
         "The last change couldn't be written to local storage. It may be lost on reload.",
     });
