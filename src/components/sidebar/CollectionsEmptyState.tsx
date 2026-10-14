@@ -1,9 +1,9 @@
 import { FolderClosed } from "lucide-react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 
 export function CollectionsEmptyState() {
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18 }}
@@ -16,6 +16,6 @@ export function CollectionsEmptyState() {
       <p className="text-2xs leading-4 text-muted-foreground">
         Group related requests together to keep your workspace tidy.
       </p>
-    </motion.div>
+    </m.div>
   );
 }

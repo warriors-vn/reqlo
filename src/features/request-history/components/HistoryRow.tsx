@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { CheckCircle2, ExternalLink, Heart, Pin, Play, Save, Star, Trash2 } from "lucide-react";
 import { MethodBadge } from "@/components/MethodBadge";
 import { cn } from "@/lib/utils";
@@ -49,7 +49,7 @@ export function HistoryRow({
   const statusTone = entry.ok ? "text-[var(--status-success)]" : "text-destructive";
 
   return (
-    <motion.div
+    <m.div
       layout
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
@@ -197,7 +197,7 @@ export function HistoryRow({
           </button>
         </div>
       </div>
-    </motion.div>
+    </m.div>
   );
 }
 

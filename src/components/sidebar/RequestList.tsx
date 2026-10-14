@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { MethodBadge } from "@/components/MethodBadge";
 import { cn } from "@/lib/utils";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -282,7 +282,7 @@ export function RequestList({
   if (items.length === 0) {
     const dragActive = reorderEnabled && !!draggedRequest;
     return (
-      <motion.div
+      <m.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.15 }}
@@ -313,7 +313,7 @@ export function RequestList({
         {emptyHint ? (
           <div className="text-3xs leading-4 text-muted-foreground/60">{emptyHint}</div>
         ) : null}
-      </motion.div>
+      </m.div>
     );
   }
 

@@ -29,6 +29,12 @@ export default tseslint.config(
               message:
                 "TanStack Start does not use the Next.js `server-only` package. Rename the module to `*.server.ts` or mark it with `@tanstack/react-start/server-only`.",
             },
+            {
+              name: "framer-motion",
+              importNames: ["motion"],
+              message:
+                "Use `m` instead: the app runs under <LazyMotion strict> (routes/__root.tsx), which throws on `motion` and keeps the animation engine out of the startup bundle.",
+            },
           ],
         },
       ],

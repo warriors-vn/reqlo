@@ -1,6 +1,6 @@
 import { Command } from "cmdk";
 import { useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { Search } from "lucide-react";
 import { useStore } from "@/stores/useStore";
 import { MethodBadge } from "./MethodBadge";
@@ -55,7 +55,7 @@ export function CommandPalette() {
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -63,7 +63,7 @@ export function CommandPalette() {
           className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/10 backdrop-blur-sm pt-[12vh]"
           onClick={() => closeOverlay("palette")}
         >
-          <motion.div
+          <m.div
             initial={{ opacity: 0, scale: 0.98, y: -8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: -8 }}
@@ -175,8 +175,8 @@ export function CommandPalette() {
                 </span>
               </div>
             </Command>
-          </motion.div>
-        </motion.div>
+          </m.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

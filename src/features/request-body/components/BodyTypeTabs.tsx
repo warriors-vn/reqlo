@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { BODY_TYPE_OPTIONS, type RequestBodyType } from "@/features/request-body/types";
 
@@ -20,7 +20,7 @@ export function BodyTypeTabs({ value, onChange }: Props) {
           )}
         >
           {value === item.id && (
-            <motion.span
+            <m.span
               layoutId="body-type-pill"
               className="absolute inset-0 rounded-[11px] bg-accent shadow-[0_8px_24px_rgba(15,23,42,0.08)]"
               transition={{ type: "spring", stiffness: 320, damping: 28 }}

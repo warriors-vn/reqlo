@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import {
   Check,
   ChevronLeft,
@@ -121,7 +121,7 @@ export function CodeSnippetPanel({ request, environment }: Props) {
 
   return (
     <>
-      <motion.aside
+      <m.aside
         initial={false}
         animate={{ width: panelWidthPx, opacity: 1 }}
         transition={{ type: "spring", stiffness: 260, damping: 30, mass: 0.9 }}
@@ -165,17 +165,17 @@ export function CodeSnippetPanel({ request, environment }: Props) {
             environment={environment ?? null}
           />
         )}
-      </motion.aside>
+      </m.aside>
 
       <AnimatePresence>
         {fullscreen && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-end bg-slate-950/24 p-4 backdrop-blur-md"
           >
-            <motion.div
+            <m.div
               initial={{ x: 48, opacity: 0.6, scale: 0.98 }}
               animate={{ x: 0, opacity: 1, scale: 1 }}
               exit={{ x: 48, opacity: 0, scale: 0.98 }}
@@ -198,8 +198,8 @@ export function CodeSnippetPanel({ request, environment }: Props) {
                 onToggleFullscreen={() => setFullscreen(false)}
                 environment={environment ?? null}
               />
-            </motion.div>
-          </motion.div>
+            </m.div>
+          </m.div>
         )}
       </AnimatePresence>
     </>
