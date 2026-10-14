@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 
 interface Props {
@@ -81,7 +81,7 @@ export function Overlay({ open, onClose, title, subtitle, children, maxW = "max-
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -89,7 +89,7 @@ export function Overlay({ open, onClose, title, subtitle, children, maxW = "max-
           className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/10 backdrop-blur-sm pt-[12vh]"
           onClick={onClose}
         >
-          <motion.div
+          <m.div
             ref={panelRef}
             tabIndex={-1}
             initial={{ opacity: 0, scale: 0.98, y: -8 }}
@@ -118,8 +118,8 @@ export function Overlay({ open, onClose, title, subtitle, children, maxW = "max-
               </button>
             </div>
             <div className="max-h-[70vh] overflow-auto p-4">{children}</div>
-          </motion.div>
-        </motion.div>
+          </m.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

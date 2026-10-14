@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { CopyPlus, Eye, EyeOff, GripVertical, Lock, LockOpen, Plus, Trash2 } from "lucide-react";
 import { createEmptyKV, type KV } from "@/services/db";
 import { TemplateInput } from "@/components/TemplateInput";
@@ -89,7 +89,7 @@ export function KeyValueGrid({
       <div className="space-y-2">
         <AnimatePresence initial={false}>
           {rows.map((row) => (
-            <motion.div
+            <m.div
               key={row.id}
               layout
               draggable
@@ -232,7 +232,7 @@ export function KeyValueGrid({
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
-            </motion.div>
+            </m.div>
           ))}
         </AnimatePresence>
       </div>

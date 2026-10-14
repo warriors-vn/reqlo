@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { Info, Sparkles } from "lucide-react";
 import { useStore } from "@/stores/useStore";
 import { BodyTypeTabs } from "@/features/request-body/components/BodyTypeTabs";
@@ -81,7 +81,7 @@ export function AdvancedBodyEditor({ request }: Props) {
       </div>
 
       <AnimatePresence mode="wait">
-        <motion.div
+        <m.div
           key={request.bodyType}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
@@ -178,7 +178,7 @@ export function AdvancedBodyEditor({ request }: Props) {
               validationDetail={validation?.detail}
             />
           )}
-        </motion.div>
+        </m.div>
       </AnimatePresence>
 
       <div

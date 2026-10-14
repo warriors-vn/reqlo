@@ -18,7 +18,7 @@ import { TemplateInput } from "@/components/TemplateInput";
 import { evaluateAssertions } from "@/services/assertions";
 import { hasBodyContent } from "@/features/request-body/utils/body";
 import { Send, Square, ChevronDown, Plug, Unplug } from "lucide-react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { TimeoutControl } from "@/components/request-builder/TimeoutControl";
 import { FollowRedirectsControl } from "@/components/request-builder/FollowRedirectsControl";
@@ -292,7 +292,7 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
           />
         )}
         {isWebSocket ? (
-          <motion.button
+          <m.button
             whileTap={{ scale: 0.97 }}
             onClick={() =>
               wsConnected ? disconnectWebSocket(request.id) : connectWebSocket(request.id)
@@ -307,9 +307,9 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
           >
             {wsConnected ? <Unplug className="h-3.5 w-3.5" /> : <Plug className="h-3.5 w-3.5" />}
             {wsStatus === "connecting" ? "Connecting…" : wsConnected ? "Disconnect" : "Connect"}
-          </motion.button>
+          </m.button>
         ) : (
-          <motion.button
+          <m.button
             whileTap={{ scale: 0.97 }}
             onClick={sending ? onCancel : onSend}
             disabled={!sending && !request.url}
@@ -326,7 +326,7 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
               <Send className="h-3.5 w-3.5" />
             )}
             {sending ? "Cancel" : "Send"}
-          </motion.button>
+          </m.button>
         )}
       </div>
 
@@ -356,7 +356,7 @@ export function RequestBuilder({ request, onSend, onCancel, sending, result = nu
                   <span className="ml-1 text-3xs text-muted-foreground">{t.count}</span>
                 )}
                 {activeTab === t.id && (
-                  <motion.div
+                  <m.div
                     layoutId="reqtab"
                     className="absolute -bottom-px left-1 right-1 h-[2px] rounded-full bg-primary"
                   />

@@ -28,7 +28,7 @@ import { LazyCollectionSettingsModal } from "@/components/LazyCollectionSettings
 import { LazyPromptDialog } from "@/components/LazyPromptDialog";
 import { LazyGlobalConfirmDialog } from "@/components/LazyGlobalConfirmDialog";
 import { runSingleRequest } from "@/services/runner";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { useCommandSystem } from "@/hooks/useCommandSystem";
 import { CodeSnippetPanel } from "@/features/code-snippets/components/CodeSnippetPanel";
 import { mergeGlobalsIntoEnvironment } from "@/features/code-snippets/utils/request-resolver";
@@ -310,7 +310,7 @@ export function Workspace() {
         <div className="flex min-h-0 flex-1 flex-col">
           <AnimatePresence mode="wait">
             {activeRequest ? (
-              <motion.div
+              <m.div
                 key={activeRequest.id}
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -337,7 +337,7 @@ export function Workspace() {
                     />
                   )}
                 </div>
-              </motion.div>
+              </m.div>
             ) : (
               <EmptyState key="empty" />
             )}
@@ -421,7 +421,7 @@ function EmptyState() {
     })),
   );
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="flex flex-1 flex-col items-center justify-center gap-6 text-center"
@@ -447,6 +447,6 @@ function EmptyState() {
           Search <kbd className="ml-1 font-mono text-3xs text-muted-foreground">⌘K</kbd>
         </button>
       </div>
-    </motion.div>
+    </m.div>
   );
 }

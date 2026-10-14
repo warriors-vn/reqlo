@@ -1,8 +1,8 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { LazyMotion } from "framer-motion";
 import {
   Outlet,
   Link,
-  createRootRouteWithContext,
+  createRootRoute,
   useRouter,
   HeadContent,
   Scripts,
@@ -69,7 +69,7 @@ function ErrorComponent({ error, reset }: { error: unknown; reset: () => void })
   );
 }
 
-export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -133,13 +133,13 @@ function RootShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RootComponent() {
-  const { queryClient } = Route.useRouteContext();
+const loadMotionFeatures = () => import("@/lib/motion-features").then((mod) => mod.default);
 
+function RootComponent() {
   return (
-    <QueryClientProvider client={queryClient}>
+    <LazyMotion features={loadMotionFeatures} strict>
       <Outlet />
       <Toaster richColors position="bottom-right" />
-    </QueryClientProvider>
+    </LazyMotion>
   );
 }

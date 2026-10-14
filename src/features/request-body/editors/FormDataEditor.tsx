@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { CopyPlus, FileUp, GripVertical, Plus, Rows3, TextCursorInput, Trash2 } from "lucide-react";
 import { createEmptyFormDataRow, type FormDataRow } from "@/services/db";
 import { TemplateInput } from "@/components/TemplateInput";
@@ -124,7 +124,7 @@ function FormDataEditorRow({
   };
 
   return (
-    <motion.div
+    <m.div
       layout
       draggable
       onDragStart={onDragStart}
@@ -263,6 +263,6 @@ function FormDataEditorRow({
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
-    </motion.div>
+    </m.div>
   );
 }

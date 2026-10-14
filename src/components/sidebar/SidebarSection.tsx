@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 
 export function SidebarSection({
   icon,
@@ -71,7 +71,7 @@ export function SidebarSection({
 
       <AnimatePresence initial={false}>
         {open && (
-          <motion.div
+          <m.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -79,7 +79,7 @@ export function SidebarSection({
             className="overflow-hidden"
           >
             <div className="ml-2 mt-0.5 border-l border-border pl-1">{children}</div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>
